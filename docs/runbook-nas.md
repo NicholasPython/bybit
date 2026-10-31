@@ -138,7 +138,7 @@ launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/io.bybitbot.offsite-back
 - `io.bybitbot.nas-heartbeat`：每 30 秒检查一次 `https://nicholas-4.tail068b64.ts.net/health`，连续 3 次失败才发本地通知，恢复时另发一条；与备份检查相互独立。
 - `io.bybitbot.offsite-backup`：每 30 分钟同步加密备份，失败时退出码 1 并写入 `state/backup-sync.json`。
 
-安装脚本把脚本与状态放在 `~/.local/share/bybitbot-monitor/`，**不依赖 Desktop 目录**——launchd 任务此前因从 Desktop 路径启动而被系统隐私机制卡住（进程存活但无输出、无状态文件）。
+安装脚本把脚本与状态放在 `~/.local/share/bybitbot-monitor/`，**不依赖 Desktop 目录**——launchd 任务此前因从 Desktop 路径启动而被系统隐私机制卡住（进程存活但无输出、无状态文件）。改用标准路径后两个任务均 `last exit code = 0`，心跳状态文件持续更新。
 
 监控脚本使用的 rsync 参数必须兼容 macOS 自带的 rsync 2.6.9：`--chmod=Fu=rw,Fgo=,Du=rwx,Dgo=`（`--chmod=F600,D700` 在该版本上直接报 `invalid argument`）。
 
