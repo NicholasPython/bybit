@@ -1,0 +1,465 @@
+from __future__ import annotations
+
+import datetime as dt
+import uuid
+from dataclasses import replace
+from decimal import Decimal as D
+
+import pytest
+from sqlalchemy import func, select
+
+from bybitbot.adapters.base import InstrumentSpec, OrderBook, Ticker
+from bybitbot.adapters.paper import PaperAdapter
+from bybitbot.clock import now_utc
+from bybitbot.db.models import (
+    EquityBaseline,
+    Execution,
+    Instrument,
+    Inventory,
+    LedgerEvent,
+    Order,
+    ScheduleRun,
+    TradeIntent,
+)
+from bybitbot.execution.lease import LeaseState
+from bybitbot.ops.control import CommandKind
+from bybitbot.service import TradingService
+from bybitbot.settings.loader import load_config
+from bybitbot.strategy.base import IntentDraft
+
+
+class FixedMarket(PaperAdapter):
+    def __init__(self):
+        super().__init__()
+        self.set_instrument(
+            InstrumentSpec(
+                "spot",
+                "BTCUSDT",
+                "BTC",
+                "USDT",
+                "Trading",
+                tick_size=D("0.1"),
+                qty_step=D("0.001"),
+                min_order_qty=D("0.001"),
+                min_order_amt=D("1"),
+            )
+        )
+
+    async def get_ticker(self, category, symbol):
+        moment = now_utc()
+        return Ticker(
+            category,
+            symbol,
+            bid_price=D("99.9"),
+            ask_price=D("100"),
+            bid_size=D("100"),
+            ask_size=D("100"),
+            source_ts=moment,
+            received_at=moment,
+        )
+
+    async def get_orderbook(self, category, symbol, limit=50):
+        moment = now_utc()
+        return OrderBook(
+            category,
+            symbol,
+            ((D("99.9"), D("100")),),
+            ((D("100"), D("100")),),
+            source_ts=moment,
+            received_at=moment,
+        )
+
+
+async def command(service, kind, payload):
+    row, _ = await service.commands.submit(
+        command_id=str(uuid.uuid4()), kind=kind, payload=payload, requested_by="test-operator"
+    )
+    await service._process_commands()
+    return row
+
+
+async def test_start_baseline_takeover_trade_restart(database):
+    config = load_config("config/config.example.yaml")
+    service = TradingService(config, database, market_adapter=FixedMarket())
+    try:
+        await service.start()
+        assert service.lease.state is LeaseState.NEEDS_CONFIRMATION
+        assert service.machine.state.value == "PAUSED_OPEN"
+        assert service.identity_ok and service.reconcile_ok
+        assert not service.baseline_ok
+        await command(service, CommandKind.INITIALIZE_BASELINE, {"reason": "fixed paper test"})
+        await command(
+            service,
+            CommandKind.CONFIRM_TAKEOVER,
+            {"reason": "fixed paper test", "evidence": "no old worker in isolated schema"},
+        )
+        await service.tick()
+        assert service.baseline_ok
+        assert service.lease.state is LeaseState.ELIGIBLE
+        strategy_id, (_, version) = next(iter(service.strategies.items()))
+        draft = IntentDraft(
+            action="SPOT_BUY",
+            category="spot",
+            symbol="BTCUSDT",
+            side="Buy",
+            qty=D("0.1"),
+            qty_unit="BTC",
+            currency="USDT",
+            spend_limit=D("11"),
+            price_limit=D("100"),
+            ttl_seconds=60,
+        )
+        result = await service._submit_draft(strategy_id, version, draft, planned_at=now_utc())
+        assert result["status"] == "ACCEPTED", result
+        async with database.sessionmaker() as session:
+            assert await session.scalar(select(func.count()).select_from(Execution)) == 0
+        await service.tick()
+        async with database.sessionmaker() as session:
+            inventory = await session.scalar(select(Inventory))
+            assert inventory.qty == D("0.0999")
+            assert await session.scalar(select(func.count()).select_from(Execution)) == 1
+            assert (await session.scalar(select(Order))).status == "FILLED"
+            assert await session.scalar(select(func.count()).select_from(EquityBaseline)) == 1
+        saved = await service.store.get("paper")
+    finally:
+        await service.close()
+    restarted = TradingService(config, database, market_adapter=FixedMarket())
+    try:
+        await restarted.start()
+        assert restarted.lease.state is LeaseState.NEEDS_CONFIRMATION
+        assert restarted.baseline_ok
+        assert (await restarted.adapter.get_account()).coin("BTC").wallet_balance == D("0.0999")
+        assert (await restarted.store.get("paper"))["coins"] == saved["coins"]
+        async with database.sessionmaker() as session:
+            assert await session.scalar(select(func.count()).select_from(Execution)) == 1
+    finally:
+        await restarted.close()
+
+
+class OptionMarket(FixedMarket):
+    def __init__(self):
+        super().__init__()
+        expiry = now_utc() + dt.timedelta(days=10)
+        for strike in (80, 100):
+            self.set_instrument(
+                InstrumentSpec(
+                    "option",
+                    f"BTC-10NOV26-{strike}-C",
+                    "BTC",
+                    "USDT",
+                    "Trading",
+                    tick_size=D("0.001"),
+                    qty_step=D("0.1"),
+                    min_order_qty=D("0.1"),
+                    settle_coin="USDT",
+                    options_type="Call",
+                    strike_price=D(strike),
+                    delivery_time=expiry,
+                )
+            )
+
+    async def get_ticker(self, category, symbol):
+        if category == "spot":
+            return await super().get_ticker(category, symbol)
+        moment = now_utc()
+        return Ticker(
+            category,
+            symbol,
+            bid_price=D("1"),
+            ask_price=D("1.001"),
+            bid_size=D("100"),
+            ask_size=D("100"),
+            mark_price=D("1"),
+            open_interest=D("50"),
+            delta=D("0.5"),
+            iv=D("0.6"),
+            source_ts=moment,
+            received_at=moment,
+        )
+
+    async def get_tickers(self, category, *, base_coin=None):
+        return [
+            await self.get_ticker(category, spec.symbol)
+            for spec in await self.get_instruments(category)
+            if base_coin is None or spec.base_coin == base_coin
+        ]
+
+    async def get_orderbook(self, category, symbol, limit=50):
+        if category == "spot":
+            return await super().get_orderbook(category, symbol, limit)
+        moment = now_utc()
+        return OrderBook(
+            category,
+            symbol,
+            ((D("1"), D("100")),),
+            ((D("1.001"), D("100")),),
+            source_ts=moment,
+            received_at=moment,
+        )
+
+
+@pytest.mark.parametrize("category", ["spot", "option"])
+async def test_enabled_template_schedule_fills_once_across_restart(database, category):
+    config = load_config("config/config.example.yaml")
+    selected = config.strategies[0 if category == "spot" else 1]
+    selected = selected.model_copy(
+        update={
+            "enabled": True,
+            "symbols": ("BTCUSDT",) if category == "spot" else ("BTC",),
+            "schedule_utc": ((now_utc() + dt.timedelta(hours=1)).strftime("%H:%M"),),
+            "params": {"max_price_deviation": "0"}
+            if category == "spot"
+            else {
+                "options_type": "Call",
+                "min_open_interest": "20",
+                "max_premium": "2",
+            },
+        }
+    )
+    if category == "option":
+        selected = selected.model_copy(
+            update={
+                "budget_per_run": selected.budget_per_run.model_copy(update={"value": D("2")}),
+                "max_spend_per_trade": selected.max_spend_per_trade.model_copy(
+                    update={"value": D("2")}
+                ),
+            }
+        )
+    config = config.model_copy(
+        update={
+            "strategies": (selected,),
+            "option": config.option.model_copy(
+                update={
+                    "strike_range_pct": (D("90"), D("110")),
+                    "delta_range": (D("0.4"), D("0.6")),
+                    "no_open_window_start_hour_utc": 0,
+                    "no_open_window_end_hour_utc": 0,
+                }
+            ),
+        }
+    )
+    service = TradingService(config, database, market_adapter=OptionMarket())
+    try:
+        await service.start()
+        await command(service, CommandKind.INITIALIZE_BASELINE, {"reason": "synthetic scheduler"})
+        await command(
+            service,
+            CommandKind.CONFIRM_TAKEOVER,
+            {
+                "reason": "synthetic scheduler",
+                "evidence": "isolated database and paper only",
+            },
+        )
+        await service.tick()
+        strategy_id, (_, version) = next(iter(service.strategies.items()))
+        run = await service.scheduler.plan(
+            strategy_id=strategy_id,
+            strategy_version=version,
+            rule_id="synthetic-due",
+            planned_at=now_utc(),
+            input_snapshot={"symbol": selected.symbols[0]},
+        )
+        await service._schedule()
+        async with database.sessionmaker() as session:
+            intent = await session.scalar(select(TradeIntent))
+            assert intent is not None
+            assert intent.status == "APPROVED"
+            if category == "option":
+                assert intent.symbol == "BTC-10NOV26-100-C"
+            assert (await session.get(ScheduleRun, run.id)).status == "DONE"
+            assert await session.scalar(select(func.count()).select_from(Order)) == 1
+        await service.tick()
+        async with database.sessionmaker() as session:
+            assert await session.scalar(select(func.count()).select_from(Execution)) == 1
+        await service.close()
+        service = TradingService(config, database, market_adapter=OptionMarket())
+        await service.start()
+        await service._schedule()
+        async with database.sessionmaker() as session:
+            assert await session.scalar(select(func.count()).select_from(Order)) == 1
+    finally:
+        await service.close()
+
+
+@pytest.mark.parametrize("category", ["spot", "option"])
+async def test_exit_rebuild_preserves_deadline_quantity_and_floor(database, category):
+    config = load_config("config/config.example.yaml")
+    chosen = config.strategies[0 if category == "spot" else 1].model_copy(
+        update={
+            "symbols": ("BTCUSDT",) if category == "spot" else ("BTC",),
+        }
+    )
+    config = config.model_copy(
+        update={
+            "strategies": (chosen,),
+            "option": config.option.model_copy(
+                update={
+                    "no_open_window_start_hour_utc": 0,
+                    "no_open_window_end_hour_utc": 0,
+                }
+            ),
+        }
+    )
+    service = TradingService(config, database, market_adapter=OptionMarket())
+    try:
+        await service.start()
+        await command(service, CommandKind.INITIALIZE_BASELINE, {"reason": "exit test"})
+        await command(
+            service,
+            CommandKind.CONFIRM_TAKEOVER,
+            {
+                "reason": "exit test",
+                "evidence": "isolated schema",
+            },
+        )
+        await service.tick()
+        strategy_id, (_, version) = next(iter(service.strategies.items()))
+        symbol = "BTCUSDT" if category == "spot" else "BTC-10NOV26-100-C"
+        spec = service.specs[(category, symbol)]
+        draft = IntentDraft(
+            action="SPOT_BUY" if category == "spot" else "OPTION_BUY_OPEN",
+            category=category,
+            symbol=symbol,
+            side="Buy",
+            qty=D("0.1"),
+            qty_unit="base_coin" if category == "spot" else "contract",
+            currency="USDT",
+            spend_limit=D("11") if category == "spot" else D("1"),
+            price_limit=D("100") if category == "spot" else D("1.001"),
+            underlying="BTC",
+            delivery_time=spec.delivery_time,
+            options_type=spec.options_type,
+            strike_price=spec.strike_price,
+            exit_rules=(
+                {
+                    "kind": "hold_period",
+                    "hold_seconds": 0,
+                    "exit_validity_seconds": 300,
+                    "max_reprice_attempts": 1,
+                },
+            ),
+        )
+        outcome = await service._submit_draft(strategy_id, version, draft, planned_at=now_utc())
+        assert outcome["status"] == "ACCEPTED", outcome
+        await service.tick()
+        async with database.sessionmaker() as session:
+            exit_intent = await session.scalar(
+                select(TradeIntent).where(TradeIntent.side == "sell")
+            )
+            assert exit_intent is not None
+            parent = await session.scalar(select(Order).where(Order.intent_id == exit_intent.id))
+            assert parent.local_ttl_expires_at <= exit_intent.expires_at
+            assert parent.price > exit_intent.price_limit
+        assert (await service.executor.cancel(parent)).resolved
+        await service._exit_rules()
+        async with database.sessionmaker() as session:
+            children = list(
+                await session.scalars(
+                    select(Order)
+                    .where(Order.intent_id == exit_intent.id)
+                    .order_by(Order.rebuild_index)
+                )
+            )
+            assert len(children) == 2
+            child = children[-1]
+            assert child.parent_order_id == parent.id
+            assert child.rebuild_index == 1
+            assert child.qty <= exit_intent.qty
+            assert child.price >= exit_intent.price_limit
+            assert child.local_ttl_expires_at <= exit_intent.expires_at
+        assert (await service.executor.cancel(child)).resolved
+        await service._exit_rules()
+        await service._exit_rules()
+        async with database.sessionmaker() as session:
+            assert (
+                await session.scalar(
+                    select(func.count()).select_from(Order).where(Order.intent_id == exit_intent.id)
+                )
+                == 2
+            )
+    finally:
+        await service.close()
+
+
+@pytest.mark.parametrize("settlement_price,payout", [("90", "0"), ("120", "2")])
+async def test_paper_settlement_checkpoint_and_ledger_replay(database, settlement_price, payout):
+    config = load_config("config/config.example.yaml")
+    chosen = config.strategies[1].model_copy(update={"symbols": ("BTC",)})
+    config = config.model_copy(
+        update={
+            "strategies": (chosen,),
+            "option": config.option.model_copy(
+                update={"no_open_window_start_hour_utc": 0, "no_open_window_end_hour_utc": 0}
+            ),
+        }
+    )
+    service = TradingService(config, database, market_adapter=OptionMarket())
+    try:
+        await service.start()
+        await command(service, CommandKind.INITIALIZE_BASELINE, {"reason": "settlement fixture"})
+        await command(
+            service,
+            CommandKind.CONFIRM_TAKEOVER,
+            {"reason": "settlement fixture", "evidence": "isolated paper process"},
+        )
+        await service.tick()
+        strategy_id, (_, version) = next(iter(service.strategies.items()))
+        symbol = "BTC-10NOV26-100-C"
+        draft = IntentDraft(
+            action="OPTION_BUY_OPEN",
+            category="option",
+            symbol=symbol,
+            side="Buy",
+            qty=D("0.1"),
+            qty_unit="contract",
+            currency="USDT",
+            spend_limit=D("1"),
+            price_limit=D("1.001"),
+            underlying="BTC",
+            options_type="Call",
+            strike_price=D("100"),
+            delivery_time=service.specs[("option", symbol)].delivery_time,
+        )
+        assert (await service._submit_draft(strategy_id, version, draft, planned_at=now_utc()))[
+            "status"
+        ] == "ACCEPTED"
+        await service.tick()
+        expiry = now_utc() - dt.timedelta(seconds=1)
+        spec = replace(service.specs[("option", symbol)], delivery_time=expiry)
+        service.adapter.set_instrument(spec)
+        async with database.sessionmaker() as session:
+            row = await session.scalar(select(Instrument).where(Instrument.symbol == symbol))
+            row.delivery_time = expiry
+            await session.commit()
+        before = (await service.adapter.get_account()).coin("USDT").wallet_balance
+        fact = {
+            "settlement_id": "synthetic-delivery",
+            "symbol": symbol,
+            "settlement_price": D(settlement_price),
+            "occurred_at": now_utc(),
+            "reference": "deterministic-paper-expiry",
+        }
+        await service.adapter.inject_settlement(**fact)
+        await service.close()
+        replay_market = OptionMarket()
+        replay_market.set_instrument(spec)
+        service = TradingService(config, database, market_adapter=replay_market)
+        await service.start()
+        await service._paper_settlements()
+        after = (await service.adapter.get_account()).coin("USDT").wallet_balance
+        assert after == before + D(payout)
+        async with database.sessionmaker() as session:
+            assert (
+                await session.scalar(select(Inventory).where(Inventory.symbol == symbol))
+            ).qty == 0
+            assert (
+                await session.scalar(
+                    select(func.count())
+                    .select_from(LedgerEvent)
+                    .where(LedgerEvent.event_type == "SETTLEMENT")
+                )
+                == 1
+            )
+            assert await session.scalar(select(func.count()).select_from(Execution)) == 1
+    finally:
+        await service.close()

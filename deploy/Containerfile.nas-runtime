@@ -1,0 +1,5 @@
+# Reuse the existing NAS CPython 3.12.15 base. Its inspected image ID is recorded in
+# docs/acceptance.md; build this layer again whenever requirements.lock changes.
+FROM localhost/artex-runtime:python3.12
+COPY deploy/requirements.lock /tmp/requirements.lock
+RUN python -m pip install --no-cache-dir --require-hashes -r /tmp/requirements.lock

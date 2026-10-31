@@ -1,0 +1,21 @@
+[Unit]
+Description=Bybit paper PostgreSQL
+
+[Container]
+Image=localhost/artex-postgres:16
+ContainerName=bybitbot-pg
+PublishPort=127.0.0.1:55432:5432
+EnvironmentFile=%h/.config/bybitbot/postgres.env
+Volume=bybitbot-postgres.volume:/var/lib/postgresql/data:Z
+HealthCmd=pg_isready -U bybitbot -d bybitbot_paper
+HealthInterval=15s
+HealthRetries=5
+PodmanArgs=--memory=1g --pids-limit=256
+
+[Service]
+Restart=on-failure
+RestartSec=10
+TimeoutStartSec=180
+
+[Install]
+WantedBy=default.target

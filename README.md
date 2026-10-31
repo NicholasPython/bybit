@@ -1,0 +1,122 @@
+# Bybit 现货与单腿期权自动交易系统
+
+面向个人交易的 Bybit 现货与单腿期权运行服务。**当前仓库实现的是 M0～M3 范围内的模拟（paper）闭环**，已在 NAS 上以 paper 配置部署并保持暂停；没有接入任何真实交易凭据，也不具备实盘发单资格。
+
+- 需求与验收口径：[docs/requirements.md](docs/requirements.md)、[docs/requirements-review.md](docs/requirements-review.md)
+- 当前验收矩阵（逐条 AC-01～AC-28 的证据与缺口）：[docs/acceptance.md](docs/acceptance.md)
+- NAS 部署与运维手册：[docs/runbook-nas.md](docs/runbook-nas.md)
+
+## 组成
+
+| 进程 | 职责 |
+|---|---|
+| `bybitbot run` | 唯一交易 worker：行情同步、风控与预留、订单执行、账本与对账、调度、退出管理、告警 |
+| `bybitbot web` | 只读管理页与控制命令入队（控制命令由 worker 领取执行，页面本身不发单） |
+| `bybitbot migrate` | 数据库版本迁移 |
+| `bybitbot init-admin` | 创建管理身份（PBKDF2，口令不写入日志） |
+
+内部模块（`src/bybitbot/`）：
+
+- `adapters/` —— `paper`（模拟撮合）、`bybit_rest`（V5 私有/公开 REST）、`bybit_ws`（公开与私有流）
+- `risk/` —— 账户授权锁、现金与库存预留、Delta 区间、费用与成本
+- `execution/` —— 物理订单状态机、执行者租约（PostgreSQL advisory lock）
+- `ledger.py` / `reconciliation.py` —— 账本事件、去重成交、权益政策与对账修复
+- `strategy/` —— 现货定预算 DCA、期权单腿买入，退出规则
+- `ops/` —— 运行状态、暂停管理、告警投递、受限文件注入的通知渠道
+- `web/` —— FastAPI 管理页（模板 + 原生 JS/CSS）
+
+## 环境要求
+
+- Python 3.12（`>=3.12,<3.13`）
+- PostgreSQL 16
+- [uv](https://docs.astral.sh/uv/) 0.9.9（依赖由 `uv.lock` 固定）
+
+## 本地安装与测试
+
+```bash
+cd /Users/nicholaswang/Desktop/code/bybit
+uv sync --frozen --extra dev
+uv run ruff check src tests deploy
+uv run pytest -q
+```
+
+测试全部在 `BYBITBOT_TESTING=1` 下运行：`tests/conftest.py` 会阻断一切外部 HTTP，交易所行为由 `httpx.MockTransport` 与 `PaperAdapter` 合成；每个用例使用独立的 PostgreSQL schema，结束后只删除自己的 schema。
+
+需要本地 PostgreSQL：
+
+```bash
+podman run -d --name bybitbot-pg -p 127.0.0.1:55432:5432 \
+  -e POSTGRES_PASSWORD=bybitbot -e POSTGRES_USER=postgres \
+  -e POSTGRES_DB=bybitbot docker.io/library/postgres:16-alpine
+```
+
+## 配置
+
+复制示例并按需修改：`config/config.example.yaml`。该文件不含任何密钥。
+
+关键约束（不满足会在启动时被拒绝，见 `settings/loader.py`）：
+
+- `paper` 环境不得配置 `base_url` / `ws_url` / `credential_ref`，不得装载交易凭据，不得发送交易写请求
+- `live` 环境必须填写 `account.expected_uid`，且 `live_gates` 三项（`live_allowed`、`acceptance_record_ref`、`manual_enable_ref`）全部满足才允许发单
+- 各环境的 `db_dsn` 必须互不相同；`ops.valuation.currency` 与各金额限额的币种必须一致
+- 策略模板默认 `enabled: false`
+
+交易凭据（仅非 paper 环境）放在受限文件中，格式见 `config/credentials.example.json`：
+
+```json
+{
+  "api_key": "REPLACE_WITH_NON_LIVE_KEY",
+  "api_secret": "REPLACE_WITH_NON_LIVE_SECRET"
+}
+```
+
+文件必须是当前用户拥有、权限不宽于 0600 的普通文件。凭据不进入 Git、镜像、业务表、URL 或日志。
+
+告警渠道用受限文件引用，不在配置里内联 URL：
+
+```yaml
+ops:
+  alert_channels:
+    - /home/nicholas/.config/bybitbot/alert-webhook.json
+```
+
+该文件同样是 0600、当前用户拥有，内容形如 `{"url": "https://..."}`；投递只接受 HTTPS。
+
+## 运行
+
+```bash
+uv run bybitbot --config config/config.yaml check    # 打印无密配置摘要
+uv run bybitbot --config config/config.yaml migrate  # 应用迁移
+uv run bybitbot --config config/config.yaml run      # 交易 worker
+uv run bybitbot --config config/config.yaml web --auth secrets/admin.json --host 127.0.0.1 --port 18080
+```
+
+管理页只允许绑定 `127.0.0.1`；对外访问走 Tailscale Serve 等受控 HTTPS 入口（NAS 上已配置为 `https://nicholas-4.tail068b64.ts.net/` → `127.0.0.1:18080`）。数据库同样只监听回环地址。
+
+启动后 worker 处于 `PAUSED_OPEN / NEEDS_CONFIRMATION`，需要按顺序完成：
+
+1. 账户身份与权限核对通过
+2. 完成一次对账
+3. 用管理页 `INITIALIZE_BASELINE` 建立首次风险基线（首日标记为不完整交易日）
+4. 用管理页 `CONFIRM_TAKEOVER` 确认旧执行者已停止（重启后必须重新确认）
+5. 解除对应暂停
+
+策略默认禁用。启用任何一个策略前，先确认该策略的限额、退出规则与告警渠道都已就位。
+
+## 目录
+
+```
+src/bybitbot/     应用代码
+tests/            163 项本地隔离测试
+alembic/          数据库迁移（当前 head: 786d42c1b808）
+config/           配置示例（无密钥）
+deploy/           容器、Quadlet、备份、Mac 端监控与安装脚本
+docs/             需求、评审、验收矩阵、NAS 手册
+```
+
+## 安全边界
+
+- 密钥只供交易适配器使用，通过受限文件注入；不进 Git、镜像、业务表、URL 或日志
+- 管理界面走私有网络或受控 HTTPS 入口，具身份认证、会话过期与写操作 CSRF 保护；数据库不向公网开放
+- 依赖版本固定（`uv.lock`、`deploy/requirements.lock` 带哈希），部署产物带版本号，测试不含真实密钥
+- 实盘发单需要独立的实盘允许配置、完整风控参数、验收记录与人工启用操作；切换环境不复用任务运行记录

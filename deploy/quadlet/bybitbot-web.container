@@ -1,0 +1,23 @@
+[Unit]
+Description=Bybit private management console
+Requires=bybitbot-postgres.service
+After=bybitbot-worker.service bybitbot-postgres.service
+
+[Container]
+Image=localhost/bybitbot:0.1.0
+ContainerName=bybitbot-web
+Network=host
+Volume=%h/.config/bybitbot:/run/bybitbot:ro,z
+Exec=--config /run/bybitbot/config.yaml web --auth /run/bybitbot/admin.json --host 127.0.0.1 --port 18080
+ReadOnly=true
+NoNewPrivileges=true
+DropCapability=all
+PodmanArgs=--memory=512m --pids-limit=128 --tmpfs=/tmp:rw,size=32m,noexec,nosuid
+
+[Service]
+Restart=on-failure
+RestartSec=15
+TimeoutStartSec=180
+
+[Install]
+WantedBy=default.target

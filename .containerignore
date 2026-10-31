@@ -1,0 +1,13 @@
+.git
+.venv
+secrets
+var
+config/config.yaml
+config/credentials*.json
+config/admin*.json
+.env*
+__pycache__
+.pytest_cache
+.ruff_cache
+tests
+.DS_Store

@@ -1,0 +1,7 @@
+[Unit]
+Description=Encrypt Bybit paper database backup
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/share/bybitbot/bin/backup.sh
+UMask=0077

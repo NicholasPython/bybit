@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}登录 · Bybit 操作台{% endblock %}
+{% block view %}login{% endblock %}
+{% block content %}
+<main id="main" class="login-layout">
+  <section class="login-intro" aria-labelledby="login-heading">
+    <span class="brand">Bybit<span class="brand-sub">个人交易操作台</span></span>
+    <h1 id="login-heading">账户状态与交易记录</h1>
+    <p>查看账户事实、核对交易记录与暂停原因。控制命令交由交易服务校验并执行。</p>
+    <p class="login-note">仅供授权管理员访问。所有时间使用 UTC，金额保留原始精度。</p>
+  </section>
+  <section class="login-form-panel" aria-label="管理员登录">
+    <form id="login-form">
+      <h2>管理员登录</h2>
+      <p class="muted">登录有效期为 30 分钟，到期后请重新登录。</p>
+      <label for="username">用户名</label>
+      <input id="username" name="username" autocomplete="username" required maxlength="128" autofocus>
+      <label for="password">密码</label>
+      <input id="password" name="password" type="password" autocomplete="current-password" required maxlength="1024">
+      <p id="login-error" class="error-message" role="alert" hidden></p>
+      <button class="button primary login-button" type="submit">登录操作台</button>
+      <noscript><p class="error-message">请启用浏览器 JavaScript 后登录。</p></noscript>
+    </form>
+    <p class="login-help">登录失败时，请检查管理员凭据；认证文件由服务器上的 <code>bybitbot init-admin</code> 创建。</p>
+  </section>
+</main>
+{% endblock %}

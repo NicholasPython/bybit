@@ -1,0 +1,229 @@
+# Bybit 交易系统配置示例
+#
+# 复制为 config/config.yaml 后按需修改。本文件**不含任何密钥** ——
+# 凭据通过受限权限的独立文件注入（见 config/credentials.example.json）。
+#
+# 校验规则（settings/loader.py）：
+#   * 任何缺失、负值、币种不匹配或逻辑矛盾都会在启动时被拒绝；
+#   * paper 环境不得配置凭据、不得配置交易所端点（ENV-01）；
+#   * live 环境必须有 expected_uid 且允许交易写（ENV-03）；
+#   * 不同金额预算的语义必须能显示在配置界面上（§5.2 末段）。
+
+active_environment: paper
+
+# 模拟初始资金仅首次初始化使用；重启恢复已有检查点。
+paper:
+  initial_balances: {USDT: "1000"}
+  fee_version: paper-v1-conservative
+  spot_fee_rate: "0.001"
+  option_fee_rate: "0.0015"
+  public_market_url: https://api.bybit.com
+
+runtime:
+  proxy: null  # NAS 设置为 http://127.0.0.1:7890
+  poll_seconds: 5
+  catalog_refresh_seconds: 3600
+  max_option_candidates: 200
+  option_units_verified: false
+  option_reduce_only_verified: false
+  option_capability_record_ref: null
+
+environments:
+  paper:
+    environment: paper
+    display_name: 纸面模拟
+    # paper 不得有 base_url / ws_url / credential_ref。
+    db_dsn: postgresql+psycopg://bybitbot:CHANGE_ME@127.0.0.1:55432/bybitbot_paper
+    log_prefix: bybitbot-paper
+    allow_credentials: false
+    allow_trade_writes: false
+    site: bybit
+
+  testnet:
+    environment: testnet
+    display_name: Bybit Testnet
+    base_url: https://api-testnet.bybit.com
+    ws_url: wss://stream-testnet.bybit.com/v5/private
+    ws_public_url: wss://stream-testnet.bybit.com/v5/public
+    db_dsn: postgresql+psycopg://bybitbot:CHANGE_ME@127.0.0.1:55432/bybitbot_testnet
+    log_prefix: bybitbot-testnet
+    credential_ref: config/credentials.testnet.json
+    allow_credentials: true
+    allow_trade_writes: true
+    site: bybit
+
+  live:
+    environment: live
+    display_name: Bybit 实盘
+    base_url: https://api.bybit.com
+    ws_url: wss://stream.bybit.com/v5/private
+    ws_public_url: wss://stream.bybit.com/v5/public
+    db_dsn: postgresql+psycopg://bybitbot:CHANGE_ME@127.0.0.1:55432/bybitbot_live
+    log_prefix: bybitbot-live
+    credential_ref: config/credentials.live.json
+    allow_credentials: true
+    # 环境层面允许写请求；真正的实盘发单资格由 live_gates 的三项控制（ENV-03）。
+    allow_trade_writes: true
+    site: bybit
+
+# --------------------------------------------------------------------------
+# 账户（§5.2 账户）
+# --------------------------------------------------------------------------
+account:
+  # 预期 UID / 子账户标识。paper 可留空；live 必须填写，否则拒绝发单。
+  expected_uid: null
+  account_mode: unified
+  allowed_products: [spot, option]
+  required_permissions: [Read, Trade]
+  allowed_sites: [bybit]
+  # 绑定固定出口 IP（SEC-01 建议；留空表示未限制）。
+  bound_ip: null
+
+# --------------------------------------------------------------------------
+# 资金限额（§5.2 资金）
+# 语义：
+#   max_spend_per_trade            单笔最大支出（含费用余量）
+#   max_spot_exposure_per_strategy 单策略现货敞口上限
+#   max_spot_exposure_account      账户级现货敞口上限
+#   option_premium_budget          未平仓期权多头的权利金预算
+#   fee_buffer                     费用余量
+#   max_open_orders                同时挂单上限
+# --------------------------------------------------------------------------
+budget:
+  max_spend_per_trade: {value: "50", currency: USDT}
+  max_spot_exposure_per_strategy: {value: "200", currency: USDT}
+  max_spot_exposure_account: {value: "500", currency: USDT}
+  option_premium_budget: {value: "100", currency: USDT}
+  fee_buffer: {value: "5", currency: USDT}
+  max_open_orders: 10
+
+# --------------------------------------------------------------------------
+# 风险限额（§5.2 风险）
+# delta_limit_per_underlying 的单位是**标的的基础币数量**（RSK-05）。
+# premium_cost_limit_* 的单位是估值币种的**绝对金额**。
+# --------------------------------------------------------------------------
+risk:
+  max_daily_loss: {value: "20", currency: USDT}
+  max_drawdown: {value: "50", currency: USDT}
+  delta_limit_per_underlying:
+    BTC: "1.0"
+    ETH: "10.0"
+  premium_cost_limit_per_underlying:
+    BTC: {value: "60", currency: USDT}
+  premium_cost_limit_per_expiry: {}
+
+# --------------------------------------------------------------------------
+# 行情（§5.2 行情）
+# --------------------------------------------------------------------------
+market:
+  max_quote_age_seconds: 15
+  account_state_check_interval_seconds: 30
+  account_state_max_age_seconds: 120
+  max_spread_bps: "50"
+  max_price_deviation_bps: "100"
+
+# --------------------------------------------------------------------------
+# 执行（§5.2 执行）
+# signal_ttl_seconds 只控制新提交；order_ttl_seconds 到期只触发撤单，
+# 不代表交易所终态（EXE-04）。
+# --------------------------------------------------------------------------
+execution:
+  signal_ttl_seconds: 60
+  # order_ttl_seconds 必须大于 no_open_window_order_ttl_seconds（OPT-04）。
+  order_ttl_seconds: 3600
+  cancel_query_deadline_seconds: 15
+  max_rebuild_attempts: 1
+  max_intent_total_spend: {value: "50", currency: USDT}
+  exit_price_floor_bps: "200"
+  request_timeout_seconds: 30
+  max_rate_limit_retries: 3
+
+# --------------------------------------------------------------------------
+# 期权（§5.2 期权）
+# 禁开仓窗口用 UTC 小时表示。no_open_window_order_ttl_seconds 必须早于窗口起点，
+# 否则配置校验会拒绝。
+# --------------------------------------------------------------------------
+option:
+  allowed_option_types: [Call]
+  min_days_to_expiry: 1
+  max_days_to_expiry: 45
+  strike_range_pct: null
+  delta_range: null
+  no_open_window_start_hour_utc: 21
+  no_open_window_end_hour_utc: 23
+  no_open_window_order_ttl_seconds: 1800
+  exit_before_expiry_seconds: 86400
+  max_settle_coin_cash_ratio: "1"
+
+# --------------------------------------------------------------------------
+# 运维（§5.2 运维）
+# valuation.version 是估值政策版本 —— 变更即产生新的权益序列，
+# 历史保留（LED-04）。
+# --------------------------------------------------------------------------
+ops:
+  alert_channels: []
+  notification_failure_pause_seconds: 300
+  external_heartbeat_interval_seconds: 30
+  external_heartbeat_miss_count: 3
+  retention_days: 365
+  raw_market_data_retention_days: 7
+  backup_target: /home/nicholas/backups/bybitbot
+  max_clock_skew_seconds: 5
+  day_boundary_tz: Asia/Shanghai
+  # 估值政策：版本化。变更即产生新的权益序列，历史保留（LED-04）。
+  valuation:
+    version: "equity-v1"
+    currency: USDT
+    spot_valuation_source: wallet_balance
+    option_valuation_source: mark
+    fx_source: ticker_bid
+    tolerance: "0.01"
+  # 首次接入的独立风险起点。留空表示尚未建立 —— 此时系统保持暂停开仓，
+  # 不会用当前权益假装当日零亏损（LED-04）。
+  risk_start_at: null
+  disk_free_threshold_gb: 20
+  disk_pause_threshold_gb: 5
+
+# --------------------------------------------------------------------------
+# 实盘启用门槛（ENV-03）
+# 三项必须同时具备：live_allowed、acceptance_record_ref、manual_enable_ref。
+# 默认全部为 False —— 未通过验收前不得实盘发单。
+# --------------------------------------------------------------------------
+live_gates:
+  live_allowed: false
+  acceptance_record_ref: null
+  manual_enable_ref: null
+
+# --------------------------------------------------------------------------
+# 策略（§5.2 策略）
+# 模板默认 disabled（STR-03）。schedule_utc 是 UTC 的 HH:MM。
+# --------------------------------------------------------------------------
+strategies:
+  - name: btc-daily-spot
+    kind: spot_fixed_budget_dca
+    enabled: false
+    symbols: [BTCUSDT]
+    schedule_utc: ["00:00"]
+    signal_ttl_seconds: 300
+    cooldown_seconds: 3600
+    budget_per_run: {value: "20", currency: USDT}
+    max_spend_per_trade: {value: "20", currency: USDT}
+    exit_rules:
+      - kind: hold_period
+        hold_seconds: 86400
+        max_reprice_attempts: 1
+        exit_validity_seconds: 300
+
+  - name: eth-call-weekly
+    kind: option_single_leg_buy
+    enabled: false
+    symbols: [ETH]
+    schedule_utc: ["00:00"]
+    signal_ttl_seconds: 120
+    cooldown_seconds: 604800
+    budget_per_run: {value: "20", currency: USDT}
+    max_spend_per_trade: {value: "20", currency: USDT}
+    exit_rules:
+      - kind: before_expiry
+        max_reprice_attempts: 1
+        exit_validity_seconds: 300

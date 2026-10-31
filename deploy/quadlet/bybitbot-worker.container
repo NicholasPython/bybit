@@ -1,0 +1,25 @@
+[Unit]
+Description=Bybit paper trading worker
+Requires=bybitbot-postgres.service
+After=bybitbot-postgres.service
+
+[Container]
+Image=localhost/bybitbot:0.1.0
+ContainerName=bybitbot-worker
+Network=host
+Volume=%h/.config/bybitbot:/run/bybitbot:ro,z
+Volume=%h/.local/share/bybitbot/var:/app/var:Z
+Exec=--config /run/bybitbot/config.yaml run
+ReadOnly=true
+NoNewPrivileges=true
+DropCapability=all
+PodmanArgs=--memory=1g --pids-limit=256 --tmpfs=/tmp:rw,size=64m,noexec,nosuid
+
+[Service]
+Restart=on-failure
+RestartSec=15
+TimeoutStartSec=180
+ExecStartPre=/usr/bin/podman run --rm --network=host -v %h/.config/bybitbot:/run/bybitbot:ro,z localhost/bybitbot:0.1.0 --config /run/bybitbot/config.yaml migrate
+
+[Install]
+WantedBy=default.target
