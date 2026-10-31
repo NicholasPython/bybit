@@ -93,9 +93,8 @@ def value_account(policy: ValuationPolicy, data: ValuationInput) -> Valuation:
     口径：
         Equity = Σ(自有净现金 × 汇率) + Σ(期权多头价值 × 汇率) - 尚未计入净现金的负债
 
-    负债按字段语义扣除：只有**没有**已经体现在净现金里的负债才扣。
-    这里采用保守口径：``borrowed`` 与 ``accrued_interest`` 都视为尚未计入
-    净现金的负债并扣除。
+    净现金来自 wallet_balance，不把交易所自报 equity 再叠加进来。
+    存在负债或期权空头时，当前仅多头政策不能完整估值，必须拒绝作为风控输入。
     """
     if data.account.has_debt:
         return Valuation(
@@ -133,7 +132,10 @@ def value_account(policy: ValuationPolicy, data: ValuationInput) -> Valuation:
     option_total = Decimal("0")
     for position in data.option_positions:
         size = dec(position.size)
-        if size <= 0:
+        if size < 0 or (size > 0 and position.side == "Sell"):
+            missing_rate.append(f"{position.symbol}:不支持期权空头估值")
+            continue
+        if size == 0:
             continue
         price = getattr(position, policy.option_price_field, None)
         if price is None:

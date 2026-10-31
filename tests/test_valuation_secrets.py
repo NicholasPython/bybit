@@ -1,8 +1,7 @@
 """估值口径与凭据装载的单元测试。
 
-这两个模块此前没有任何直接断言：
-``valuation.py`` 是亏损熔断与回撤口径的唯一实现（AC-17），
-``settings/secrets.py`` 是密钥进入系统的第一道防线（AC-21）。
+覆盖权益、资金流调整损益与回撤公式（AC-17），以及受限凭据文件的
+权限、属主、读取失败和脱敏行为（AC-21）。服务层基线与熔断另有集成测试。
 """
 
 from __future__ import annotations
@@ -10,7 +9,7 @@ from __future__ import annotations
 import datetime as dt
 import json
 import os
-import stat
+from dataclasses import replace
 from decimal import Decimal
 
 import pytest
@@ -63,7 +62,11 @@ def test_equity_is_own_cash_plus_option_value_without_double_counting():
     result = value_account(
         POLICY,
         ValuationInput(
-            account=account(cash("USDT", "1000")),
+            account=replace(
+                account(cash("USDT", "1000")),
+                total_equity=Decimal("2000"),
+                exchange_equity=Decimal("2000"),
+            ),
             cash_rates={"USDT": Decimal("1")},
             option_positions=[
                 PositionView(
@@ -185,7 +188,8 @@ def test_contract_multiplier_and_settle_rate_scale_option_value():
     assert result.equity == Decimal("9")
 
 
-def test_short_option_position_is_excluded_from_equity():
+@pytest.mark.parametrize("size", [Decimal("-1"), Decimal("1")])
+def test_short_option_position_makes_valuation_incomplete(size):
     result = value_account(
         POLICY,
         ValuationInput(
@@ -195,7 +199,8 @@ def test_short_option_position_is_excluded_from_equity():
                 PositionView(
                     category="option",
                     symbol="BTC-OPT",
-                    size=Decimal("-1"),
+                    size=size,
+                    side="Sell" if size > 0 else None,
                     mark_price=Decimal("50"),
                     settle_coin="USDT",
                 )
@@ -203,22 +208,20 @@ def test_short_option_position_is_excluded_from_equity():
             settle_rates={"USDT": Decimal("1")},
         ),
     )
-    assert result.complete
-    assert result.equity == Decimal("100")
+    assert not result.complete
+    assert "不支持期权空头" in result.incomplete_reason
 
 
-def test_liabilities_are_deducted_from_equity():
+def test_accrued_interest_without_principal_makes_valuation_incomplete():
     result = value_account(
         POLICY,
         ValuationInput(
-            account=account(
-                cash("USDT", "100", borrowed=Decimal("10"), accrued_interest=Decimal("2"))
-            ),
+            account=account(cash("USDT", "100", accrued_interest=Decimal("2"))),
             cash_rates={"USDT": Decimal("1")},
         ),
     )
-    # 有负债时整体估值不完整，这里确认负债被登记而不是被忽略。
     assert not result.complete
+    assert "负债" in result.incomplete_reason
 
 
 def test_wallet_balance_missing_is_reported():
@@ -291,8 +294,10 @@ def test_day_key_and_day_start_follow_configured_timezone():
 # --------------------------------------------------------------------------
 
 
-def write_credentials(path, *, key: str = "test-key", api_secret: str = "test-api-secret"):
-    path.write_text(json.dumps({"api_key": key, "api_secret": api_secret}), encoding="utf-8")
+def write_credentials(path):
+    path.write_text(
+        json.dumps({"api_key": "test-key", "api_secret": "test-api-secret"}), encoding="utf-8"
+    )
     path.chmod(0o600)
     return path
 
@@ -358,10 +363,12 @@ def test_permission_check_can_be_disabled_explicitly(tmp_path):
     assert creds.api_key == "test-key"
 
 
-def test_credential_file_owner_is_checked(tmp_path):
+def test_credential_file_owner_is_checked(tmp_path, monkeypatch):
     path = write_credentials(tmp_path / "credentials.json")
-    info = path.stat()
-    assert info.st_uid == os.getuid()
+    actual_uid = path.stat().st_uid
+    monkeypatch.setattr(os, "getuid", lambda: actual_uid + 1)
+    with pytest.raises(CredentialError, match="不属于当前用户"):
+        load_credentials(path)
 
 
 def test_redact_removes_known_secrets_but_keeps_short_ones():
@@ -369,6 +376,7 @@ def test_redact_removes_known_secrets_but_keeps_short_ones():
     result = redact(text, ["super-secret-value", "abc"])
     assert "super-secret-value" not in result
     assert "***REDACTED***" in result
+    assert "short=abc" in result
     assert redact("", ["x"]) == ""
 
 
@@ -376,7 +384,12 @@ def test_redact_ignores_empty_secret_list():
     assert redact("plain text", []) == "plain text"
 
 
-def test_credential_error_is_not_a_builtin_file_error():
-    assert issubclass(CredentialError, Exception)
-    assert not issubclass(CredentialError, OSError)
-    assert stat.S_IMODE(0o600) == 0o600
+def test_credential_read_failure_is_reported_without_loading_secret(tmp_path, monkeypatch):
+    path = write_credentials(tmp_path / "credentials.json")
+
+    def denied(*args, **kwargs):
+        raise PermissionError("synthetic read denied")
+
+    monkeypatch.setattr(type(path), "read_text", denied)
+    with pytest.raises(CredentialError, match="无法读取"):
+        load_credentials(path)

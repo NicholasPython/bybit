@@ -33,22 +33,31 @@
 
 ## 本地安装与测试
 
+在项目根目录安装固定版本的依赖：
+
 ```bash
-cd /Users/nicholaswang/Desktop/code/bybit
 uv sync --frozen --extra dev
-uv run ruff check src tests deploy
-uv run pytest -q
 ```
 
-测试全部在 `BYBITBOT_TESTING=1` 下运行：`tests/conftest.py` 会阻断一切外部 HTTP，交易所行为由 `httpx.MockTransport` 与 `PaperAdapter` 合成；每个用例使用独立的 PostgreSQL schema，结束后只删除自己的 schema。
-
-需要本地 PostgreSQL：
+数据库测试需要 PostgreSQL。下面的口令只用于本机隔离测试；已有同名容器时复用并检查其回环端口，不重复创建：
 
 ```bash
 podman run -d --name bybitbot-pg -p 127.0.0.1:55432:5432 \
   -e POSTGRES_PASSWORD=bybitbot -e POSTGRES_USER=postgres \
   -e POSTGRES_DB=bybitbot docker.io/library/postgres:16-alpine
 ```
+
+数据库就绪后运行：
+
+```bash
+uv run ruff check src tests deploy
+```
+
+```bash
+uv run pytest -q
+```
+
+最新结果为 **192 项通过**。测试在 `BYBITBOT_TESTING=1` 下运行；`tests/conftest.py` 阻断 httpx 的默认同步和异步 HTTP transport，交易所 HTTP 响应使用 `httpx.MockTransport`，交易行为使用 `PaperAdapter` 合成。数据库用例各自使用独立 PostgreSQL schema，结束后只删除自己的 schema。这不是操作系统级网络隔离，也不构成真实 Bybit 能力验收。
 
 ## 配置
 
@@ -70,7 +79,7 @@ podman run -d --name bybitbot-pg -p 127.0.0.1:55432:5432 \
 }
 ```
 
-文件必须是当前用户拥有、权限不宽于 0600 的普通文件。凭据不进入 Git、镜像、业务表、URL 或日志。
+凭据应保存在当前用户拥有、权限为 0600 的普通文件。当前装载器检查属主及组/其他用户权限，但尚未采用管理身份装载器的软链接拒绝和文件描述符校验，不能将其视为同等加固。凭据不进入 Git、镜像、业务表、URL 或日志。
 
 告警渠道用受限文件引用，不在配置里内联 URL：
 
@@ -84,12 +93,37 @@ ops:
 
 ## 运行
 
+先复制运行配置。然后将 `environments.paper.db_dsn` 改为实际的本机数据库连接；若使用前面的隔离测试容器，对应值为 `postgresql+psycopg://postgres:bybitbot@127.0.0.1:55432/bybitbot`，其中口令仅用于本机测试。确认其他环境仍使用不同 DSN 后，再检查配置并迁移：
+
 ```bash
-uv run bybitbot --config config/config.yaml check    # 打印无密配置摘要
-uv run bybitbot --config config/config.yaml migrate  # 应用迁移
-uv run bybitbot --config config/config.yaml run      # 交易 worker
+cp config/config.example.yaml config/config.yaml
+```
+
+```bash
+uv run bybitbot --config config/config.yaml check
+```
+
+```bash
+uv run bybitbot --config config/config.yaml migrate
+```
+
+创建管理身份时交互输入密码；命令拒绝覆盖已有文件：
+
+```bash
+uv run bybitbot init-admin --path secrets/admin.json
+```
+
+worker 与管理页分别运行在两个终端：
+
+```bash
+uv run bybitbot --config config/config.yaml run
+```
+
+```bash
 uv run bybitbot --config config/config.yaml web --auth secrets/admin.json --host 127.0.0.1 --port 18080
 ```
+
+上述 web 命令用于 HTTPS 入口；本机直接使用 HTTP 调试时加 `--insecure-local-cookie`，使浏览器能够携带开发会话 cookie。
 
 管理页只允许绑定 `127.0.0.1`；对外访问走 Tailscale Serve 等受控 HTTPS 入口（NAS 上已配置为 `https://nicholas-4.tail068b64.ts.net/` → `127.0.0.1:18080`）。数据库同样只监听回环地址。
 
@@ -97,7 +131,7 @@ uv run bybitbot --config config/config.yaml web --auth secrets/admin.json --host
 
 1. 账户身份与权限核对通过
 2. 完成一次对账
-3. 用管理页 `INITIALIZE_BASELINE` 建立首次风险基线（首日标记为不完整交易日）
+3. 仅在首次接入且尚无基线时，用管理页 `INITIALIZE_BASELINE` 建立风险基线（首日标记为不完整交易日）；已有基线和历史高点需要保留并对账
 4. 用管理页 `CONFIRM_TAKEOVER` 确认旧执行者已停止（重启后必须重新确认）
 5. 解除对应暂停
 
@@ -107,7 +141,7 @@ uv run bybitbot --config config/config.yaml web --auth secrets/admin.json --host
 
 ```
 src/bybitbot/     应用代码
-tests/            163 项本地隔离测试
+tests/            192 项本地隔离测试
 alembic/          数据库迁移（当前 head: 786d42c1b808）
 config/           配置示例（无密钥）
 deploy/           容器、Quadlet、备份、Mac 端监控与安装脚本
