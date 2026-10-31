@@ -2,6 +2,7 @@
 
 面向个人交易的 Bybit 现货与单腿期权运行服务。**当前仓库实现的是 M0～M3 范围内的模拟（paper）闭环**，已在 NAS 上以 paper 配置部署并保持暂停；没有接入任何真实交易凭据，也不具备实盘发单资格。
 
+- GitHub 私有仓库：[NicholasPython/bybit](https://github.com/NicholasPython/bybit)，默认分支 `main`；[自动检查](https://github.com/NicholasPython/bybit/actions)
 - 需求与验收口径：[docs/requirements.md](docs/requirements.md)、[docs/requirements-review.md](docs/requirements-review.md)
 - 当前验收矩阵（逐条 AC-01～AC-28 的证据与缺口）：[docs/acceptance.md](docs/acceptance.md)
 - NAS 部署与运维手册：[docs/runbook-nas.md](docs/runbook-nas.md)

@@ -24,7 +24,7 @@
 
 | 里程碑 | 当前状态 | 说明 |
 |---|---|---|
-| M0 开发基线 | 已建立 | 配置模式、数据模型、迁移、固定依赖、测试与部署文档已交付；远端 CI 尚未执行 |
+| M0 开发基线 | 已建立 | 配置模式、数据模型、迁移、固定依赖、测试与部署文档已交付；GitHub Actions 已触发 |
 | M1 只读接入 | 模拟与接口契约有证据，真实账户未验 | 合约、钱包、权限与身份解析已测；没有真实 Key 核对记录 |
 | M2 模拟闭环 | 已实现主要链路，验收未全通过 | 持久化、预留、执行、重启、退出和 paper 结算已测；仍缺部分风控、配置变更、时钟和故障组合证据 |
 | M3 非实盘联调 | 未完成 | NAS 部署、认证管理页、备份恢复已有证据；Demo/Testnet、真实告警和全部适用 P0 尚未通过 |
@@ -120,7 +120,7 @@
 | 监控限制 | 未做真实三次失联通知展示演练；Mac 睡眠/离线期间不监控。`/health` 另有 120 秒心跳有效期，不能声称 worker 停止后固定 90 秒收到通知 |
 | 通知渠道 | `ops.alert_channels=[]`，无真实远端业务告警；当前业务告警只落库 |
 | 真实 Bybit 能力 | 未提供交易凭据；没有真实 Demo/Testnet 或实盘发单；paper capability=true 只描述模拟能力 |
-| GitHub | 本地分支 `feature/m0-m3-paper-deployment` 已有提交；设备登录超时，`gh auth status` 未登录，无 remote、远端仓库或推送；GitHub Actions 未执行 |
+| GitHub | 已通过 NAS 上的 `NicholasPython` 认证上传至私有仓库 [NicholasPython/bybit](https://github.com/NicholasPython/bybit)，默认分支 `main`；首次上传提交 `4dab9f43476d07b6bc531845404096c9ce9f1cd0` 与本地一致；GitHub Actions 已触发，执行结果以 [Actions 记录](https://github.com/NicholasPython/bybit/actions) 为准 |
 
 NAS 使用已有本地 Python 基础层构建成功。标准 `Containerfile` 在 Mac 的构建因 Docker Hub 基础镜像 TLS 握手超时失败，该路径不能列为已验证。
 
@@ -140,7 +140,7 @@ NAS 使用已有本地 Python 基础层构建成功。标准 `Containerfile` 在
 | 非实盘能力 | 使用受限 Demo/Testnet 凭据核对身份、权限、模式、期权单位、reduceOnly、成交/撤单和结算能力；不支持项保持未通过 |
 | 运维 | 容量/P95/磁盘增长、保留清理、磁盘不足暂停、真实通知送达与失败、完整备份恢复和 RTO/RPO |
 | 安全 | 自动化密钥泄漏扫描、API 凭据文件进一步加固、固定出口核对、保持在途可追踪的实际凭据轮换 |
-| GitHub | 完成人工设备认证后创建/连接仓库并推送，再取得远端 CI 结果 |
+| 远端 CI | 仓库已创建并推送，工作流已触发；CI 通过不替代真实账户和阶段验收 |
 
 提现权限拒绝门槛已有实现；待补的是测试和实际权限验证。失效估值恢复路径已有前置条件；待补的是组合断言，未确认存在语义缺陷。
 
