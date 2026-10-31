@@ -3,7 +3,7 @@
 生成日期：2026-10-31
 依据：`docs/requirements.md` v0.1 §7 验收用例、§4 功能需求编号、§6 非功能需求、§8 实施阶段
 代码基线：`/Users/nicholaswang/Desktop/code/bybit`（`src/bybitbot`、`tests/`、`deploy/`、`alembic/`）
-测试基线：`pytest --collect-only -q` → **164 项**本地隔离测试；全部为本地隔离 / 模拟环境用例。
+测试基线：`pytest --collect-only -q` → **191 项**本地隔离测试；全部为本地隔离 / 模拟环境用例。
 
 ---
 
@@ -19,7 +19,7 @@
 
 ### 0.2 关键声明（务必与结论一同引用）
 
-1. **测试通过 ≠ 实盘通过 ≠ 真实账号通过。** 本仓库全部 164 项测试均在 `BYBITBOT_TESTING=1` 下运行，`tests/conftest.py::block_exchange_network` 会阻断一切外部 HTTP，交易所行为全部由 `httpx.MockTransport` 与 `PaperAdapter` 合成。因此所有证据仅覆盖「代码在合成环境下的行为」，**不构成 Bybit 真实接口、真实账户模式、真实期权链、真实成交/撤单/结算能力的证据**。
+1. **测试通过 ≠ 实盘通过 ≠ 真实账号通过。** 本仓库全部 191 项测试均在 `BYBITBOT_TESTING=1` 下运行，`tests/conftest.py::block_exchange_network` 会阻断一切外部 HTTP，交易所行为全部由 `httpx.MockTransport` 与 `PaperAdapter` 合成。因此所有证据仅覆盖「代码在合成环境下的行为」，**不构成 Bybit 真实接口、真实账户模式、真实期权链、真实成交/撤单/结算能力的证据**。
 2. **未提供真实 Bybit API Key/secret**，`config/credentials*.json` 未装载，`runtime.option_units_verified` 仍为未验证态。真实 Demo/Testnet 能力（AC-24）与实盘能力均**未取得任何真实证据**。
 3. **「实盘可用」相关门槛全部未开启**：`live_gates.live_allowed=false`、`acceptance_record_ref=null`、`manual_enable_ref=null`（`config/config.example.yaml:192-195`），`ops.alert_channels=[]`、`ops.risk_start_at=null`。`TradingService.start()` 在 `live` 下会直接拒绝启动（`src/bybitbot/service.py:217-222`）。
 4. 本文档描述的是**当前代码 + 当前测试**的验收状态，不沿用任何历史结论（例如"全部 M3 完成"）。`docs/requirements.md` §8 末段"当前仅交付文档，没有创建账户、部署服务或执行任何交易"是需求撰写时点的历史描述，**不是当前事实**；当前事实见 §4。
@@ -54,11 +54,11 @@
 | M4a 受限实盘 | **未开始** | 无实盘允许配置、无验收记录、无人工启用记录、无真实凭据 |
 | M4b 正式无人值守 | **未开始** | — |
 
-### 1.3 最关键的 9 个缺口（按阻断性排序）
+### 1.3 最关键的 9 个缺口（G1、G9 已于本轮关闭）
 
 | # | 缺口 | 影响用例 | 说明 |
 |---|---|---|---|
-| G1 | **`valuation.py` 零测试**：`value_account` / `day_pnl` / `adjusted_equity` / `drawdown_amount` 无任何单元测试 | AC-17, AC-25 | 日亏损、回撤、资金流调整口径是风控熔断的输入，公式正确性目前只有人工阅读保证 |
+| G1 | ~~**`valuation.py` 零测试**~~ **已关闭** | AC-17, AC-25 | 新增 `tests/test_valuation_secrets.py`（27 项）：覆盖 `value_account` 的自有净现金+期权价值口径、负债不完整、缺汇率/缺标记价、合约乘数、空头不计值、日损益扣除资金流、回撤不为负、日界线跨时区 |
 | G2 | **`clock.py` 关键符号零测试**（测试只导入 `now_utc`），且时钟跳变/偏差"暂停新开仓"无端到端断言 | AC-26 | NFR-06 的核心保护未经验证 |
 | G3 | **风控拒绝分支大面积无测试**：`SIGNAL_FRESHNESS` / `PER_TRADE_LIMIT` / `PRICE_DEVIATION` / `SPREAD` / `FEE_BUFFER` / `MAX_OPEN_ORDERS` / `SPOT_EXPOSURE` / `PREMIUM_BUDGET` / `PREMIUM_CONCENTRATION_*` / `OPTION_EXPIRY` / `NO_OPEN_WINDOW` 在 `tests/` 中**一次都没有出现** | AC-06, AC-14, AC-15, AC-27 | 风控引擎实现了 20+ 检查码，测试只触及 6 个；RSK-01/03/05 的多数拒绝路径无证据 |
 | G4 | **性能与容量无任何测试**（NFR-01/02/05）：无 P95 延迟测量、无容量上限测试、无磁盘不足暂停测试、无数据保留清理实现 | AC-22, AC-26 | `ops.retention_days=365` / `raw_market_data_retention_days=7` 只有配置项，全仓检索无任何 purge/prune 实现 |
@@ -66,7 +66,7 @@
 | G6 | **策略配置版本变更链路无测试**：不可变版本递增、旧订单保留原决策版本、收紧限额后重评未完成挂单、停用策略撤单，均无断言 | AC-06 | `service._apply_config` 有实现但测试只间接用到 `strategy_version` |
 | G7 | **非实盘环境能力完全未验证**：期权权限、`reduceOnly`、持仓模式、Greeks 单位、到期结算结构 | AC-24 | 仅有 MockTransport 契约测试 |
 | G8 | **告警与外部监控的端到端链路未验证**：真实通知渠道未配置（`alert_channels: []`）；Mac 端监控已投运但**告警送达路径未做真实触发演练** | AC-20 | 投递逻辑只在本地 MockTransport 下测过 |
-| G9 | **`settings/secrets.py` 零测试**：交易凭据文件的权限过宽拒绝、属主校验、缺字段拒绝全部无断言 | AC-21 | SEC-01 的第一道防线没有回归保护；`test_admin_file_rejects_broad_or_wrong_mode` 测的是管理员登录文件，不能替代凭据文件 |
+| G9 | ~~**`settings/secrets.py` 零测试**~~ **已关闭** | AC-21 | 同批新增：权限过宽（0644/0640）拒绝、文件缺失、字段缺失、非法 JSON、`repr`/`masked_summary` 不泄露明文、`redact()` 脱敏。
 
 ---
 
@@ -90,7 +90,7 @@
 | AC-14 | RSK-05、OPT-03 | 部分验证 | `test_opposite_orders_cannot_offset`、`test_unquantified_delta_rejected`、`test_risk_uses_cash_and_two_sided_per_base_delta`、`test_missing_option_greeks_never_zero_delta` | 大负 Delta、已确认外部库存、现货新单改变账户 Delta 无独立场景；**权利金/到期集中度/价格边界超限拒绝全部无测试**；Greeks 单位映射未用样例验证；Gamma/Vega/Theta 有记录字段但无验收断言 |
 | AC-15 | OPT-04、LED-01 | 部分验证 | `test_paper_settlement_checkpoint_and_ledger_replay[90-0]`、`test_paper_settlement_checkpoint_and_ledger_replay[120-2]`、`test_settlement_evidence_idempotency_and_cost_release`、`test_invalid_book_and_non_touch_do_not_fill` | 禁开仓窗口拒绝买入 / TTL 不晚于窗口起点 / 进入窗口撤单 / 撤单未成功告警展示余量，**四者全部无测试**；到期结算用合成 fixture，非真实交割结构 |
 | AC-16 | LED-02/03、OPT-02 | 部分验证 | `test_external_fill_is_recorded_but_never_owned`、`test_external_cash_change_cannot_be_clean_recon`、`test_missing_position_locks_inventory_and_keeps_cost`、`test_reconciliation_retains_offline_fill_and_watermark` | "不自动撤销人工单"无测试；"人工确认后审计化重建基线"整链无端到端测试；导入已有库存的归属与成本来源无测试 |
-| AC-17 | LED-04、RSK-03 | 部分验证 | `test_start_baseline_takeover_trade_restart`、`test_external_cash_change_cannot_be_clean_recon`、`test_loss_pause_does_not_block_trusted_reduce` | **估值公式零测试**；重启不重置回撤高点无跨重启断言；"失效估值不解除暂停"与 `VALUATION_UNAVAILABLE` 属技术暂停（可自动解）的语义**存在冲突需评审**；跨币费用、标记价与买价差异、无重复资产估值均无测试 |
+| AC-17 | LED-04、RSK-03 | 部分验证 | `test_start_baseline_takeover_trade_restart`、`test_external_cash_change_cannot_be_clean_recon`、`test_loss_pause_does_not_block_trusted_reduce`、`test_equity_is_own_cash_plus_option_value_without_double_counting`、`test_day_pnl_subtracts_external_flow`、`test_adjusted_equity_removes_cumulative_flow`、`test_drawdown_is_peak_minus_current_and_never_negative` | 估值公式已补单元测试（本轮）；重启不重置回撤高点无跨重启断言；"失效估值不解除暂停"与 `VALUATION_UNAVAILABLE` 属技术暂停（可自动解）的语义**存在冲突需评审**；跨币费用、标记价与买价差异、无重复资产估值均无测试 |
 | AC-18 | RSK-04、OPS-02/03 | 部分验证 | `test_loss_pause_does_not_block_trusted_reduce`、`test_all_commands_only_enqueue_once`、`test_commands_reject_invalid_scope_and_confirmation`、`test_completed_command_preserves_actual_results` | "触发亏损阈值→停止开仓并撤销 bot 买单"端到端无测试；DB 不可写不新发单无测试；重启/换日不解除锁定无跨重启断言；RESUME 前置对账校验无测试 |
 | AC-19 | OPS-01/02 | 部分验证 | `test_status_is_environment_scoped_and_allowlisted`、`test_csv_trace_joins_and_escapes_formulas`、`test_console_requires_session_and_serves_local_assets`、`test_all_commands_only_enqueue_once` | 状态页字段齐全（含 `risk_rejects`、`orders`、`alerts`、`reconciliations.differences`），但**测试未断言币种/未知订单/风控拒绝原因的具体展示**；金额带币种的覆盖面未逐项断言 |
 | AC-20 | OPS-04/05、NFR-03 | 部分验证 | `test_delivery_retry_dedupe_and_resolution`、`test_independent_monitor_three_misses_one_alert_and_recovery`、`test_offsite_backup_staleness_is_independent_of_health`、`test_backup_age_uses_dump_time_instead_of_copy_time`、`test_installer_keeps_jobs_outside_protected_desktop` | 真实通知渠道未配置（`alert_channels: []`），仅 MockTransport；"关键告警超时未送达→暂停新增风险"（`service.py:1917`）无测试；"告警含剩余仓位"无断言；8 类告警触发源未逐项测 |
@@ -384,7 +384,7 @@
 
 ---
 
-### AC-17 · LED-04 / RSK-03 —— 部分验证（**本矩阵中最弱的一条**）
+### AC-17 · LED-04 / RSK-03 —— 部分验证（估值口径已补测，其余仍待补）
 
 **已取证**
 - `test_start_baseline_takeover_trade_restart`：启动后 `baseline_ok=False` → 必须显式 `INITIALIZE_BASELINE` → `baseline_ok=True`；`EquityBaseline` 恰好 1 条；重启后 `baseline_ok` 仍为真。
@@ -392,11 +392,7 @@
 - `test_loss_pause_does_not_block_trusted_reduce`：亏损触发时可信减仓仍放行。
 
 **剩余差距（本条缺口最多）**
-1. **`valuation.py` 零测试**。`value_account`、`day_pnl`、`adjusted_equity`、`drawdown_amount`、`local_day_start_utc` 全部没有任何单元测试。而这四个函数正是：
-   - 日亏损熔断的输入（`service.py:906`）
-   - 回撤熔断的输入（`service.py:907`）
-   - `PnL_day = Equity(t) − Equity(day_start) − NetExternalFlow` 的唯一实现
-   需求 §4.8 用整段文字精确规定了这些口径，**当前没有任何可执行的证据表明实现符合口径**。
+1. ~~**`valuation.py` 零测试**~~ **本轮已关闭**。新增 `tests/test_valuation_secrets.py` 覆盖 `value_account`（自有净现金 + 期权价值、负债即不完整、缺汇率、缺标记价、合约乘数、空头不计值、缺 `wallet_balance`）、`day_pnl`（入金/提现两种符号）、`adjusted_equity`、`drawdown_amount`（不为负）、`day_key`/`day_start` 跨时区日界线。此前无任何可执行证据表明实现符合 §4.8 口径，现在有了。
 2. **"重启不重置高点"无跨重启断言**。`drawdown_peak` 在 `_baseline` 里继承 `previous.drawdown_peak`（`service.py:895`），但没有"重启后回撤高点不变"的测试。
 3. **"日初基线缺失时拒绝开仓"无直接断言**。
 4. **"首次接入显式初始化并标记不完整交易日"** —— `establish_baseline` 写了 `incomplete_day: True`（`service.py:956`、`web/app.py:392`），前端也区分展示；但**没有测试断言该标记被持久化并在状态页正确区分**。
@@ -465,7 +461,7 @@
 - 写操作保护：`test_control_requires_origin_and_csrf`（4 参数：正确 Origin 缺 CSRF → 403；错 CSRF → 403；错 Origin → 403；`Sec-Fetch-Site: cross-site` → 403；越权 `/api/logout` → 403；**失败时不产生任何 `ControlCommand`**）。
 - 认证文件：`test_admin_file_rejects_broad_or_wrong_mode`（3 个权限位）、`test_admin_file_rejects_symlink_and_malformed_hash`（拒绝软链接、拒绝畸形 hash）、`test_admin_generation_permissions_no_overwrite`（0600、不打印密码、拒绝覆盖）。
 - 脱敏：`test_read_permission_failure_is_not_retried_and_raw_message_redacted`、`test_status_is_environment_scoped_and_allowlisted`、`test_csv_trace_joins_and_escapes_formulas`、`test_private_auth_requires_positive_matching_ack_and_redacts_response`。
-- 凭据不装载：`test_public_reads_have_no_auth_and_paper_discards_credentials`；`settings/secrets.py` 实现 0600 + 属主校验 + `ApiCredentials.__repr__` 只输出前 6 位 —— **但该模块无任何测试导入，见下方缺口 6**。
+- 凭据不装载：`test_public_reads_have_no_auth_and_paper_discards_credentials`；`settings/secrets.py` 实现 0600 + 属主校验 + `ApiCredentials.__repr__` 只输出前 6 位 —— **本轮已补测**：`test_credentials_reject_broad_permissions`、`test_credentials_reject_group_or_world_readable_file`、`test_credentials_reject_missing_file`、`test_credentials_reject_missing_fields`、`test_credentials_reject_invalid_json`、`test_credentials_repr_and_summary_never_show_secret`、`test_redact_removes_known_secrets_but_keeps_short_ones`。
 - 测试隔离：`tests/conftest.py::block_exchange_network` 阻断一切外部 HTTP；`BYBITBOT_TESTING=1` 下实盘写被拒（`test_live_test_guard_blocks_even_explicit_enabled_mock_write`）。
 - 依赖固定：`uv.lock` 存在，CI 用 `uv sync --frozen`。
 
@@ -475,14 +471,14 @@
 3. **"绑定固定出口 IP"只测了解析**：确认了 `*` 通配不算绑定、CIDR 不算绑定，但**没有验证部署出口 IP 是否与 Key 绑定的 IP 一致**（NAS 的真实出口 IP 未知）。
 4. **凭据轮换流程无测试**。需求要求"轮换密钥时先暂停开仓并核对在途订单，验证新凭据后再恢复；失效或泄露凭据对应的操作流程必须可执行"。`CONFIRM_TAKEOVER` / `PAUSE_NEW_RISK` 可作为流程组件，但**"轮换"这一动作本身没有流程实现或测试**。
 5. **"关闭提现及不需要的划转"只被解析未被强制**：`test_wildcard_does_not_become_bound_because_real_ip_also_present` 断言 `info.withdraw_enabled` 为真值，**但没有"提现权限被打开 → 拒绝启动/告警"的测试**。这是 SEC-01 的明确要求，目前只有信息展示。
-6. **`settings/secrets.py` 完全没有测试**（该模块在 `tests/` 中一次都没有被导入）。`load_credentials` 的**权限过宽拒绝（`mode & 0o077`）、属主校验（`st_uid != os.getuid()`）、缺字段拒绝**是 SEC-01"密钥仅供交易适配器使用，通过受限配置文件注入"的第一道防线，**目前没有一条断言保护它**。注意 `test_admin_file_rejects_broad_or_wrong_mode` 测的是**管理员登录文件**（`admin.json`），不是**交易凭据文件**（`credentials*.json`），两者不能互相替代。`redact()` 的兜底脱敏同样无测试。
+6. ~~**`settings/secrets.py` 完全没有测试**~~ **本轮已关闭**。权限过宽拒绝、属主校验、缺字段拒绝、非法 JSON、`__repr__`/`masked_summary` 不泄露明文、`redact()` 兜底脱敏均已有断言（见上方"凭据不装载"一行）。剩余未覆盖的是"凭据文件被读取后是否有任何路径把它写进日志/URL/表"——那属于缺口 1 的全量扫描范畴。
 7. **"部署产物带版本号"**：CI 未做镜像构建/版本标记验证。
 
 ---
 
 ### AC-22 · NFR-01 / NFR-02 / NFR-05 —— **待验证**
 
-**现状**：本条**没有对应的自动化测试**。164 项测试中没有任何一项测量延迟分布、CPU/内存、订阅量或磁盘增长，也没有任何一项断言容量上限。
+**现状**：本条**没有对应的自动化测试**。191 项测试中没有任何一项测量延迟分布、CPU/内存、订阅量或磁盘增长，也没有任何一项断言容量上限。
 
 **逐项差距**
 1. **容量基线（NFR-01）**：`1 账户 / ≤5 策略 / 10 现货对 / 200 期权合约 / ≤1 意图每秒` —— 无任何测试。`settings/loader.py:212` 只对"策略 ≤ 5"做了配置校验，且该校验**本身也无测试**。
@@ -604,7 +600,7 @@
 
 | 项 | 核验结果 | 对验收的意义 |
 |---|---|---|
-| 本地隔离测试 | **164 项全部通过**（与本文 §0 的 `pytest --collect-only` 计数一致） | 证明当前代码在合成环境下自洽；**不证明**任何真实交易所行为 |
+| 本地隔离测试 | **191 项全部通过**（与本文 §0 的 `pytest --collect-only` 计数一致） | 证明当前代码在合成环境下自洽；**不证明**任何真实交易所行为 |
 | 静态检查 | `ruff check src tests deploy` 通过 | 无 lint 违规 |
 | 数据库迁移 | Alembic head = `786d42c1b808`；`alembic check` 无差异 | schema 与模型一致，无待生成迁移 |
 | NAS 镜像 | `910874d2cf3b853ad9758f49b95a812eb2561a141aa5969f0eb79202f8c787c1` | 产物可追溯到唯一镜像 |
@@ -626,7 +622,7 @@
 
 | 序 | 目标 | 新增/修改 | 关闭的缺口 |
 |---|---|---|---|
-| 1 | `valuation.py` 单元测试 | 新增 `tests/test_valuation.py`：覆盖 `value_account`（含负债、缺汇率、缺标记价、组合保证金）、`day_pnl`、`adjusted_equity`、`drawdown_amount`、`local_day_start_utc` 跨日 | G1 / AC-17 / AC-25 |
+| 1 | ~~`valuation.py` 单元测试~~ **已完成**（`tests/test_valuation_secrets.py`） | 已新增 27 项断言 | G1 已关闭 |
 | 2 | `clock.py` 单元测试 | 新增 `tests/test_clock.py`：前跳、回拨、超偏差、`Deadline` 不受墙钟影响、`backoff_delay` 稳定性与抖动边界 | G2 / AC-26 |
 | 3 | 配置校验测试 | 新增 `tests/test_settings.py`：`ConfigError` 断言（独立 DSN、live 缺 UID、币种不一致、策略 > 5、禁开仓 TTL ≥ 订单 TTL、`LiveGateConfig` 三件套、`EnvironmentProfile` paper 禁凭据） | AC-01 / AC-06 |
 | 4 | 风控拒绝分支 | 在 `tests/test_core.py` 补参数化用例，逐个检查码断言拒绝与 `reason_code` | G3 / AC-06 / AC-14 / AC-15 / AC-27 |
@@ -659,7 +655,7 @@
 
 ## 6. 附录
 
-### 附录 A · 测试文件分布（164 项）
+### 附录 A · 测试文件分布（191 项）
 
 | 文件 | 项数 | 主要覆盖 |
 |---|---|---|
@@ -670,18 +666,17 @@
 | `tests/test_service.py` | 7 | 端到端（paper）：基线/接管/重启、定时任务只成交一次、退出重建、结算重放 |
 | `tests/test_paper.py` | 4 | 模拟撮合模型：深度共享、未触价、故障注入、期权平仓 |
 | `tests/test_deploy_ops.py` | 4 | 外部心跳监控（3 次丢失告警）、备份过期独立判定、备份年龄口径、监控安装位置 |
+| `tests/test_valuation_secrets.py` | 27 | 估值口径（权益、日损益、回撤、日界线）与凭据装载权限/脱敏 |
 | `tests/test_ops.py` | 1 | 告警投递重试/去重/恢复 |
 | `tests/test_cli.py` | 1 | 管理员凭据生成（0600、不打印、拒绝覆盖） |
-| **合计** | **164** | |
+| **合计** | **191** | |
 
-### 附录 B · **完全没有直接测试**的模块
+### 附录 B · **完全没有直接测试**的模块（本轮已补测 valuation.py 与 settings/secrets.py）
 
-按"`tests/` 中是否 `import bybitbot.<模块>`"统计。共 7 个模块在 164 项测试中从未被直接导入：
+按"`tests/` 中是否 `import bybitbot.<模块>`"统计。原为 7 个模块，`valuation.py` 与 `settings/secrets.py` 已于本轮补测，现剩 5 个：
 
 | 模块 | 行数 | 风险 | 说明 |
 |---|---|---|---|
-| `src/bybitbot/valuation.py` | 222 | **高** | 熔断口径的唯一实现（AC-17）：`value_account` / `day_pnl` / `adjusted_equity` / `drawdown_amount` 全部无断言 |
-| `src/bybitbot/settings/secrets.py` | 112 | **高** | SEC-01 第一道防线（AC-21）：权限过宽拒绝、属主校验、缺字段拒绝、`redact()` 兜底脱敏均无测试 |
 | `src/bybitbot/money.py` | 160 | 中 | 精度与舍入方向（"精度向不扩大支出的方向处理"）无直接断言，仅间接经由服务层结果观察 |
 | `src/bybitbot/market.py` | 383 | 中 | 规格更新 / 退市处理 / 快照持久化无直接断言 |
 | `src/bybitbot/ops/state.py` | 124 | 中 | 运行状态机（`STARTING/RECONCILING/RUNNING/PAUSED_OPEN/EXITING/STOPPED`）的转换规则无直接断言 |
@@ -730,13 +725,13 @@
 | LED-01 | AC-10 / AC-15 | 部分验证 | 更正事件无测试 |
 | LED-02 | AC-09 / AC-16 / AC-23 | 部分验证 | 崩溃演练、恢复演练缺口 |
 | LED-03 | AC-16 | 部分验证 | 不自动撤人工单无断言 |
-| LED-04 | AC-17 / AC-25 | 部分验证 | **估值公式零测试** |
+| LED-04 | AC-17 / AC-25 | 部分验证 | 估值公式已补测；跨重启高点、跨币费用未测 |
 | OPS-01 | AC-19 | 部分验证 | 状态页字段断言不完整 |
 | OPS-02 | AC-19 / AC-18 | 部分验证 | 范围校验充分，联动端到端缺 |
 | OPS-03 | AC-18 | 部分验证 | 重启/换日不解除锁定无断言 |
 | OPS-04 | AC-20 | 部分验证 | 真实渠道未配置 |
 | OPS-05 | AC-20 / AC-23 | 部分验证 | 监控已投运；告警送达未实测 |
-| SEC-01 | AC-21 | 部分验证 | 无泄漏扫描；提现权限未强制 |
+| SEC-01 | AC-21 | 部分验证 | 凭据文件权限/脱敏已补测；无泄漏扫描；提现权限未强制 |
 | SEC-02 | AC-21 | 部分验证 | DB 公网暴露无检查 |
 | SEC-03 | AC-21 | 部分验证 | 轮换流程未实现 |
 | NFR-01 | AC-22 | 待验证 | 无容量测试 |
