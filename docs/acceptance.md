@@ -626,7 +626,7 @@
 | 2 | `clock.py` 单元测试 | 新增 `tests/test_clock.py`：前跳、回拨、超偏差、`Deadline` 不受墙钟影响、`backoff_delay` 稳定性与抖动边界 | G2 / AC-26 |
 | 3 | 配置校验测试 | 新增 `tests/test_settings.py`：`ConfigError` 断言（独立 DSN、live 缺 UID、币种不一致、策略 > 5、禁开仓 TTL ≥ 订单 TTL、`LiveGateConfig` 三件套、`EnvironmentProfile` paper 禁凭据） | AC-01 / AC-06 |
 | 4 | 风控拒绝分支 | 在 `tests/test_core.py` 补参数化用例，逐个检查码断言拒绝与 `reason_code` | G3 / AC-06 / AC-14 / AC-15 / AC-27 |
-| 4b | 凭据文件安全 | 新增 `tests/test_secrets.py`：权限过宽（0644/0666/0604）拒绝、属主不符拒绝、缺 `api_key`/`api_secret` 拒绝、`redact()` 兜底脱敏、`ApiCredentials.__repr__` 不泄露 | G9 / AC-21 |
+| 4b | ~~凭据文件安全~~ **已完成**（`tests/test_valuation_secrets.py`） | 权限过宽（0644/0640）拒绝、文件缺失、字段缺失、非法 JSON、`redact()` 兜底脱敏、`ApiCredentials.__repr__` 不泄露 | G9 已关闭 |
 
 ### 第二批：补服务层闭环（端到端）
 
