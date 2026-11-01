@@ -6,10 +6,11 @@
 from __future__ import annotations
 
 import datetime as dt
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Any
 
+from bybitbot.fees import FeeModel
 from bybitbot.money import Rounding, round_to_step
 from bybitbot.strategy.base import IntentDraft, SignalContext, StrategyDeps
 
@@ -43,7 +44,9 @@ class OptionBuyParams:
     max_spread_ratio: Decimal = Decimal("0.05")
     ttl_seconds: int = 120
     enabled: bool = False
-    fee_rate: Decimal = Decimal("0.0015")
+    #: 期权费用口径（CR-02）：按官方公式随标的指数价变化，
+    #: 缺指数价时按封顶比例估算（保守方向）。
+    fee_model: FeeModel = field(default_factory=FeeModel.conservative_default)
     allowed_types: frozenset[str] = frozenset({"Call", "Put"})
 
 
@@ -155,7 +158,8 @@ class ScheduledOptionBuyStrategy:
         best = candidates[0]
         spec = best["instrument"]
         price = round_to_step(best["premium"], spec.tick_size, Rounding.DOWN)
-        qty = _sized(spec, price, p.premium_budget, p.fee_rate)
+        ratio = self._fee_ratio(p, price, best["index_price"])
+        qty = _sized(spec, price, p.premium_budget, ratio)
         if qty <= 0:
             return []
         return [
@@ -179,10 +183,15 @@ class ScheduledOptionBuyStrategy:
                     "chosen": spec.symbol,
                     "sort_rule": "ask asc, expiry asc, symbol asc",
                     "delta": str(best["delta"]),
-                    "fee_rate": str(p.fee_rate),
+                    "fee_rate": str(ratio),
+                    "fee_version": p.fee_model.version,
                 },
             )
         ]
+
+    def _fee_ratio(self, params: OptionBuyParams, price: Decimal, index_price) -> Decimal:
+        """期权费用占权利金的比例（CR-02）。"""
+        return params.fee_model.option_fee_ratio(option_price=price, index_price=index_price)
 
     def _candidates(self, deps: StrategyDeps, now: dt.datetime) -> list[dict[str, Any]]:
         p = self.params
@@ -249,6 +258,7 @@ class ScheduledOptionBuyStrategy:
                     "expiry": spec.delivery_time,
                     "symbol": spec.symbol,
                     "delta": quote.delta,
+                    "index_price": getattr(quote, "index_price", None),
                 }
             )
         return out

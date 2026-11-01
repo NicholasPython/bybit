@@ -146,6 +146,8 @@ class LedgerWriter:
         category: str = "spot",
         base_asset: str | None = None,
         fee_value: Decimal | None = None,
+        intent_id: int | None = None,
+        exec_time: dt.datetime | None = None,
     ) -> tuple[Decimal, Decimal]:
         """把一笔成交计入策略归属库存。
 
@@ -220,6 +222,11 @@ class LedgerWriter:
                     cost_source="bot_fill",
                 )
                 session.add(inventory)
+            if old_qty == 0:
+                if exec_time is not None and exec_time.tzinfo is None:
+                    raise ValueError("库存周期起点必须有时区")
+                inventory.episode_started_at = exec_time
+                inventory.episode_intent_id = intent_id
             inventory.qty = new_qty
             inventory.avg_cost = new_avg
             if unvalued_fee or not known_cost:

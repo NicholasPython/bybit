@@ -543,6 +543,11 @@ class Inventory(Base):
     trusted: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     #: 外部导入的库存须记录成本来源（LED-03）。
     cost_source: Mapped[str | None] = mapped_column(String(64))
+    #: 库存从零变为正数的真实成交；完整平仓后下一笔买入重新计时。
+    episode_started_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    episode_intent_id: Mapped[int | None] = mapped_column(
+        ForeignKey("trade_intent.id", ondelete="SET NULL")
+    )
     updated_at: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False
     )

@@ -38,6 +38,7 @@ from bybitbot.adapters.base import (
     InstrumentSpec,
     InsufficientCapability,
     KeyInfo,
+    OptionDeliveryView,
     OrderAck,
     OrderBook,
     OrderRejected,
@@ -657,6 +658,223 @@ class BybitRestAdapter:
                             views[(category, view.exec_id)] = view
         return list(views.values())
 
+    async def get_option_deliveries(
+        self,
+        spec: InstrumentSpec,
+        *,
+        start_time: dt.datetime,
+        end_time: dt.datetime,
+    ) -> list[OptionDeliveryView]:
+        """Read expiry facts without asserting account or position reconciliation.
+
+        Contracts: /docs/v5/asset/delivery, /docs/v5/account/transaction-log and
+        /docs/v5/position/close-position on bybit-exchange.github.io. Delivery
+        records have neither a currency nor a unique ID. Their deliveryRpl is
+        not gross payout, and their fee has no verified option-specific meaning.
+        Positive payout therefore requires an exact DELIVERY cash-log anchor.
+        A zero payout without such a log requires a zero-fee closed-position
+        record. Unsupported/ambiguous facts fail rather than becoming a trade.
+        """
+        _validate_delivery_spec(spec)
+        if start_time is None or end_time is None:
+            raise ValueError("Option delivery queries require explicit start and end times")
+        windows = _execution_windows(start_time, end_time)
+        deliveries = await self._delivery_rows(
+            "/v5/asset/delivery-record",
+            {"category": "option", "symbol": spec.symbol, "limit": 50},
+            windows,
+            spec=spec,
+            time_field="deliveryTime",
+        )
+        if not deliveries:
+            return []
+        # One long position per symbol expires once. Splits or repeated rows
+        # cannot be safely interpreted as additive deliveries by this contract.
+        if len(deliveries) != 1:
+            raise BybitRestError("Multiple option delivery records are ambiguous")
+        delivery = deliveries[0]
+        occurred_at = _delivery_time(delivery, "deliveryTime", spec)
+        if _text(delivery, "side") != "Buy":
+            raise BybitRestError("Only long option deliveries are supported")
+        qty = _number(delivery, "position", nonnegative=True)
+        price = _number(delivery, "deliveryPrice", nonnegative=True)
+        strike = _number(delivery, "strike", nonnegative=True)
+        if qty <= 0 or price <= 0 or strike != spec.strike_price:
+            raise BybitRestError("Option delivery quantity, price or strike mismatch")
+        intrinsic = price - strike if spec.options_type == "Call" else strike - price
+        payout = max(Decimal(0), intrinsic) * qty
+        logs = await self._delivery_rows(
+            "/v5/account/transaction-log",
+            {
+                "accountType": "UNIFIED",
+                "category": "option",
+                "type": "DELIVERY",
+                "currency": spec.settle_coin,
+                "baseCoin": spec.base_coin,
+                "limit": 50,
+            },
+            windows,
+            spec=spec,
+            time_field="transactionTime",
+        )
+        if len(logs) > 1:
+            raise BybitRestError("Multiple option DELIVERY transaction logs are ambiguous")
+        evidence: dict[str, object] = {
+            "source": "bybit",
+            "delivery_source": "/v5/asset/delivery-record",
+            "delivery": {
+                "symbol": spec.symbol,
+                "side": "Buy",
+                "position": str(qty),
+                "deliveryTime": int(occurred_at.timestamp() * 1000),
+                "deliveryPrice": str(price),
+                "strike": str(strike),
+            },
+            "transaction_log_ids": [],
+        }
+        if logs:
+            log = logs[0]
+            _delivery_time(log, "transactionTime", spec)
+            fee = _number(log, "fee", nonnegative=True)
+            if (
+                _text(log, "side") != "Buy"
+                or _number(log, "qty", nonnegative=True) != qty
+                or _number(log, "cashFlow") != payout
+                or _number(log, "funding") != 0
+                or _number(log, "change") != payout - fee
+            ):
+                raise BybitRestError("Option DELIVERY cash, quantity, side or fee mismatch")
+            log_id = _text(log, "id")
+            if not re.fullmatch(r"[A-Za-z0-9_.:-]{1,256}", log_id):
+                raise BybitRestError("Invalid option DELIVERY transaction id")
+            evidence.update(
+                fee_source="/v5/account/transaction-log",
+                transaction_log_ids=[log_id],
+                transaction_log={
+                    "id": log_id,
+                    "category": "option",
+                    "type": "DELIVERY",
+                    "symbol": spec.symbol,
+                    "side": "Buy",
+                    "currency": spec.settle_coin,
+                    "qty": str(qty),
+                    "cashFlow": str(payout),
+                    "fee": str(fee),
+                    "funding": "0",
+                    "change": str(payout - fee),
+                    "transactionTime": int(
+                        _delivery_time(log, "transactionTime", spec).timestamp() * 1000
+                    ),
+                },
+            )
+        elif payout != 0:
+            raise BybitRestError("Positive option payout missing DELIVERY transaction log")
+        else:
+            # Zero is the only delivery-record.fee value used here. A missing
+            # log alone never establishes that an expired option paid nothing.
+            if _number(delivery, "fee") != 0:
+                raise BybitRestError("Unanchored zero payout requires zero delivery-record fee")
+            # A conservative subset of the documented six-calendar-month
+            # retention; never treat an out-of-retention empty page as proof.
+            if occurred_at < now_utc() - dt.timedelta(days=180):
+                raise InsufficientCapability("Zero-payout proof outside six-month history")
+            expiry_ms = int(spec.delivery_time.timestamp() * 1000)
+            proof_windows = [
+                (max(start, expiry_ms), min(end, expiry_ms + 60_000))
+                for start, end in windows
+                if start <= expiry_ms + 60_000 and end >= expiry_ms
+            ]
+            closed = await self._delivery_rows(
+                "/v5/position/get-closed-positions",
+                {"category": "option", "symbol": spec.symbol, "limit": 100},
+                proof_windows,
+                spec=spec,
+                time_field="closeTime",
+            )
+            if len(closed) != 1:
+                raise BybitRestError("Zero option payout missing unique closed-position proof")
+            proof = closed[0]
+            _delivery_time(proof, "closeTime", spec)
+            if (
+                _text(proof, "side") != "Buy"
+                or _number(proof, "qty", nonnegative=True) != qty
+                or _number(proof, "deliveryPrice") != price
+                or _number(proof, "deliveryFee") != 0
+                or _number(proof, "totalCloseFee") != 0
+            ):
+                raise BybitRestError("Closed position is not matching zero-fee option expiry")
+            fee = Decimal(0)
+            evidence.update(
+                fee_source="/v5/position/get-closed-positions",
+                closed_position={
+                    "symbol": spec.symbol,
+                    "side": "Buy",
+                    "qty": str(qty),
+                    "closeTime": int(_delivery_time(proof, "closeTime", spec).timestamp() * 1000),
+                    "deliveryPrice": str(price),
+                    "deliveryFee": "0",
+                    "totalCloseFee": "0",
+                },
+            )
+        stamp = int(occurred_at.timestamp() * 1000)
+        digest = hashlib.sha256(f"{spec.symbol}:{stamp}".encode("ascii")).hexdigest()
+        return [
+            OptionDeliveryView(
+                settlement_id=f"bybit-option-{digest}",
+                symbol=spec.symbol,
+                side="Buy",
+                qty=qty,
+                currency=spec.settle_coin,
+                payout=payout,
+                fee=fee,
+                occurred_at=occurred_at,
+                delivery_price=price,
+                strike_price=strike,
+                reference=f"/v5/asset/delivery-record:{spec.symbol}:{stamp}",
+                evidence=evidence,
+            )
+        ]
+
+    async def _delivery_rows(self, path, params, windows, *, spec, time_field):
+        """Finish bounded pagination and validate filters before returning rows."""
+        rows = []
+        page_count = 0
+        for start_ms, end_ms in windows:
+            async for page in self._pages(
+                path, {**params, "startTime": start_ms, "endTime": end_ms}
+            ):
+                page_count += 1
+                if page_count > 1000:
+                    raise InsufficientCapability("Option delivery query exceeds bounded capacity")
+                cash_log = path == "/v5/account/transaction-log"
+                if not cash_log and page.get("category") != "option":
+                    raise BybitRestError("Option delivery response missing category")
+                for item in _items(page):
+                    event_time = _timestamp(item.get(time_field))
+                    if event_time is None or not (
+                        start_ms <= int(event_time.timestamp() * 1000) <= end_ms
+                    ):
+                        raise BybitRestError("Option delivery response outside requested window")
+                    symbol = _text(item, "symbol")
+                    if cash_log:
+                        if (
+                            item.get("category") != "option"
+                            or item.get("type") != "DELIVERY"
+                            or item.get("currency") != spec.settle_coin
+                            or symbol.split("-")[0] != spec.base_coin
+                        ):
+                            raise BybitRestError(
+                                "Option DELIVERY category, type or currency mismatch"
+                            )
+                        # Transaction-log has no documented symbol parameter.
+                        # Other symbols of the requested base/currency are valid.
+                        if symbol != spec.symbol:
+                            continue
+                    elif symbol != spec.symbol:
+                        raise BybitRestError("Option delivery symbol filter mismatch")
+                    rows.append(item)
+        return rows
+
     async def get_key_info(self) -> KeyInfo:
         info = await self._get("/v5/user/query-api")
         permissions = info.get("permissions")
@@ -790,6 +1008,43 @@ class BybitRestAdapter:
     async def execution_updates(self, category: str) -> AsyncIterator[ExecutionUpdate]:
         return
         yield  # pragma: no cover
+
+
+def _validate_delivery_spec(spec: InstrumentSpec) -> None:
+    """Only the verified cash-settled vanilla long-option contract is supported."""
+    parts = spec.symbol.split("-")
+    if (
+        spec.category != "option"
+        or spec.options_type not in {"Call", "Put"}
+        or spec.settle_coin not in {"USDT", "USDC"}
+        or spec.quote_coin != spec.settle_coin
+        or not re.fullmatch(r"[A-Z0-9]+", spec.base_coin)
+        or len(parts) not in {4, 5}
+        or parts[0] != spec.base_coin
+        or parts[3] != ("C" if spec.options_type == "Call" else "P")
+        or (len(parts) == 5 and parts[4] != spec.settle_coin)
+        or spec.strike_price is None
+        or not spec.strike_price.is_finite()
+        or spec.strike_price <= 0
+        or _strike_from_symbol(spec.symbol) != spec.strike_price
+        or spec.delivery_time is None
+        or spec.delivery_time.tzinfo is None
+        or spec.delivery_time.utcoffset() is None
+    ):
+        raise InsufficientCapability("Unverified option delivery instrument or settlement currency")
+    try:
+        expiry_date = dt.datetime.strptime(parts[1], "%d%b%y").date()
+    except ValueError:
+        raise InsufficientCapability("Unverified option symbol expiry date") from None
+    if expiry_date != spec.delivery_time.astimezone(dt.UTC).date():
+        raise InsufficientCapability("Option symbol expiry disagrees with instrument delivery time")
+
+
+def _delivery_time(item: dict[str, Any], field: str, spec: InstrumentSpec) -> dt.datetime:
+    value = _timestamp(item.get(field))
+    if value is None or not 0 <= (value - spec.delivery_time).total_seconds() <= 60:
+        raise BybitRestError("Option delivery timestamp does not match instrument expiry")
+    return value
 
 
 def _execution_windows(

@@ -8,7 +8,7 @@ from decimal import Decimal
 
 from sqlalchemy import func, select
 
-from bybitbot.adapters.base import PositionView, TradingAdapter
+from bybitbot.adapters.base import InstrumentSpec, PositionView, TradingAdapter
 from bybitbot.clock import now_utc
 from bybitbot.db.models import (
     AccountSnapshot,
@@ -117,6 +117,7 @@ class Reconciler:
         results = [
             await self.reconcile_executions(),
             await self.reconcile_orders(),
+            await self.reconcile_settlements(),
             await self.reconcile_positions(),
             await self.reconcile_cash(),
             await self.reconcile_reservations(),
@@ -333,6 +334,137 @@ class Reconciler:
             )
         )
 
+    async def reconcile_settlements(self) -> ReconcileResult:
+        """交割与普通卖出独立；现金及持仓均核对后才释放过期库存成本。"""
+        started = now_utc()
+        result = ReconcileResult("settlements")
+        if self.environment == "paper":
+            return await self._record(result, started)
+        async with self.sessionmaker() as session:
+            specs = list(
+                await session.scalars(
+                    select(Instrument).where(
+                        Instrument.environment == self.environment,
+                        Instrument.category == "option",
+                        Instrument.delivery_time <= started,
+                        Instrument.symbol.in_(
+                            select(Inventory.symbol).where(
+                                Inventory.environment == self.environment, Inventory.qty > 0
+                            )
+                        ),
+                    )
+                )
+            )
+        if not specs:
+            return await self._record(result, started)
+        try:
+            if not hasattr(self.adapter, "get_option_deliveries"):
+                raise ValueError("适配器缺少交割记录能力")
+            account = await self.adapter.get_account()
+            positions = await self.adapter.get_positions("option")
+            if account.account_uid != self.account_uid or account.has_debt:
+                raise ValueError("交割账户身份或自有现金不可信")
+            candidates = []
+            for spec in specs:
+                view = InstrumentSpec(
+                    category="option", symbol=spec.symbol,
+                    base_coin=spec.base_coin, quote_coin=spec.quote_coin,
+                    status=spec.status, settle_coin=spec.settle_coin,
+                    strike_price=spec.strike_price, options_type=spec.options_type,
+                    delivery_time=spec.delivery_time,
+                )
+                facts = await self.adapter.get_option_deliveries(
+                    view,
+                    start_time=spec.delivery_time - dt.timedelta(minutes=1),
+                    end_time=min(started, spec.delivery_time + dt.timedelta(minutes=5)),
+                )
+                if len(facts) != 1:
+                    raise ValueError("交割记录缺失或同合约记录不唯一")
+                fact = facts[0]
+                if (
+                    fact.symbol != spec.symbol or fact.currency != spec.settle_coin
+                    or fact.side != "Buy" or fact.qty <= 0
+                    or fact.occurred_at < spec.delivery_time
+                    or fact.occurred_at > started
+                    or any(p.symbol == spec.symbol and p.size != 0 for p in positions)
+                ):
+                    raise ValueError("交割与完整账户持仓、时间或结算币不符")
+                async with self.sessionmaker() as session:
+                    rows = list(
+                        await session.scalars(
+                            select(Inventory).where(
+                                Inventory.environment == self.environment,
+                                Inventory.symbol == spec.symbol, Inventory.qty > 0,
+                            ).order_by(Inventory.strategy_id)
+                        )
+                    )
+                    active = await session.scalar(
+                        select(Order.id).where(
+                            Order.environment == self.environment, Order.symbol == spec.symbol,
+                            (Order.status.notin_(list(TERMINAL_STATES)))
+                            | (Order.sync_state != SYNC_CONFIRMED),
+                        ).limit(1)
+                    )
+                if (
+                    active is not None or not rows
+                    or any(
+                        row.cost_source != "bot_fill" or row.currency != fact.currency
+                        for row in rows
+                    )
+                    or sum((row.qty for row in rows), ZERO) != fact.qty
+                ):
+                    raise ValueError("交割数量与可信归属不符或仍有活动/未知订单")
+                candidates.append((fact, rows))
+            cash = [
+                (fact.currency, fact.payout - fact.fee, fact.occurred_at)
+                for fact, _ in candidates
+            ]
+            check, anchor = await self._cash_evidence(account, pending_flows=cash)
+            if anchor is None or check:
+                raise ValueError("交割现金尚未与先前可信账户快照核对")
+            # 每个候选都已核对后在同一事务入账，失败时不留下半次分配。
+            async with self.sessionmaker() as session:
+                for fact, rows in candidates:
+                    allocations = []
+                    payout_left, fee_left = fact.payout, fact.fee
+                    for index, row in enumerate(rows):
+                        payout = (
+                            payout_left if index == len(rows) - 1
+                            else fact.payout * row.qty / fact.qty
+                        )
+                        fee = (
+                            fee_left if index == len(rows) - 1
+                            else fact.fee * row.qty / fact.qty
+                        )
+                        payout_left -= payout
+                        fee_left -= fee
+                        allocations.append({
+                            "strategy_id": row.strategy_id, "qty": str(row.qty),
+                            "payout": str(payout), "fee": str(fee),
+                        })
+                    event = await self.ledger.record_option_settlement(
+                        session,
+                        settlement_id=fact.settlement_id, symbol=fact.symbol,
+                        currency=fact.currency, occurred_at=fact.occurred_at,
+                        allocations=allocations,
+                        evidence={
+                            **fact.evidence,
+                            "source": "bybit", "reference": fact.reference,
+                            "positions_reconciled": True, "balance_reconciled": True,
+                            "cash_anchor_snapshot_id": anchor,
+                            "delivery_price": str(fact.delivery_price),
+                            "strike_price": str(fact.strike_price),
+                        },
+                    )
+                    result.repaired = result.repaired or event is not None
+                await session.commit()
+        except Exception as exc:
+            result.differences.append(Difference(
+                "SETTLEMENT_UNVERIFIED",
+                f"交割事实、现金或持仓未核实：{type(exc).__name__}", "CRITICAL",
+            ))
+        return await self._record(result, started)
+
     async def reconcile_positions(self) -> ReconcileResult:
         started = now_utc()
         result = ReconcileResult("positions")
@@ -400,7 +532,7 @@ class Reconciler:
                     ),
                 )
             for view in by_key.values():
-                owned = [item for item in inventory if item.symbol == view.symbol]
+                owned = [item for item in inventory if item.symbol == view.symbol and item.qty > 0]
                 expected = sum((item.qty for item in owned), ZERO)
                 matches = abs(expected - view.size) <= TOLERANCE
                 trusted = (
@@ -449,131 +581,110 @@ class Reconciler:
                     await session.commit()
         return await self._record(result, started)
 
+    async def _cash_evidence(self, account, *, pending_flows=()):
+        """从最近一次可信快照重放现金；未通过的快照不能吸收未解释变化。"""
+        differences = []
+        async with self.sessionmaker() as session:
+            query = select(AccountSnapshot).where(
+                AccountSnapshot.environment == self.environment,
+                AccountSnapshot.account_uid == self.account_uid,
+                AccountSnapshot.complete.is_(True),
+            ).where(
+                # 交割尚未记账期间的快照即使曾完整，也不能吸收该笔现金变化。
+                ~select(Inventory.id).join(
+                    Instrument,
+                    (Instrument.environment == Inventory.environment)
+                    & (Instrument.symbol == Inventory.symbol)
+                    & (Instrument.category == "option"),
+                ).where(
+                    Inventory.environment == self.environment,
+                    Inventory.qty > 0,
+                    Instrument.delivery_time <= AccountSnapshot.captured_at,
+                ).exists()
+            )
+            if pending_flows:
+                query = query.where(
+                    AccountSnapshot.captured_at < min(stamp for _, _, stamp in pending_flows)
+                )
+            previous = await session.scalar(
+                query.order_by(AccountSnapshot.captured_at.desc()).limit(1)
+            )
+            if previous is None:
+                return differences, None
+            executions = list(await session.scalars(select(Execution).where(
+                Execution.environment == self.environment,
+                Execution.exec_time > previous.captured_at,
+            )))
+            flows = list(await session.scalars(select(CashFlow).where(
+                CashFlow.environment == self.environment,
+                CashFlow.occurred_at > previous.captured_at,
+            )))
+            specs = list(await session.scalars(select(Instrument).where(
+                Instrument.environment == self.environment,
+            )))
+        expected = {
+            coin: Decimal(str(value.get("wallet_balance", "NaN")))
+            for coin, value in previous.coins.items()
+            if isinstance(value, dict) and value.get("wallet_balance") is not None
+        }
+        by_symbol = {(spec.category, spec.symbol): spec for spec in specs}
+        for execution in executions:
+            spec = by_symbol.get((execution.category, execution.symbol))
+            currency = None if spec is None else (
+                spec.settle_coin if execution.category == "option" else spec.quote_coin
+            )
+            if currency is None:
+                differences.append(Difference(
+                    "CASH_UNQUANTIFIED", "成交缺少现金单位元数据", "CRITICAL", execution.symbol
+                ))
+                continue
+            buying = execution.side.lower() == "buy"
+            notional = execution.exec_qty * execution.exec_price
+            expected[currency] = expected.get(currency, ZERO) + (-notional if buying else notional)
+            if execution.category == "spot":
+                expected[spec.base_coin] = expected.get(spec.base_coin, ZERO) + (
+                    execution.exec_qty if buying else -execution.exec_qty
+                )
+            if execution.exec_fee:
+                if not execution.exec_fee_asset:
+                    differences.append(Difference(
+                        "CASH_UNQUANTIFIED", "成交费用币种缺失", "CRITICAL", execution.symbol
+                    ))
+                else:
+                    asset = execution.exec_fee_asset
+                    expected[asset] = expected.get(asset, ZERO) - execution.exec_fee
+        for flow in flows:
+            expected[flow.asset] = expected.get(flow.asset, ZERO) + flow.amount
+        for currency, amount, _ in pending_flows:
+            expected[currency] = expected.get(currency, ZERO) + amount
+        for coin in set(expected) | set(account.coins):
+            actual = account.coin(coin).wallet_balance
+            amount = expected.get(coin, ZERO)
+            if (
+                actual is None or not actual.is_finite() or not amount.is_finite()
+                or abs(amount - actual) > TOLERANCE
+            ):
+                differences.append(Difference(
+                    "EXTERNAL_CASH_CHANGE", f"{coin} 现金变化不能由已入账成交/资金流解释",
+                    "CRITICAL", reference=coin,
+                ))
+        return differences, previous.id
+
     async def reconcile_cash(self) -> ReconcileResult:
         started = now_utc()
         result = ReconcileResult("cash")
         try:
             account = await self.adapter.get_account()
             if account.account_uid != self.account_uid or account.has_debt:
-                result.differences.append(
-                    Difference(
-                        "ACCOUNT_UNTRUSTED",
-                        "账户身份不匹配或存在负债",
-                        "CRITICAL",
-                    )
-                )
-                return await self._record(result, started)
-            async with self.sessionmaker() as session:
-                previous = await session.scalar(
-                    select(AccountSnapshot)
-                    .where(
-                        AccountSnapshot.environment == self.environment,
-                        AccountSnapshot.account_uid == self.account_uid,
-                    )
-                    .order_by(AccountSnapshot.captured_at.desc())
-                    .limit(1)
-                )
-                if previous is None:
-                    return await self._record(result, started)
-                executions = list(
-                    await session.scalars(
-                        select(Execution).where(
-                            Execution.environment == self.environment,
-                            Execution.exec_time > previous.captured_at,
-                        )
-                    )
-                )
-                flows = list(
-                    await session.scalars(
-                        select(CashFlow).where(
-                            CashFlow.environment == self.environment,
-                            CashFlow.occurred_at > previous.captured_at,
-                        )
-                    )
-                )
-                specs = list(
-                    await session.scalars(
-                        select(Instrument).where(
-                            Instrument.environment == self.environment,
-                        )
-                    )
-                )
-            expected = {
-                coin: Decimal(str(value.get("wallet_balance", "NaN")))
-                for coin, value in previous.coins.items()
-                if isinstance(value, dict) and value.get("wallet_balance") is not None
-            }
-            by_symbol = {(spec.category, spec.symbol): spec for spec in specs}
-            for execution in executions:
-                spec = by_symbol.get((execution.category, execution.symbol))
-                if spec is None:
-                    result.differences.append(
-                        Difference(
-                            "CASH_UNQUANTIFIED",
-                            "成交缺少现金单位元数据",
-                            "CRITICAL",
-                            execution.symbol,
-                        )
-                    )
-                    continue
-                buying = execution.side.lower() == "buy"
-                currency = spec.settle_coin if execution.category == "option" else spec.quote_coin
-                if currency is None:
-                    result.differences.append(
-                        Difference(
-                            "CASH_UNQUANTIFIED",
-                            "成交缺少结算币",
-                            "CRITICAL",
-                            execution.symbol,
-                        )
-                    )
-                    continue
-                notional = execution.exec_qty * execution.exec_price
-                expected[currency] = expected.get(currency, ZERO) + (
-                    -notional if buying else notional
-                )
-                if execution.category == "spot":
-                    expected[spec.base_coin] = expected.get(spec.base_coin, ZERO) + (
-                        execution.exec_qty if buying else -execution.exec_qty
-                    )
-                if execution.exec_fee:
-                    if not execution.exec_fee_asset:
-                        result.differences.append(
-                            Difference(
-                                "CASH_UNQUANTIFIED",
-                                "成交费用币种缺失",
-                                "CRITICAL",
-                                execution.symbol,
-                            )
-                        )
-                    else:
-                        asset = execution.exec_fee_asset
-                        expected[asset] = expected.get(asset, ZERO) - execution.exec_fee
-            for flow in flows:
-                expected[flow.asset] = expected.get(flow.asset, ZERO) + flow.amount
-            for coin in set(expected) | set(account.coins):
-                actual = account.coin(coin).wallet_balance
-                if (
-                    actual is None
-                    or not expected.get(coin, ZERO).is_finite()
-                    or (abs(expected.get(coin, ZERO) - actual) > TOLERANCE)
-                ):
-                    result.differences.append(
-                        Difference(
-                            "EXTERNAL_CASH_CHANGE",
-                            f"{coin} 现金变化不能由已入账成交/资金流解释",
-                            "CRITICAL",
-                            reference=coin,
-                        )
-                    )
+                result.differences.append(Difference(
+                    "ACCOUNT_UNTRUSTED", "账户身份不匹配或存在负债", "CRITICAL",
+                ))
+            else:
+                result.differences, _ = await self._cash_evidence(account)
         except Exception as exc:
-            result.differences.append(
-                Difference(
-                    "ACCOUNT_QUERY_FAILED",
-                    f"现金查询失败：{type(exc).__name__}",
-                    "CRITICAL",
-                )
-            )
+            result.differences.append(Difference(
+                "ACCOUNT_QUERY_FAILED", f"现金查询失败：{type(exc).__name__}", "CRITICAL",
+            ))
         return await self._record(result, started)
 
     async def reconcile_reservations(self) -> ReconcileResult:

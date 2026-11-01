@@ -46,6 +46,13 @@
       : ["PENDING", "EXECUTING", "PAUSED_OPEN", "WARNING", "NEEDS_CONFIRMATION"].includes(value) ? "warn" : "";
     return node("span", label || state(value), `badge ${severity}`);
   };
+  const commandNotice = (row) => {
+    if (["PENDING", "EXECUTING"].includes(row.status)) {
+      return `命令 ${row.command_id}：${state(row.status)}。请跟踪服务写入的执行结果；待处理不等于交易完成。`;
+    }
+    const result = row.result && Object.keys(row.result).length ? `服务结果：${JSON.stringify(row.result)}。` : "服务未写入结果字段。";
+    return `命令 ${row.command_id}：${state(row.status)}。${result}`;
+  };
   const stacked = (first, second, numeric = false) => {
     const box = node("div", first, numeric ? "number" : "");
     if (second) box.append(node("span", second, "muted"));
@@ -115,6 +122,7 @@
   let submitted = null;
   let sending = false;
   let pending = null;
+  let noticeCommandId = null;
   const pendingKey = "bybitbot-pending-command-v1";
   try { pending = JSON.parse(sessionStorage.getItem(pendingKey) || "null"); } catch { /* Private browsing may disable storage. */ }
   const savePending = (value) => {
@@ -253,10 +261,13 @@
     $("refresh-at").textContent = `读取于 ${stamp(data.generated_at)}`;
     $("row-limit").textContent = `每表显示最近 ${data.table_limit} 条记录`;
     document.querySelectorAll("[data-command]").forEach((button) => { button.disabled = !session; });
-    if (pending && pending.environment === data.environment && data.control_commands?.some((row) => row.command_id === pending.body?.command_id)) {
-      $("command-notice").textContent = `已找到命令 ${pending.body.command_id} 的持久化记录；请核对其状态与结果。`;
+    const commandRows = data.control_commands || [];
+    if (pending && pending.environment === data.environment && commandRows.some((row) => row.command_id === pending.body?.command_id)) {
+      noticeCommandId = pending.body.command_id;
       savePending(null);
     }
+    const tracked = noticeCommandId ? commandRows.find((row) => row.command_id === noticeCommandId) : null;
+    if (tracked) $("command-notice").textContent = commandNotice(tracked);
   }
 
   function renderLimits(config) {
@@ -333,6 +344,7 @@
       $("retry-pending").focus();
       return;
     }
+    if (restored) noticeCommandId = restored.body.command_id;
     current = { kind, id: restored?.body.command_id || crypto.randomUUID() };
     submitted = restored?.body || null;
     values = submitted?.payload || values;
@@ -381,29 +393,40 @@
     event.preventDefault();
     if (sending) return;
     showError($("command-error"), "");
-    try {
-      if (!submitted) {
-        if (current.kind !== "PAUSE_NEW_RISK" && $("confirmation").value !== "确认") throw new Error("请输入完整的“确认”后登记命令。");
-        submitted = { command_id: current.id, kind: current.kind, payload: collectPayload(), confirmation: current.kind === "PAUSE_NEW_RISK" ? null : "确认" };
+    if (!submitted) {
+      if (current.kind !== "PAUSE_NEW_RISK" && $("confirmation").value !== "确认") {
+        showError($("command-error"), "请输入完整的“确认”后登记命令。");
+        $("confirmation").focus();
+        return;
       }
+      try {
+        submitted = { command_id: current.id, kind: current.kind, payload: collectPayload(), confirmation: current.kind === "PAUSE_NEW_RISK" ? null : "确认" };
+      } catch (error) {
+        showError($("command-error"), error.message);
+        return;
+      }
+    }
+    sending = true;
+    $("submit-command").disabled = true;
+    $("command-fields").querySelectorAll("input, textarea, select").forEach((field) => { field.disabled = true; });
+    $("confirmation").disabled = true;
+    try {
       savePending({ environment: snapshot.environment, body: submitted });
-      sending = true;
-      $("submit-command").disabled = true;
-      $("command-fields").querySelectorAll("input, textarea, select").forEach((field) => { field.disabled = true; });
-      $("confirmation").disabled = true;
       const data = await post("/api/commands", submitted, session.csrf_token);
       savePending(null);
-      $("command-notice").textContent = `命令 ${data.command.command_id}：${state(data.command.status)}。请跟踪服务写入的执行结果；待处理不等于交易完成。`;
+      noticeCommandId = data.command.command_id;
+      $("command-notice").textContent = commandNotice(data.command);
       $("command-dialog").close();
       submitted = null;
       await refresh();
     } catch (error) {
-      if (!submitted || (error.status && error.status < 500 && error.status !== 409)) {
+      const unconfirmed = !error.status || error.status >= 500 || error.status === 409;
+      if (!unconfirmed) {
         savePending(null); submitted = null;
         $("command-fields").querySelectorAll("input, textarea, select").forEach((field) => { field.disabled = false; });
         $("confirmation").disabled = false;
       }
-      showError($("command-error"), error.status ? error.message : `${error.message || "网络中断"}。登记结果未确认；请保留此编号并点击重试。`);
+      showError($("command-error"), error.status ? error.message : "无法连接管理服务；登记结果未确认，请保留此编号并点击重试。");
       $("submit-command").textContent = submitted ? "用原编号重试" : "登记命令";
     } finally { sending = false; $("submit-command").disabled = false; }
   });

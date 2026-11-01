@@ -127,7 +127,9 @@ async def test_option_close_credits_cash_and_cannot_short(market):
     await adapter.create_order(buy)
     moment[0] += dt.timedelta(seconds=1)
     adapter.set_book(replace(book(moment[0], "1"), category="option", symbol=symbol))
-    assert (await adapter.get_account()).coin("USDT").available == D("899.85")
+    # 期权费用按官方公式估算；没有标的指数价时按封顶比例计（保守方向）：
+    # 权利金 100 × 7% = 7 USDT。
+    assert (await adapter.get_account()).coin("USDT").available == D("893.00")
     close = replace(
         buy,
         side=OrderSide.SELL,
@@ -139,5 +141,6 @@ async def test_option_close_credits_cash_and_cannot_short(market):
     await adapter.create_order(close)
     moment[0] += dt.timedelta(seconds=1)
     adapter.set_book(replace(book(moment[0], "1"), category="option", symbol=symbol))
-    assert (await adapter.get_account()).coin("USDT").available == D("998.7015")
+    # 卖出所得 99 - 99 × 7% = 92.07。
+    assert (await adapter.get_account()).coin("USDT").available == D("985.07")
     assert (await adapter.get_positions("option"))[0].size == 0

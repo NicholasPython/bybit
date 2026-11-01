@@ -14,10 +14,25 @@ active_environment: paper
 # 模拟初始资金仅首次初始化使用；重启恢复已有检查点。
 paper:
   initial_balances: {USDT: "1000"}
-  fee_version: paper-v1-conservative
-  spot_fee_rate: "0.001"
-  option_fee_rate: "0.0015"
   public_market_url: https://api.bybit.com
+
+# --------------------------------------------------------------------------
+# 手续费估算口径（CR-02）
+# 模拟与实盘共用同一套费率：同一口径用于模拟撮合、仓位测算、预算校验与
+# 止盈判断。version 变更即意味着历史结果不可比（需审计后迁移检查点）。
+#
+# 期权费用按官方公式估算：
+#   fee = min(标的指数价 × option_underlying_rate,
+#             权利金 × option_premium_cap_rate) × 数量
+# 缺标的指数价时按封顶比例计 —— 保守方向，宁可高估成本。
+# 账户层级费率可能不同，实际成交一律以交易所回报的费用入账。
+# --------------------------------------------------------------------------
+fees:
+  version: bybit-fee-v1
+  spot_taker_rate: "0.001"
+  option_underlying_rate: "0.0003"
+  option_premium_cap_rate: "0.07"
+  option_per_contract: "0"
 
 runtime:
   proxy: null  # NAS 设置为 http://127.0.0.1:7890

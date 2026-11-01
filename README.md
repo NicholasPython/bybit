@@ -6,6 +6,7 @@
 - 需求与验收口径：[docs/requirements.md](docs/requirements.md)、[docs/requirements-review.md](docs/requirements-review.md)
 - 当前验收矩阵（逐条 AC-01～AC-28 的证据与缺口）：[docs/acceptance.md](docs/acceptance.md)
 - NAS 部署与运维手册：[docs/runbook-nas.md](docs/runbook-nas.md)
+- 2026-11-01 测试报告整改与发布证据：[docs/remediation-2026-11-01.md](docs/remediation-2026-11-01.md)
 
 ## 组成
 
@@ -22,6 +23,7 @@
 - `risk/` —— 账户授权锁、现金与库存预留、Delta 区间、费用与成本
 - `execution/` —— 物理订单状态机、执行者租约（PostgreSQL advisory lock）
 - `ledger.py` / `reconciliation.py` —— 账本事件、去重成交、权益政策与对账修复
+- `fees.py` —— 版本化的手续费估算口径（模拟、预算与止盈判断共用）
 - `strategy/` —— 现货定预算 DCA、期权单腿买入，退出规则
 - `ops/` —— 运行状态、暂停管理、告警投递、受限文件注入的通知渠道
 - `web/` —— FastAPI 管理页（模板 + 原生 JS/CSS）
@@ -58,7 +60,7 @@ uv run ruff check src tests deploy
 uv run pytest -q
 ```
 
-最新结果为 **192 项通过**。测试在 `BYBITBOT_TESTING=1` 下运行；`tests/conftest.py` 阻断 httpx 的默认同步和异步 HTTP transport，交易所 HTTP 响应使用 `httpx.MockTransport`，交易行为使用 `PaperAdapter` 合成。数据库用例各自使用独立 PostgreSQL schema，结束后只删除自己的 schema。这不是操作系统级网络隔离，也不构成真实 Bybit 能力验收。
+最新结果为 **335 项通过**。测试在 `BYBITBOT_TESTING=1` 下运行；`tests/conftest.py` 阻断 httpx 的默认同步和异步 HTTP transport，交易所 HTTP 响应使用 `httpx.MockTransport`，交易行为使用 `PaperAdapter` 合成。数据库用例各自使用独立 PostgreSQL schema，结束后只删除自己的 schema。这不是操作系统级网络隔离，也不构成真实 Bybit 能力验收。管理页命令提示另有 `node --test tests/console_ui.test.mjs`（4 项）覆盖。
 
 ## 配置
 
@@ -70,6 +72,19 @@ uv run pytest -q
 - `live` 环境必须填写 `account.expected_uid`，且 `live_gates` 三项（`live_allowed`、`acceptance_record_ref`、`manual_enable_ref`）全部满足才允许发单
 - 各环境的 `db_dsn` 必须互不相同；`ops.valuation.currency` 与各金额限额的币种必须一致
 - 策略模板默认 `enabled: false`
+
+手续费口径写在顶层 `fees` 段，模拟与实盘共用同一套费率（`src/bybitbot/fees.py`）：
+
+```yaml
+fees:
+  version: bybit-fee-v1
+  spot_taker_rate: "0.001"
+  option_underlying_rate: "0.0003"   # 标的指数价的 0.03%（Bybit 非 VIP taker）
+  option_premium_cap_rate: "0.07"    # 权利金的 7%（公式封顶）
+  option_per_contract: "0"
+```
+
+期权费用按 `min(标的指数价 × option_underlying_rate, 权利金 × option_premium_cap_rate) × 数量` 估算，再加 `option_per_contract × 数量`；指数价缺失、无效或过期时按封顶比例估算。模拟撮合使用该模型，真实成交按交易所回报费用入账。模型参数或版本变化会拒绝直接恢复旧模拟检查点；仅在数据库及检查点均无交易事实、无非零持仓时，允许保留余额迁移费用元数据，并保存原检查点审计副本。有交易历史时须人工核对迁移，不能重新初始化余额。
 
 交易凭据（仅非 paper 环境）放在受限文件中，格式见 `config/credentials.example.json`：
 
@@ -142,8 +157,8 @@ uv run bybitbot --config config/config.yaml web --auth secrets/admin.json --host
 
 ```
 src/bybitbot/     应用代码
-tests/            192 项本地隔离测试
-alembic/          数据库迁移（当前 head: 786d42c1b808）
+tests/            335 项 Python 隔离测试、4 项页面提示测试
+alembic/          数据库迁移（当前 head: 8a4d17c2f905）
 config/           配置示例（无密钥）
 deploy/           容器、Quadlet、备份、Mac 端监控与安装脚本
 docs/             需求、评审、验收矩阵、NAS 手册

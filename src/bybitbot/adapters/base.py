@@ -283,6 +283,29 @@ class ExecutionView:
 
 
 @dataclass(frozen=True)
+class OptionDeliveryView:
+    """Corroborated option-expiry fact; account/position reconciliation is separate.
+
+    ``payout`` is gross intrinsic value in ``currency``; ``fee`` is the delivery
+    cash expense, not entry premium or previously paid trading fees. Evidence
+    contains only allowlisted fields from the documented delivery endpoints.
+    """
+
+    settlement_id: str
+    symbol: str
+    side: str
+    qty: Decimal
+    currency: str
+    payout: Decimal
+    fee: Decimal
+    occurred_at: dt.datetime
+    delivery_price: Decimal
+    strike_price: Decimal
+    reference: str
+    evidence: dict[str, object] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
 class KeyInfo:
     """API Key 身份与权限摘要（ENV-02 / SEC-01）。
 
@@ -434,6 +457,14 @@ class TradingAdapter(Protocol):
         end_time: dt.datetime | None = None,
     ) -> list[ExecutionView]: ...
 
+    async def get_option_deliveries(
+        self,
+        spec: InstrumentSpec,
+        *,
+        start_time: dt.datetime,
+        end_time: dt.datetime,
+    ) -> list[OptionDeliveryView]: ...
+
     async def get_key_info(self) -> KeyInfo: ...
 
     # ---- 写 ----
@@ -465,6 +496,7 @@ __all__ = [
     "InsufficientCapability",
     "InstrumentSpec",
     "KeyInfo",
+    "OptionDeliveryView",
     "OrderAck",
     "OrderBook",
     "OrderRejected",

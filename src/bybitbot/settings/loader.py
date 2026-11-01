@@ -18,12 +18,14 @@ from typing import Any
 import yaml
 from pydantic import BaseModel, ConfigDict, ValidationError
 
+from bybitbot.fees import FeeModel
 from bybitbot.settings.models import (
     AccountConfig,
     BudgetConfig,
     Environment,
     EnvironmentProfile,
     ExecutionConfig,
+    FeeEstimationConfig,
     LiveGateConfig,
     MarketConfig,
     OpsConfig,
@@ -53,12 +55,25 @@ class AppConfig(BaseModel):
     ops: OpsConfig
     live_gates: LiveGateConfig = LiveGateConfig()
     paper: PaperConfig = PaperConfig()
+    #: 手续费估算口径（模拟与实盘共用，见 CR-02）。
+    fees: FeeEstimationConfig = FeeEstimationConfig()
     runtime: RuntimeConfig = RuntimeConfig()
     strategies: tuple[StrategyConfig, ...] = ()
 
     @property
     def profile(self) -> EnvironmentProfile:
         return self.environments[self.active_environment]
+
+    @property
+    def fee_model(self) -> FeeModel:
+        """当前配置对应的费用估算口径。"""
+        return FeeModel(
+            version=self.fees.version,
+            spot_taker_rate=self.fees.spot_taker_rate,
+            option_underlying_rate=self.fees.option_underlying_rate,
+            option_premium_cap_rate=self.fees.option_premium_cap_rate,
+            option_per_contract=self.fees.option_per_contract,
+        )
 
     def strategy(self, name: str) -> StrategyConfig:
         for s in self.strategies:
@@ -147,6 +162,7 @@ def load_config(
         ops = OpsConfig.model_validate(raw.get("ops") or {})
         live_gates = LiveGateConfig.model_validate(raw.get("live_gates") or {})
         paper = PaperConfig.model_validate(raw.get("paper") or {})
+        fees = FeeEstimationConfig.model_validate(raw.get("fees") or {})
         runtime = RuntimeConfig.model_validate(raw.get("runtime") or {})
         strategies = tuple(StrategyConfig.model_validate(s) for s in (raw.get("strategies") or []))
     except ValidationError as exc:
@@ -164,6 +180,7 @@ def load_config(
         ops=ops,
         live_gates=live_gates,
         paper=paper,
+        fees=fees,
         runtime=runtime,
         strategies=strategies,
     )

@@ -621,6 +621,8 @@ class Executor:
             currency=intent.currency,
             category=row.category,
             base_asset=spec.base_coin if spec else None,
+            intent_id=intent.id,
+            exec_time=execution.exec_time,
         )
         fee_asset = (execution.exec_fee_asset or intent.currency).upper()
         base_asset = (

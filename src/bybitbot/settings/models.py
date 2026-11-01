@@ -575,14 +575,47 @@ class OpsConfig(BaseModel):
 # --------------------------------------------------------------------------
 
 
+class FeeEstimationConfig(BaseModel):
+    """手续费估算口径（版本化）。
+
+    CR-02：费率不能只藏在 ``paper`` 配置里 —— 同一口径必须同时用于模拟撮合、
+    仓位测算、预算校验和止盈判断。``version`` 一变，历史结果不可比，因此
+    版本号随快照与报告一起记录。
+
+    期权费用按官方公式估算：``min(标的指数价 × option_underlying_rate,
+    权利金 × option_premium_cap_rate) × 数量``。缺指数价时按封顶比例计，
+    属于保守方向。
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    version: str = "bybit-fee-v1"
+    #: 现货 taker 费率（按成交额计收）。
+    spot_taker_rate: Annotated[Decimal, Field(ge=0, le=1)] = Decimal("0.001")
+    #: 期权：标的指数价费率（Bybit 非 VIP taker 为 0.03%）。
+    option_underlying_rate: Annotated[Decimal, Field(ge=0, le=1)] = Decimal("0.0003")
+    #: 期权：权利金封顶比例（官方公式上界 7%）。
+    option_premium_cap_rate: Annotated[Decimal, Field(ge=0, le=1)] = Decimal("0.07")
+    #: 期权每张合约的额外费用。
+    option_per_contract: Annotated[Decimal, Field(ge=0, le=1)] = Decimal("0")
+
+    @field_validator("version")
+    @classmethod
+    def _version(cls, value: str) -> str:
+        if not value or not value.strip():
+            raise ValueError("费用口径版本号不能为空")
+        return value
+
+
 class PaperConfig(BaseModel):
-    """独立模拟资金和明确版本的费用，不读取交易密钥（STR-05）。"""
+    """独立模拟资金，不读取交易密钥（STR-05）。
+
+    费用口径不在这里：模拟与实盘必须共用同一套费率（CR-02），
+    统一由顶层 ``fees`` 段提供。
+    """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
     initial_balances: dict[str, Decimal] = Field(default_factory=lambda: {"USDT": Decimal("1000")})
-    fee_version: str = "paper-v1-conservative"
-    spot_fee_rate: Annotated[Decimal, Field(ge=0, le=1)] = Decimal("0.001")
-    option_fee_rate: Annotated[Decimal, Field(ge=0, le=1)] = Decimal("0.0015")
     public_market_url: Literal["https://api.bybit.com"] = "https://api.bybit.com"
 
     @field_validator("initial_balances")

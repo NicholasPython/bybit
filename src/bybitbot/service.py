@@ -22,7 +22,7 @@ from sqlalchemy import func, select, text, update
 from sqlalchemy.dialects.postgresql import insert
 
 from bybitbot.adapters.bybit_rest import BybitRestAdapter
-from bybitbot.adapters.paper import FeeSchedule, PaperAdapter
+from bybitbot.adapters.paper import FeeModelMismatch, PaperAdapter
 from bybitbot.clock import local_day, local_day_start_utc, now_utc
 from bybitbot.db.models import (
     AccountSnapshot,
@@ -262,28 +262,36 @@ class TradingService:
         if self.adapter is None:
             if self.environment == "paper":
                 p = self.config.paper
-                self.adapter = DurablePaperAdapter(
-                    self.store,
-                    initial_balances=p.initial_balances,
-                    account_uid=self.uid,
-                    fee_schedule=FeeSchedule(
-                        version=p.fee_version,
-                        spot_taker_rate=p.spot_fee_rate,
-                        option_taker_rate=p.option_fee_rate,
-                    ),
-                    account_mode=self.config.account.account_mode.value,
-                )
                 saved = await self.store.get("paper")
+                self.adapter = self._paper_adapter(p)
                 if saved:
-                    self.adapter.restore_state(saved)
+                    try:
+                        self.adapter.restore_state(saved)
+                    except FeeModelMismatch as exc:
+                        # 费用口径变了，历史模拟结果不可比，不能悄悄按新口径续算。
+                        # 没有交易事实时才允许保留余额迁移费用元数据。
+                        if (
+                            await self._order_count()
+                            or saved.get("orders")
+                            or saved.get("executions")
+                            or saved.get("settlements")
+                            or any(Decimal(p["size"]) != 0 for p in saved.get("positions", []))
+                        ):
+                            raise RuntimeError(
+                                "模拟检查点与当前费用口径不兼容且已有订单，禁止自动重置余额；"
+                                "须人工审计后迁移"
+                            ) from exc
+                        # 未发生交易的检查点可迁移口径，但保留已有余额与审计副本。
+                        await self.store.put("paper-fee-migration", {"previous": saved})
+                        migrated = {
+                            **saved,
+                            "fees": json_value(asdict(self.config.fee_model)),
+                        }
+                        self.adapter.restore_state(migrated)
+                        logger.warning("无交易模拟检查点的费用口径已迁移，原余额保持不变")
+                        await self.adapter.checkpoint()
                 else:
-                    async with self.database.sessionmaker() as session:
-                        existing = await session.scalar(
-                            select(func.count())
-                            .select_from(Order)
-                            .where(Order.environment == self.environment)
-                        )
-                    if existing:
+                    if await self._order_count():
                         raise RuntimeError("模拟检查点缺失但已有订单，禁止重置余额")
                     await self.adapter.checkpoint()
             else:
@@ -315,6 +323,44 @@ class TradingService:
                 self._owned_adapters.append(self.market_adapter)
             else:
                 self.market_adapter = self.adapter
+
+    def _paper_adapter(self, paper_config) -> DurablePaperAdapter:
+        """按当前费用口径构造模拟适配器（CR-02：模拟与实盘共用一套费率）。"""
+        return DurablePaperAdapter(
+            self.store,
+            initial_balances=paper_config.initial_balances,
+            account_uid=self.uid,
+            fee_model=self.config.fee_model,
+            account_mode=self.config.account.account_mode.value,
+        )
+
+    async def _order_count(self) -> int:
+        async with self.database.sessionmaker() as session:
+            return int(
+                await session.scalar(
+                    select(func.count())
+                    .select_from(Order)
+                    .where(Order.environment == self.environment)
+                )
+                or 0
+            )
+
+    def _fee_ratio(self, category: str, symbol: str, price: Decimal | None) -> Decimal:
+        """费用占成交额的比例（预算校验与止盈判断共用）。
+
+        期权按官方公式：``min(标的指数价 × 费率, 权利金 × 封顶比例)``。
+        缺标的指数价时按封顶比例估算 —— 保守方向，宁可高估成本。
+        """
+        model = self.config.fee_model
+        if category != "option":
+            return model.spot_fee_ratio()
+        if price is None or price <= 0:
+            return model.option_premium_cap_rate
+        index_price = None
+        ticker = self.quotes.get_ticker("option", symbol)
+        if ticker is not None and self.quotes.status("option", symbol).usable:
+            index_price = ticker.index_price
+        return model.option_fee_ratio(option_price=price, index_price=index_price)
 
     async def close(self):
         self.stop_event.set()
@@ -452,8 +498,9 @@ class TradingService:
             if (
                 updated.profile != self.config.profile
                 or updated.runtime.proxy != self.config.runtime.proxy
+                or updated.fees != self.config.fees
             ):
-                raise RuntimeError("环境、端点、凭据或代理变更需重启")
+                raise RuntimeError("环境、端点、凭据、代理或费用口径变更需重启")
             if config_fingerprint(updated) != self._config_hash:
                 self.config = updated
                 await self._apply_config()
@@ -1083,7 +1130,7 @@ class TradingService:
                     currency=cfg.budget_per_run.currency,
                     enabled=True,
                     ttl_seconds=cfg.signal_ttl_seconds,
-                    fee_rate=self.config.paper.spot_fee_rate,
+                    fee_rate=self.config.fee_model.spot_fee_ratio(),
                     max_price_deviation=Decimal(params.get("max_price_deviation", "0.005")),
                     min_qty=Decimal(params.get("min_qty", "0")),
                 ),
@@ -1108,7 +1155,7 @@ class TradingService:
                 premium_budget=cap,
                 enabled=True,
                 ttl_seconds=cfg.signal_ttl_seconds,
-                fee_rate=self.config.paper.option_fee_rate,
+                fee_model=self.config.fee_model,
                 max_spread_ratio=self.config.market.max_spread_bps / 10000,
             ),
         )
@@ -1293,11 +1340,7 @@ class TradingService:
                 extra.append("超过最大数量")
             if spec.min_order_amt and draft.qty * draft.price_limit < spec.min_order_amt:
                 extra.append("低于最小订单金额")
-            fee_rate = (
-                self.config.paper.option_fee_rate
-                if draft.category == "option"
-                else (self.config.paper.spot_fee_rate)
-            )
+            fee_rate = self._fee_ratio(draft.category, draft.symbol, draft.price_limit)
             if opening and draft.qty * draft.price_limit * (1 + fee_rate) > draft.spend_limit:
                 extra.append("预算不足以支付价格上限与费用")
             if not self.quotes.status(
@@ -1612,26 +1655,32 @@ class TradingService:
                     )
                 )
             )
-            buys = list(
-                await session.scalars(
-                    select(TradeIntent)
-                    .where(
-                        TradeIntent.environment == self.environment,
-                        TradeIntent.action.in_(OPEN_ACTIONS),
-                    )
-                    .order_by(TradeIntent.created_at)
-                )
-            )
         for item in inventory:
             if item.strategy_id not in self.strategies:
                 continue
-            owners = [
-                owner
-                for owner in buys
-                if owner.strategy_id == item.strategy_id
-                and owner.symbol == item.symbol
-                and owner.exit_rules
-            ]
+            # 库存归属到具体持有周期（CR-01）：完整平仓后的新买入开启新周期，
+            # 周期内追加买入保留原起点；已平掉的历史批次不再驱动新的计时。
+            owner = None
+            episode_start = item.episode_started_at
+            if item.episode_intent_id is not None:
+                async with self.database.sessionmaker() as session:
+                    owner = await session.scalar(
+                        select(TradeIntent).where(
+                            TradeIntent.environment == self.environment,
+                            TradeIntent.id == item.episode_intent_id,
+                            TradeIntent.strategy_id == item.strategy_id,
+                            TradeIntent.symbol == item.symbol,
+                        )
+                    )
+            if owner is None or episode_start is None:
+                await self._fault(
+                    "EXIT_INCOMPLETE",
+                    f"{item.symbol} 库存持有周期缺少成交归属，待核实",
+                    locked=False,
+                )
+                continue
+            if not owner.exit_rules:
+                continue
             category = "option" if "-" in item.symbol else "spot"
             quote = self.quotes.get_ticker(category, item.symbol)
             spec = self.specs.get((category, item.symbol))
@@ -1649,70 +1698,40 @@ class TradingService:
                         TradeIntent.environment == self.environment,
                         TradeIntent.strategy_id == item.strategy_id,
                         TradeIntent.symbol == item.symbol,
-                        TradeIntent.signal_id.like("exit:%"),
+                        TradeIntent.signal_id.like(f"exit:{owner.id}:%"),
                     )
                     .order_by(TradeIntent.id.desc())
                     .limit(1)
                 )
-                last_buy = await session.scalar(
-                    select(func.max(Execution.exec_time))
-                    .join(
-                        Order,
-                        Execution.order_id == Order.id,
-                    )
-                    .join(TradeIntent, Order.intent_id == TradeIntent.id)
-                    .where(
-                        TradeIntent.environment == self.environment,
-                        TradeIntent.strategy_id == item.strategy_id,
-                        TradeIntent.symbol == item.symbol,
-                        TradeIntent.action.in_(OPEN_ACTIONS),
-                    )
-                )
-            # 新一批真实买入才开启新一轮；平仓成交和持仓快照更新不重置次数。
-            if previous is not None and (last_buy is None or last_buy <= previous.created_at):
+            # 一个持有周期只有一个退出流程；后续追加买入不重置追价次数和期限。
+            if previous is not None:
                 await self._continue_exit(previous, item, spec)
                 continue
             trigger = None
-            for owner in owners:
-                async with self.database.sessionmaker() as session:
-                    acquired = await session.scalar(
-                        select(func.min(Execution.exec_time))
-                        .join(
-                            Order,
-                            Execution.order_id == Order.id,
-                        )
-                        .where(Order.intent_id == owner.id)
+            for rule in owner.exit_rules:
+                kind = rule.get("kind")
+                due = (
+                    kind == "hold_period"
+                    and (now_utc() - episode_start).total_seconds() >= rule["hold_seconds"]
+                ) or (
+                    kind == "before_expiry"
+                    and spec.delivery_time
+                    and (spec.delivery_time - now_utc()).total_seconds()
+                    <= self.config.option.exit_before_expiry_seconds
+                )
+                if (
+                    kind == "profit_threshold"
+                    and quote
+                    and quote.bid_price
+                    and item.avg_cost > 0
+                ):
+                    rate = self._fee_ratio(category, item.symbol, quote.bid_price)
+                    proceeds = quote.bid_price * (1 - rate)
+                    due = (proceeds / item.avg_cost - 1) * 100 >= Decimal(
+                        rule["profit_threshold_pct"]
                     )
-                if acquired is None:
-                    continue
-                for rule in owner.exit_rules:
-                    kind = rule.get("kind")
-                    due = (
-                        kind == "hold_period"
-                        and (now_utc() - acquired).total_seconds() >= rule["hold_seconds"]
-                    ) or (
-                        kind == "before_expiry"
-                        and spec.delivery_time
-                        and (spec.delivery_time - now_utc()).total_seconds()
-                        <= self.config.option.exit_before_expiry_seconds
-                    )
-                    if (
-                        kind == "profit_threshold"
-                        and quote
-                        and quote.bid_price
-                        and item.avg_cost > 0
-                    ):
-                        rate = (
-                            self.config.paper.option_fee_rate
-                            if category == "option"
-                            else self.config.paper.spot_fee_rate
-                        )
-                        proceeds = quote.bid_price * (1 - rate)
-                        due = (proceeds / item.avg_cost - 1) * 100 >= Decimal(
-                            rule["profit_threshold_pct"]
-                        )
-                    if due and trigger is None:
-                        trigger = (owner, rule)
+                if due and trigger is None:
+                    trigger = (owner, rule)
             if trigger is None:
                 continue
             if (
@@ -1765,6 +1784,7 @@ class TradingService:
                 rationale={
                     "inventory_scope": "strategy_symbol",
                     "owner_intent_id": owner.id,
+                    "inventory_episode_start": episode_start.isoformat(),
                     "price_floor": str(floor),
                     "initial_bid": str(quote.bid_price),
                 },
@@ -1775,7 +1795,7 @@ class TradingService:
                 draft,
                 planned_at=now_utc(),
                 rule_id="exit",
-                signal=f"exit:{owner.id}:{rule['kind']}:{last_buy.isoformat()}",
+                signal=f"exit:{owner.id}:{rule['kind']}:{episode_start.isoformat()}",
                 order_price=price,
                 order_ttl_seconds=segment,
             )

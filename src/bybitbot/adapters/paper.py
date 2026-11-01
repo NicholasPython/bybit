@@ -43,6 +43,7 @@ from bybitbot.adapters.base import (
     Ticker,
 )
 from bybitbot.clock import now_utc
+from bybitbot.fees import FeeModel
 from bybitbot.money import dec
 from bybitbot.settings.models import OrderSide, OrderType, TimeInForce
 
@@ -53,27 +54,12 @@ class PaperFault(str):
     """故障注入类型。"""
 
 
-@dataclass(frozen=True)
-class FeeSchedule:
-    """手续费方案。
+class FeeModelMismatch(RuntimeError):
+    """模拟检查点的费用口径与当前配置不兼容。
 
-    ``version`` 必须显式写明，报告要带上它 —— 手续费版本变了，历史结果不可比。
+    费用口径变了，历史模拟结果不可比：不能悄悄按新口径续算，必须先审计。
+    只有在**没有任何订单**时才允许按新口径重新初始化模拟余额。
     """
-
-    version: str
-    spot_taker_rate: Decimal
-    option_taker_rate: Decimal
-    #: 期权按张收费时每张的费用（若有）。
-    option_fee_per_contract: Decimal = Decimal("0")
-
-    @classmethod
-    def conservative_default(cls) -> FeeSchedule:
-        """保守费率：宁可高估成本，不要低估。"""
-        return cls(
-            version="paper-v1-conservative",
-            spot_taker_rate=Decimal("0.001"),
-            option_taker_rate=Decimal("0.0015"),
-        )
 
 
 @dataclass
@@ -222,7 +208,7 @@ class PaperAdapter:
         self,
         *,
         initial_balances: dict[str, Decimal] | None = None,
-        fee_schedule: FeeSchedule | None = None,
+        fee_model: FeeModel | None = None,
         account_uid: str = "paper-account",
         account_mode: str = "unified",
         clock: Callable[[], dt.datetime] = now_utc,
@@ -231,7 +217,7 @@ class PaperAdapter:
         self._account = PaperAccount()
         for coin, amount in (initial_balances or {}).items():
             self._account.credit(coin.upper(), dec(amount))
-        self._fees = fee_schedule or FeeSchedule.conservative_default()
+        self._fees = fee_model or FeeModel.conservative_default()
         self._account_uid = account_uid
         self._account_mode = account_mode
         self._instruments: dict[str, InstrumentSpec] = {}
@@ -387,20 +373,18 @@ class PaperAdapter:
         active = [o for o in self._orders.values() if o.status in ACTIVE_STATUSES]
         if request.side is OrderSide.BUY:
             coin = spec.settle_coin if request.category == "option" else spec.quote_coin
-            rate = (
-                self._fees.option_taker_rate
-                if request.category == "option"
-                else self._fees.spot_taker_rate
-            )
             held = sum(
                 (
-                    o.leaves_qty * o.request.price * (1 + rate)
+                    o.leaves_qty
+                    * o.request.price
+                    * (1 + self._buy_cost_ratio(o.request, o.request.price))
                     for o in active
                     if o.request.side is OrderSide.BUY and self._cash_coin(o.request) == coin
                 ),
                 Decimal("0"),
             )
-            if not coin or request.qty * request.price * (1 + rate) > (
+            ratio = self._buy_cost_ratio(request, request.price)
+            if not coin or request.qty * request.price * (1 + ratio) > (
                 self._account.balance(coin).available - held
             ):
                 raise OrderRejected("模拟自有现金不足")
@@ -455,24 +439,21 @@ class PaperAdapter:
     def _apply_fill(self, order: PaperOrder, price: Decimal, qty: Decimal) -> None:
         """记账一笔成交。"""
         notional = price * qty
-        rate = (
-            self._fees.spot_taker_rate
-            if order.request.category == "spot"
-            else self._fees.option_taker_rate
-        )
-        fee = notional * rate
         request = order.request
 
         if request.category == "spot":
+            rate = self._fees.spot_fee_ratio()
             quote = self._instrument_quote(request.symbol)
             base = self._instrument_base(request.symbol)
             if request.side is OrderSide.BUY:
+                # 现货买入的费用按成交额比例折算成基础币扣减。
                 fee = qty * rate
                 fee_asset = base
                 self._account.debit(quote, notional)
                 self._account.credit(base, qty - fee)
                 self._apply_spot_position(request.symbol, request.side.value, qty - fee, price)
             else:
+                fee = notional * rate
                 fee_asset = quote
                 self._account.debit(base, qty)
                 self._account.credit(quote, notional - fee)
@@ -481,7 +462,12 @@ class PaperAdapter:
             settle = self._instrument_settle(request.symbol)
             if settle is None:
                 raise ValueError("模拟期权缺少结算币")
-            fee += qty * self._fees.option_fee_per_contract
+            # 期权费用按官方公式估算；没有标的指数价时按封顶比例计（保守）。
+            fee = self._fees.option_fee(
+                option_price=price,
+                qty=qty,
+                index_price=self._index_price(request.symbol),
+            )
             fee_asset = settle
             if request.side is OrderSide.BUY:
                 self._account.debit(settle, notional + fee)
@@ -696,6 +682,25 @@ class PaperAdapter:
         spec = self._instruments[request.symbol]
         return spec.settle_coin if request.category == "option" else spec.quote_coin
 
+    def _index_price(self, symbol: str) -> Decimal | None:
+        """标的指数价；缺失时返回 None（费用按封顶比例估算）。"""
+        ticker = self._tickers.get(symbol)
+        if ticker is None or ticker.index_price is None:
+            return None
+        for stamp in (ticker.source_ts, ticker.received_at):
+            if stamp is None or not -5 <= (self._clock() - stamp).total_seconds() <= 15:
+                return None
+        price = dec(ticker.index_price)
+        return price if price.is_finite() and price > 0 else None
+
+    def _buy_cost_ratio(self, request: OrderRequest, price: Decimal) -> Decimal:
+        """买入需要占用资金的比例（含费用估算）。"""
+        if request.category == "option":
+            return self._fees.option_fee_ratio(
+                option_price=price, index_price=self._index_price(request.symbol)
+            )
+        return self._fees.spot_fee_ratio()
+
     def settle_option(
         self,
         *,
@@ -823,11 +828,18 @@ class PaperAdapter:
     def restore_state(self, state: dict[str, object]) -> None:
         if state.get("version") != 1 or state.get("environment") != "paper":
             raise ValueError("模拟检查点版本或环境不匹配")
-        if state.get("account_uid") != self._account_uid:
-            raise ValueError("模拟检查点账户不匹配")
-        fees = _restore_dataclass(FeeSchedule, state["fees"])
-        if fees != self._fees:
-            raise ValueError("模拟检查点费用版本不匹配，须审计后迁移")
+        if (
+            state.get("account_uid") != self._account_uid
+            or state.get("account_mode") != self._account_mode
+        ):
+            raise ValueError("模拟检查点账户或模式不匹配")
+        fees = state.get("fees")
+        try:
+            restored_fees = _restore_dataclass(FeeModel, fees)
+        except (TypeError, KeyError, AttributeError) as exc:
+            raise FeeModelMismatch("模拟检查点的费用口径与当前版本不兼容") from exc
+        if restored_fees != self._fees:
+            raise FeeModelMismatch("模拟检查点费用版本不匹配，须审计后迁移")
         coins = [_restore_dataclass(CoinBalance, row) for row in state["coins"]]
         specs = [_restore_dataclass(InstrumentSpec, row) for row in state["instruments"]]
         positions = [_restore_dataclass(PositionView, row) for row in state["positions"]]
@@ -931,8 +943,9 @@ _DECIMAL_FIELDS = frozenset(
         "qty",
         "price",
         "spot_taker_rate",
-        "option_taker_rate",
-        "option_fee_per_contract",
+        "option_underlying_rate",
+        "option_premium_cap_rate",
+        "option_per_contract",
     }
 )
 _TIME_FIELDS = frozenset({"delivery_time", "exec_time"})
@@ -963,4 +976,4 @@ def _restore_dataclass(cls, row):
     return cls(**values)
 
 
-__all__ = ["FeeSchedule", "PaperAdapter", "PaperFault"]
+__all__ = ["FeeModelMismatch", "PaperAdapter", "PaperFault"]

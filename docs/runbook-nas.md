@@ -17,7 +17,7 @@
 | 应用镜像 | `localhost/bybitbot:0.1.0`；发布前记录完整 image ID |
 | 基础运行时镜像 | `localhost/bybitbot-runtime:0.1.0` |
 | 数据库镜像 | 复用已有 `localhost/artex-postgres:16` 镜像，使用独立的 Bybit 命名卷 |
-| 数据库 schema head | `786d42c1b808` |
+| 数据库 schema head | `8a4d17c2f905` |
 | Quadlet 源文件 | `~/.config/containers/systemd/bybitbot-*.container` 和 `.volume` |
 | 运行配置、数据库环境变量、管理身份 | `~/.config/bybitbot/{config.yaml,postgres.env,admin.json}`，0600 |
 | 备份加密公钥 | `~/.config/bybitbot/backup-public.asc` |
@@ -109,7 +109,13 @@ ssh nas 'podman tag localhost/bybitbot:release-20261031-r2 localhost/bybitbot:0.
 
 配置检查不是行情、账户或对账验收。启动后重复第 2 节检查，记录镜像 ID、schema head、心跳、暂停与订单状态。
 
-2026-10-31 本轮发布已核验：worker/web 镜像为 `c1d89f9541d9b86f8b67ee173933b73f86808c48f135db95e1a55475937de049`，41 个 Python 源文件与本地 SHA-256 完全一致。上一版本保存在 `localhost/bybitbot:pre-valuation-20261031`（`910874d2cf3b853ad9758f49b95a812eb2561a141aa5969f0eb79202f8c787c1`），更早版本保存在 `localhost/bybitbot:rollback-20261031`（`710a347cad5135f56c16d6b77c84034d2cbc16cc091d43277f01f68c712a3003`）。这些是已存在的标签；上面的 `rollback-before-release-20261031-r2` 仅为后续发布操作示例。
+2026-11-01 整改发布已核验：worker/web 镜像为 `474fbae0c7c501d3dd7fca2ec996c1536bc3c3c2c9b1549c87215eb5dcb7151f`，发布标签 `localhost/bybitbot:dogfood-20261101`；53 个应用、页面、迁移及配置示例文件与本地 SHA-256 一致。上一镜像为 `c1d89f9541d9b86f8b67ee173933b73f86808c48f135db95e1a55475937de049`，已保存为 `localhost/bybitbot:pre-dogfood-20261101`。更早的 `pre-valuation-20261031` 和 `rollback-20261031` 标签仍保留。当前保持 paper 暂停、基线未建立、等待接管确认，两策略禁用，订单/成交/正库存均为零。
+
+本次配置变更将 `paper.fee_version`、`paper.spot_fee_rate`、`paper.option_fee_rate` 移至顶层 `fees` 公式配置；原文件以 0600 保存在 `~/.config/bybitbot/config.pre-dogfood-20261101.yaml`。无交易的旧 paper 检查点仅迁移费用元数据，保留 1000 USDT 余额，并在 `runtime_state` 的 `paper-fee-migration` 保存原检查点。存在订单、成交、交割或非零持仓的旧检查点禁止自动迁移；不得以清空数据或重置余额绕过。
+
+发布前数据库加密备份 `bybitbot-20261101T035525Z.dump.gpg` 已成功生成并复制到 Mac 的异机备份目录。数据库迁移新增持有周期字段，不猜测回填历史库存；旧库存缺起点时自动退出保持待核实。
+
+回退到 `pre-dogfood-20261101` 前，必须同时核对旧配置格式与旧 paper 检查点兼容性；仅切镜像标签不足以回滚本次费用口径。若发布后已有交易事实，先保持暂停并审计，不能直接用旧检查点覆盖新账本。完整整改记录见 [remediation-2026-11-01.md](remediation-2026-11-01.md)。
 
 依赖锁变化时先重建基础层；该文件复用 NAS 已有的 Python 3.12.15 基础镜像，并通过 `--require-hashes` 安装依赖：
 
@@ -221,7 +227,8 @@ ssh nas 'podman run --rm -v "$HOME/.config/bybitbot:/run/bybitbot:rw,z" localhos
 - `SUBMITTING / UNKNOWN` 表示结果未确定，不等于未发送。保留预留，按 `orderLinkId` 和成交历史补查；单次空查询或重复编号报错不足以认定拒绝。人工恢复不能代替交易证据。
 - 撤单受理不等于最终撤销；累计成交入账完整前不释放相应资金。
 - 管理页受限减仓仍需身份、租约、可信持仓、库存预留、价格下限和可写审计。退出失败时展示余量，不把关机当作退出。
-- 自动退出当前按策略/合约聚合库存管理，退出有效期和次数保持不变；不是逐笔 FIFO 持仓批次。真实期权交割解析尚未接入，期权消失/到期不会自动释放成本；paper 有显式结算注入及独立 SETTLEMENT 记账。
+- 自动退出按策略/合约聚合库存管理：零库存后的第一笔实际买入建立周期，追加买入保留起点，全平后新买入重新计时，退出重建共享有效期和次数。历史库存缺少周期归属时保持待核实；未实现逐笔 FIFO。
+- 真实交割解析已接入 delivery-record、DELIVERY 资金流水及必要的零支付平仓证明。完整持仓、归属数量、先前可信快照的现金变化均一致后才释放成本并独立记 SETTLEMENT；持仓消失本身不能替代交割证据。普通 execution 继续只接受 Trade。缺证据保持暂停并在后续轮询核对；Demo/Testnet 实际交割能力尚未验证。
 - 运行服务当前使用 REST 轮询；WebSocket 适配器有契约测试，尚未作为 worker 的主行情链路集成。
 - 业务告警渠道为空时只落库；真实告警送达、数据保留清理、容量/性能、真实 Demo/Testnet 期权能力仍有验收缺口，详见矩阵。
 

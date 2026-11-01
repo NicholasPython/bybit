@@ -78,6 +78,34 @@ async def command(service, kind, payload):
     return row
 
 
+@pytest.mark.parametrize("history", [False, True])
+async def test_old_fee_checkpoint_only_migrates_without_trading_history(database, history):
+    config = load_config("config/config.example.yaml")
+    service = TradingService(config, database, market_adapter=FixedMarket())
+    adapter = PaperAdapter(
+        initial_balances={"USDT": D("731.25")}, account_uid=service.uid,
+        account_mode=config.account.account_mode.value,
+    )
+    saved = adapter.export_state()
+    saved["fees"] = {
+        "version": "paper-v1-conservative", "spot_taker_rate": "0.001",
+        "option_taker_rate": "0.0015",
+    }
+    if history:
+        saved["settlements"] = {"past-settlement": {"payout": "0"}}
+    await service.store.put("paper", saved)
+    if history:
+        with pytest.raises(RuntimeError, match="须人工审计后迁移"):
+            await service._adapters()
+        assert await service.store.get("paper") == saved
+        assert await service.store.get("paper-fee-migration") is None
+    else:
+        await service._adapters()
+        assert (await service.adapter.get_account()).coin("USDT").wallet_balance == D("731.25")
+        assert (await service.store.get("paper-fee-migration"))["previous"] == saved
+        assert (await service.store.get("paper"))["fees"]["version"] == config.fees.version
+
+
 async def test_start_baseline_takeover_trade_restart(database):
     config = load_config("config/config.example.yaml")
     service = TradingService(config, database, market_adapter=FixedMarket())
@@ -277,6 +305,236 @@ async def test_enabled_template_schedule_fills_once_across_restart(database, cat
         await service._schedule()
         async with database.sessionmaker() as session:
             assert await session.scalar(select(func.count()).select_from(Order)) == 1
+    finally:
+        await service.close()
+
+
+async def test_closed_batch_does_not_trigger_exit_of_new_inventory(database):
+    """CR-01：全部平仓后的新买入不继承旧批次的持有期计时。
+
+    修复前：第一批两天前买入、昨天平仓；第二批刚买入，持有期 86400 秒，
+    退出规则仍由第一批驱动，卖出当前全部库存。修复后新批次重新计时。
+    """
+    config = load_config("config/config.example.yaml")
+    chosen = config.strategies[1].model_copy(update={"symbols": ("BTC",)})
+    config = config.model_copy(
+        update={
+            "strategies": (chosen,),
+            "option": config.option.model_copy(
+                update={"no_open_window_start_hour_utc": 0, "no_open_window_end_hour_utc": 0}
+            ),
+        }
+    )
+    service = TradingService(config, database, market_adapter=OptionMarket())
+    try:
+        await service.start()
+        await command(service, CommandKind.INITIALIZE_BASELINE, {"reason": "episode test"})
+        await command(
+            service,
+            CommandKind.CONFIRM_TAKEOVER,
+            {"reason": "episode test", "evidence": "isolated schema"},
+        )
+        await service.tick()
+        strategy_id, (_, version) = next(iter(service.strategies.items()))
+        symbol = "BTC-10NOV26-100-C"
+
+        def buy_draft(hold_seconds: int) -> IntentDraft:
+            return IntentDraft(
+                action="OPTION_BUY_OPEN",
+                category="option",
+                symbol=symbol,
+                side="Buy",
+                qty=D("0.1"),
+                qty_unit="contract",
+                currency="USDT",
+                spend_limit=D("1"),
+                price_limit=D("1.001"),
+                underlying="BTC",
+                delivery_time=service.specs[("option", symbol)].delivery_time,
+                options_type="Call",
+                strike_price=D("100"),
+                ttl_seconds=60,
+                exit_rules=(
+                    {
+                        "kind": "hold_period",
+                        "hold_seconds": hold_seconds,
+                        "exit_validity_seconds": 300,
+                        "max_reprice_attempts": 1,
+                    },
+                ),
+            )
+
+        first = await service._submit_draft(
+            strategy_id, version, buy_draft(0), planned_at=now_utc(), rule_id="first"
+        )
+        assert first["status"] == "ACCEPTED", first
+        await service.tick()
+        async with database.sessionmaker() as session:
+            inventory = await session.scalar(select(Inventory))
+            first_owner = inventory.episode_intent_id
+            first_start = inventory.episode_started_at
+            assert first_owner == first["intent_id"]
+            assert first_start is not None
+        # 持有期为 0：第一轮立即退出并成交，库存归零。
+        await service._exit_rules()
+        await service.tick()
+        await service.tick()
+        async with database.sessionmaker() as session:
+            inventory = await session.scalar(select(Inventory))
+            assert inventory.qty == 0
+            sells = list(
+                await session.scalars(
+                    select(TradeIntent).where(TradeIntent.side == "sell").order_by(TradeIntent.id)
+                )
+            )
+            assert len(sells) == 1
+            assert sells[0].signal_id.startswith(f"exit:{first_owner}:")
+
+        # 第二轮买入：持有期未满，不得触发退出。
+        second = await service._submit_draft(
+            strategy_id, version, buy_draft(86400), planned_at=now_utc(), rule_id="second"
+        )
+        assert second["status"] == "ACCEPTED", second
+        await service.tick()
+        async with database.sessionmaker() as session:
+            inventory = await session.scalar(select(Inventory))
+            assert inventory.qty > 0
+            assert inventory.episode_intent_id == second["intent_id"]
+            assert inventory.episode_started_at > first_start
+        await service._exit_rules()
+        await service._exit_rules()
+        async with database.sessionmaker() as session:
+            sells = list(
+                await session.scalars(
+                    select(TradeIntent).where(TradeIntent.side == "sell").order_by(TradeIntent.id)
+                )
+            )
+            assert len(sells) == 1, "新库存未满持有期时不应产生退出意图"
+    finally:
+        await service.close()
+
+
+async def test_extra_buy_inside_episode_keeps_original_hold_start(database):
+    """同一持有周期内追加买入不重置计时起点。"""
+    config = load_config("config/config.example.yaml")
+    chosen = config.strategies[1].model_copy(update={"symbols": ("BTC",)})
+    config = config.model_copy(
+        update={
+            "strategies": (chosen,),
+            "option": config.option.model_copy(
+                update={"no_open_window_start_hour_utc": 0, "no_open_window_end_hour_utc": 0}
+            ),
+        }
+    )
+    service = TradingService(config, database, market_adapter=OptionMarket())
+    try:
+        await service.start()
+        await command(service, CommandKind.INITIALIZE_BASELINE, {"reason": "episode test"})
+        await command(
+            service,
+            CommandKind.CONFIRM_TAKEOVER,
+            {"reason": "episode test", "evidence": "isolated schema"},
+        )
+        await service.tick()
+        strategy_id, (_, version) = next(iter(service.strategies.items()))
+        symbol = "BTC-10NOV26-100-C"
+        draft = IntentDraft(
+            action="OPTION_BUY_OPEN",
+            category="option",
+            symbol=symbol,
+            side="Buy",
+            qty=D("0.1"),
+            qty_unit="contract",
+            currency="USDT",
+            spend_limit=D("1"),
+            price_limit=D("1.001"),
+            underlying="BTC",
+            delivery_time=service.specs[("option", symbol)].delivery_time,
+            options_type="Call",
+            strike_price=D("100"),
+            ttl_seconds=60,
+            exit_rules=(
+                {
+                    "kind": "hold_period",
+                    "hold_seconds": 86400,
+                    "exit_validity_seconds": 300,
+                    "max_reprice_attempts": 1,
+                },
+            ),
+        )
+        first = await service._submit_draft(
+            strategy_id, version, draft, planned_at=now_utc(), rule_id="first"
+        )
+        assert first["status"] == "ACCEPTED", first
+        await service.tick()
+        async with database.sessionmaker() as session:
+            started = (await session.scalar(select(Inventory))).episode_started_at
+        second = await service._submit_draft(
+            strategy_id, version, draft, planned_at=now_utc(), rule_id="second"
+        )
+        assert second["status"] == "ACCEPTED", second
+        await service.tick()
+        async with database.sessionmaker() as session:
+            inventory = await session.scalar(select(Inventory))
+            assert inventory.qty > 0
+            assert inventory.episode_started_at == started
+            assert inventory.episode_intent_id == first["intent_id"]
+    finally:
+        await service.close()
+
+
+async def test_option_budget_and_profit_include_full_estimated_fee(database, monkeypatch):
+    config = load_config("config/config.example.yaml")
+    chosen = config.strategies[1].model_copy(update={"symbols": ("BTC",)})
+    config = config.model_copy(update={
+        "strategies": (chosen,),
+        "option": config.option.model_copy(update={
+            "no_open_window_start_hour_utc": 0, "no_open_window_end_hour_utc": 0,
+        }),
+    })
+    service = TradingService(config, database, market_adapter=OptionMarket())
+    try:
+        await service.start()
+        await command(service, CommandKind.INITIALIZE_BASELINE, {"reason": "fee regression"})
+        await command(service, CommandKind.CONFIRM_TAKEOVER, {
+            "reason": "fee regression", "evidence": "isolated paper schema",
+        })
+        await service.tick()
+        strategy_id, (_, version) = next(iter(service.strategies.items()))
+        symbol = "BTC-10NOV26-100-C"
+        draft = IntentDraft(
+            action="OPTION_BUY_OPEN", category="option", symbol=symbol, side="Buy",
+            qty=D("0.1"), qty_unit="contract", currency="USDT", spend_limit=D("0.1004"),
+            price_limit=D("1.001"), underlying="BTC", options_type="Call", strike_price=D("100"),
+            delivery_time=service.specs[("option", symbol)].delivery_time,
+            exit_rules=({"kind": "profit_threshold", "profit_threshold_pct": "10"},),
+        )
+        rejected = await service._submit_draft(
+            strategy_id, version, draft, planned_at=now_utc(), rule_id="underfunded",
+        )
+        assert rejected["status"] == "REJECTED"
+        assert "预算不足以支付价格上限与费用" in rejected["reason"]
+        accepted = await service._submit_draft(
+            strategy_id, version, replace(draft, spend_limit=D("1")),
+            planned_at=now_utc(), rule_id="funded",
+        )
+        assert accepted["status"] == "ACCEPTED", accepted
+        await service.tick()
+        submitted = []
+
+        async def collect(*args, **kwargs):
+            submitted.append(args[2])
+            return {"status": "ACCEPTED"}
+
+        monkeypatch.setattr(service, "_submit_draft", collect)
+        for bid in (D("1.2"), D("1.3")):
+            quote = replace(
+                await service.market_adapter.get_ticker("option", symbol),
+                bid_price=bid, ask_price=bid + D("0.001"), mark_price=bid,
+            )
+            service.quotes.put_ticker(quote)
+            await service._exit_rules()
+            assert len(submitted) == (0 if bid == D("1.2") else 1)
     finally:
         await service.close()
 
