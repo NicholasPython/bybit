@@ -65,7 +65,7 @@
 | 项目 | 实际结果 |
 |---|---|
 | 账户 UID | `587220933`（`/v5/user/query-api` 的 `userID`） |
-| 主/子账户 | **子账户**：`/v5/account/info` 的 `isMasterTrader=false`，`/v5/account/sub-account/list` 返回 HTTP 404（子账户 key 无权调用主账户接口）；`inviterID=586413070` |
+| 账户层级 | **主账户**：`/v5/user/query-api` 返回 `isMaster=true`、`parentUid="0"`、`uta=1`（统一交易账户），上级 `inviterID=586413070` 是推荐人而非父账户。`/v5/account/sub-account/list` 返回 HTTP 404 的原因是该 key 的 `Wallet` 权限组为空、无权列出子账户，与层级无关。`/v5/account/info` 的 `isMasterTrader=false` 指本账户不是「代客交易」账户，也不是子账户标记 |
 | 密钥类型 | 主网个人 key，`readOnly=1`（只读），提现关闭（`withdraw_enabled=false`） |
 | 权限集合 | SpotTrade、OptionsTrade、DerivativesTrade、Order、Position、ByXPost 等 |
 | IP 限制 | **无**（`ip_restrictions` 为空），不满足 SEC-01 的固定出口 IP 要求 |
@@ -84,9 +84,30 @@
 
 修复：新增 `_accrued_interest()`——仅当币种被交易所明确标记为非保证金（`marginCollateral=false`）且返回空串时按 0 处理；保证金币种返回空串、字段缺失、无法解析或为负时一律 fail-closed 拒绝读取。新增 5 项回归：空串非保证金币种可读且 USDT 可用余额不受影响；保证金币种空串、缺 `marginCollateral`、非数字、负值四种情形均拒绝。
 
+### 划转资金落点核查（2026-11-01 晚）
+
+账户所有者报告已向子账户划转一笔小额资金后，按同一把只读 key 复查：
+
+| 检查项 | 结果 |
+|---|---|
+| UNIFIED 钱包余额 | USDT 0.00607435、USD 0.00920955、SOL 0.00005005 —— 与划转前完全一致 |
+| 账户净值 | 0.02002602（划转前 0.02005792），差异仅来自 SOL 价格波动 |
+| 连续 6 轮轮询（约 2 分钟） | 每轮读数相同，资金未到账 |
+| `/v5/account/transaction-log` | 0 条记录 |
+| `/v5/account/sub-account/list` | HTTP 404（该 key 的 `Wallet` 权限组为空，无权列出子账户） |
+
+原因：资金进入的是另一个账户 UID。Bybit 界面上的 `Bybit_AI_Sub` 子账户 UID 为 **587685736**，净值 5.54600913 USD；而本 key 认证的账户 UID 是 **587220933**（`isMaster=true` 的主账户）。两者是不同账户，**该 key 的权限与余额都看不到 587685736**，因此无法用它交易那 5.55 USD。
+
+两条可行路径（择一）：
+
+1. 在 `Bybit_AI_Sub`（UID 587685736）内部创建密钥，并把配置的 `account.expected_uid` 设为该 UID —— 资金与交易主体一致，审计链最清晰。
+2. 把资金从 587685736 划转回 587220933，沿用现有账户边界 —— 前提是确认该主账户不与主账户 586413070 的资金混用。
+
+无论选哪条，都必须换成可写密钥（`readOnly=0`）并绑定固定出口 IP；两者都不改变“外部资金流需可登记”这一前置要求。
+
 ### 未覆盖与前置条件
 
 - 该 key 为只读，**不能下单**，因此期权下单、reduceOnly、成交回报、撤单与到期交割仍无真实账户证据；CR-03 的真实交割链路只能在 Demo/Testnet 或可写 key 上验证。
-- 账户净值不足 0.02 USDT，任何真实下单验证都需先充值；而子账户充值/划转当前会被判为 `EXTERNAL_CASH_CHANGE` 触发 CRITICAL 暂停——缺少“登记外部资金流”的管理命令，需在实盘验证前补齐。
+- 账户净值不足 0.02 USDT，任何真实下单验证都需先充值；而充值/划转当前会被判为 `EXTERNAL_CASH_CHANGE` 触发 CRITICAL 暂停——缺少“登记外部资金流”的管理命令，需在实盘验证前补齐。
 - 正式凭据需要满足 SEC-01：只保留必要权限、关闭提现、绑定固定出口 IP；并按 ENV-03 另行取得实盘允许配置、阶段验收记录与人工启用。
 - 本次提供的 key 已出现在对话记录中，测试后应在 Bybit 撤销并重新生成；后续凭据改由本机受限文件提供。
