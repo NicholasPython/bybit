@@ -358,6 +358,70 @@ async def test_portfolio_unknown_holds_have_zero_spendable_cash():
         assert (await instance.get_account()).coin("USDT").available == 0
 
 
+async def test_blank_accrued_interest_on_non_collateral_coin_reads_as_zero():
+    """真实账户返回空串应计利息（USD 等非保证金币种），不能视为解析失败。"""
+    def handle(req):
+        if req.url.path.endswith("query-api"):
+            return response(key_info())
+        if req.url.path.endswith("/info"):
+            return response({"marginMode": "REGULAR_MARGIN", "unifiedMarginStatus": 5})
+        return response(
+            {
+                "list": [
+                    {
+                        "accountType": "UNIFIED",
+                        "coin": [
+                            coin(),
+                            {
+                                "coin": "USD",
+                                "equity": "0.009",
+                                "walletBalance": "0.009",
+                                "spotBorrow": "0",
+                                "borrowAmount": "0",
+                                "accruedInterest": "",
+                                "availableToWithdraw": "",
+                                "locked": "0",
+                                "bonus": "0",
+                                "totalOrderIM": "0",
+                                "totalPositionIM": "0",
+                                "marginCollateral": False,
+                            },
+                        ],
+                        "totalEquity": "1200",
+                    }
+                ]
+            }
+        )
+
+    async with adapter(handle) as instance:
+        account = await instance.get_account()
+    assert account.coin("USD").accrued_interest == D("0")
+    assert account.coin("USDT").available == D("935")
+
+
+@pytest.mark.parametrize(
+    "coin_changes",
+    [
+        {"accruedInterest": "", "marginCollateral": True},
+        {"accruedInterest": ""},
+        {"accruedInterest": "abc"},
+        {"accruedInterest": "-1"},
+    ],
+)
+async def test_undecidable_accrued_interest_keeps_account_unreadable(coin_changes):
+    """空串出现在保证金币种或字段无法判定时必须 fail-closed，而不是当作 0。"""
+    def handle(req):
+        if req.url.path.endswith("query-api"):
+            return response(key_info())
+        if req.url.path.endswith("/info"):
+            return response({"marginMode": "REGULAR_MARGIN", "unifiedMarginStatus": 5})
+        return response({"list": [{"accountType": "UNIFIED", "coin": [coin(**coin_changes)]}]})
+
+    async with adapter(handle) as instance:
+        with pytest.raises(BybitRestError, match="accruedInterest"):
+            await instance.get_account()
+
+
 @pytest.mark.parametrize(
     "change",
     [

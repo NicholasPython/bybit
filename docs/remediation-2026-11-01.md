@@ -25,7 +25,7 @@
 
 ## 本地验证
 
-- 完整 Python 回归：**335 passed in 25.70s**。
+- 完整 Python 回归：**340 passed in 27.01s**（含本轮真实账户缺陷的 5 项新增回归）。
 - 页面命令提示：`node --test tests/console_ui.test.mjs`，**4 项通过**。
 - `ruff check src tests deploy alembic`、`git diff --check` 通过。
 - 本地 Alembic head 为 `8a4d17c2f905`，`alembic check` 无新增操作。
@@ -55,3 +55,38 @@
 回滚必须同时核对旧配置格式与检查点兼容性；发布后有交易事实时不能直接恢复旧检查点覆盖新账本。详情见 [NAS 手册](runbook-nas.md)。
 
 未配置真实业务通知渠道，未接入交易凭据，未启用策略、建立基线、确认接管或解除暂停。真实成交、撤单、交割、账户费率和阶段验收均不能由本轮合成测试替代；验收矩阵仍为 0 项全部验证、25 项部分验证、3 项待验证。
+
+## 5. 真实账户只读核验（2026-11-01 晚）
+
+用户提供了一把真实 Bybit key 用于测试。凭据只经受限文件与 stdin 管道送入 NAS 容器内的探测进程，脚本本身不含密钥；全程仅 GET，未产生任何订单、持仓或预留。
+
+### 账户与权限事实
+
+| 项目 | 实际结果 |
+|---|---|
+| 账户 UID | `587220933`（`/v5/user/query-api` 的 `userID`） |
+| 主/子账户 | **子账户**：`/v5/account/info` 的 `isMasterTrader=false`，`/v5/account/sub-account/list` 返回 HTTP 404（子账户 key 无权调用主账户接口）；`inviterID=586413070` |
+| 密钥类型 | 主网个人 key，`readOnly=1`（只读），提现关闭（`withdraw_enabled=false`） |
+| 权限集合 | SpotTrade、OptionsTrade、DerivativesTrade、Order、Position、ByXPost 等 |
+| IP 限制 | **无**（`ip_restrictions` 为空），不满足 SEC-01 的固定出口 IP 要求 |
+| 会员等级 | `No VIP`（与 CR-02 使用的非 VIP taker 公式一致） |
+| 账户模式 | `REGULAR_MARGIN`，`unifiedMarginStatus=5`（统一账户），`dcpStatus=OFF` |
+| 净值 | 约 0.0201 USDT：USDT 0.00607、USD 0.00921、SOL 0.00005005；无负债；USDT 累计已实现盈亏 -421.75 |
+| 持仓与挂单 | 期权、现货持仓均为 0，活动订单为 0 |
+
+### 费率核对（支持 CR-02 的公式假设）
+
+`/v5/account/fee-rate` 实测：期权 taker `0.0003`（BTC/ETH/TSLA/QQQ 一致）、maker `0.0002`～`0.0003`；现货 taker/maker `0.001`。与配置的 `option_underlying_rate=0.0003`、`spot_taker_rate=0.001` 及权利金 7% 封顶公式一致。
+
+### 暴露的缺陷：钱包余额读取被阻断
+
+真实响应中非保证金币种 USD 的 `accruedInterest` 为空串 `""`（同样为空的还有 `availableToBorrow`、`availableToWithdraw`），而适配器用 `_number(..., nonnegative=True)` 严格解析，空串即抛 `Missing or invalid accruedInterest`，**整个账户读取失败**。这是真实账户可用性的阻塞缺陷，会使身份核对与后续对账无法进行。
+
+修复：新增 `_accrued_interest()`——仅当币种被交易所明确标记为非保证金（`marginCollateral=false`）且返回空串时按 0 处理；保证金币种返回空串、字段缺失、无法解析或为负时一律 fail-closed 拒绝读取。新增 5 项回归：空串非保证金币种可读且 USDT 可用余额不受影响；保证金币种空串、缺 `marginCollateral`、非数字、负值四种情形均拒绝。
+
+### 未覆盖与前置条件
+
+- 该 key 为只读，**不能下单**，因此期权下单、reduceOnly、成交回报、撤单与到期交割仍无真实账户证据；CR-03 的真实交割链路只能在 Demo/Testnet 或可写 key 上验证。
+- 账户净值不足 0.02 USDT，任何真实下单验证都需先充值；而子账户充值/划转当前会被判为 `EXTERNAL_CASH_CHANGE` 触发 CRITICAL 暂停——缺少“登记外部资金流”的管理命令，需在实盘验证前补齐。
+- 正式凭据需要满足 SEC-01：只保留必要权限、关闭提现、绑定固定出口 IP；并按 ENV-03 另行取得实盘允许配置、阶段验收记录与人工启用。
+- 本次提供的 key 已出现在对话记录中，测试后应在 Bybit 撤销并重新生成；后续凭据改由本机受限文件提供。

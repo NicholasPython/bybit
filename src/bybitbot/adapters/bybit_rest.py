@@ -477,7 +477,7 @@ class BybitRestAdapter:
             # borrowAmount ALREADY includes spotBorrow, plus derivatives debt.
             own_cash = wallet - spot_borrow
             borrowed = max(_number(item, "borrowAmount", nonnegative=True), spot_borrow)
-            interest = _number(item, "accruedInterest", nonnegative=True)
+            interest = _accrued_interest(item)
             locked = _number(item, "locked", nonnegative=True)
             bonus = _opt_dec(item.get("bonus"))
             order_im = _opt_dec(item.get("totalOrderIM"))
@@ -1113,6 +1113,27 @@ def _number(item: dict[str, Any], key: str, *, nonnegative: bool = False) -> Dec
     value = _opt_dec(item.get(key))
     if value is None or nonnegative and value < 0:
         raise BybitRestError(f"Missing or invalid {key}")
+    return value
+
+
+def _accrued_interest(item: dict[str, Any]) -> Decimal:
+    """读取应计利息。
+
+    Bybit 对不参与利息计息的币种返回空串（例如非保证金币种 USD 的
+    ``accruedInterest: ""``），此时按 0 处理；保证金币种若返回空串说明
+    利息状态无法判定，拒绝继续并保持 fail-closed。
+    """
+    if "accruedInterest" not in item:
+        raise BybitRestError("Missing or invalid accruedInterest")
+    raw = item.get("accruedInterest")
+    value = _opt_dec(raw)
+    if value is None:
+        # 只有明确标记为非保证金币种时，空串才表示不计息。
+        if raw == "" and item.get("marginCollateral") is False:
+            return Decimal(0)
+        raise BybitRestError("Missing or invalid accruedInterest")
+    if value < 0:
+        raise BybitRestError("Missing or invalid accruedInterest")
     return value
 
 

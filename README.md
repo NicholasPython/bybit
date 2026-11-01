@@ -60,7 +60,7 @@ uv run ruff check src tests deploy
 uv run pytest -q
 ```
 
-最新结果为 **335 项通过**。测试在 `BYBITBOT_TESTING=1` 下运行；`tests/conftest.py` 阻断 httpx 的默认同步和异步 HTTP transport，交易所 HTTP 响应使用 `httpx.MockTransport`，交易行为使用 `PaperAdapter` 合成。数据库用例各自使用独立 PostgreSQL schema，结束后只删除自己的 schema。这不是操作系统级网络隔离，也不构成真实 Bybit 能力验收。管理页命令提示另有 `node --test tests/console_ui.test.mjs`（4 项）覆盖。
+最新结果为 **340 项通过**。测试在 `BYBITBOT_TESTING=1` 下运行；`tests/conftest.py` 阻断 httpx 的默认同步和异步 HTTP transport，交易所 HTTP 响应使用 `httpx.MockTransport`，交易行为使用 `PaperAdapter` 合成。数据库用例各自使用独立 PostgreSQL schema，结束后只删除自己的 schema。这不是操作系统级网络隔离，也不构成真实 Bybit 能力验收。管理页命令提示另有 `node --test tests/console_ui.test.mjs`（4 项）覆盖。
 
 ## 配置
 
@@ -157,7 +157,7 @@ uv run bybitbot --config config/config.yaml web --auth secrets/admin.json --host
 
 ```
 src/bybitbot/     应用代码
-tests/            335 项 Python 隔离测试、4 项页面提示测试
+tests/            340 项 Python 隔离测试、4 项页面提示测试
 alembic/          数据库迁移（当前 head: 8a4d17c2f905）
 config/           配置示例（无密钥）
 deploy/           容器、Quadlet、备份、Mac 端监控与安装脚本
@@ -170,3 +170,5 @@ docs/             需求、评审、验收矩阵、NAS 手册
 - 管理界面走私有网络或受控 HTTPS 入口，具身份认证、会话过期与写操作 CSRF 保护；数据库不向公网开放
 - 依赖版本固定（`uv.lock`、`deploy/requirements.lock` 带哈希），部署产物带版本号，测试不含真实密钥
 - 实盘发单需要独立的实盘允许配置、完整风控参数、验收记录与人工启用操作；切换环境不复用任务运行记录
+
+2026-11-01 用一把真实**只读** Bybit key 核对了读取链路（子账户、只读、无 IP 限制、净值约 0.02 USDT），并因此修复了钱包余额中空 `accruedInterest` 导致的账户读取失败。写路径、成交、撤单与到期交割仍无真实账户证据，详见 [整改记录](docs/remediation-2026-11-01.md) 第 5 节。

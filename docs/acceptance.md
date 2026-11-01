@@ -14,7 +14,9 @@
 
 当前统计：**已验证 0，部分验证 25，待验证 3**（AC-22、AC-24、AC-26）。每个 AC 都还有未覆盖的必要子场景，具体见矩阵；这不意味着每条 AC 都必须依赖真实交易才能测试。
 
-本地完整回归结果为 **335 passed in 25.70s**，其中交割接口契约 116 项、交割账本对账 9 项、费用 13 项、服务集成 12 项；页面命令提示另有 Node 测试 **4 项通过**。`ruff check src tests deploy alembic` 与 `alembic check` 通过。测试数据均为合成数据，无真实交易凭据；整改及实际页面操作证据见 [2026-11-01 整改记录](remediation-2026-11-01.md)。
+本地完整回归结果为 **340 passed in 27.01s**，其中交割接口契约 116 项、交割账本对账 9 项、费用 13 项、服务集成 12 项；页面命令提示另有 Node 测试 **4 项通过**。`ruff check src tests deploy alembic` 与 `alembic check` 通过。测试数据均为合成数据，无真实交易凭据；整改及实际页面操作证据见 [2026-11-01 整改记录](remediation-2026-11-01.md)。
+
+2026-11-01 已用一把**真实只读** Bybit key 做过一次读取链路核验（子账户 UID 587220933，`readOnly=1`）：身份、账户模式、钱包余额、持仓、挂单、合约规格、行情与费率字段均按真实响应核对，结论见整改记录第 5 节。该 key 无交易权限，**未产生任何订单**，因此写路径、成交、撤单与到期交割仍无真实账户证据。
 
 `tests/conftest.py` 设置 `BYBITBOT_TESTING=1` 并阻断 httpx 默认同步/异步 HTTP transport；交易所 HTTP 响应使用 `MockTransport`，模拟交易使用 `PaperAdapter`。这是应用测试层保护，不是操作系统级网络隔离。数据库用例使用独立 PostgreSQL schema。自动化测试不能据此证明真实 UID、账户模式、期权权限、报价单位、成交、撤单或到期交割能力。
 
@@ -25,7 +27,7 @@
 | 里程碑 | 当前状态 | 说明 |
 |---|---|---|
 | M0 开发基线 | 已建立 | 配置模式、数据模型、迁移、固定依赖、测试与部署文档已交付；GitHub Actions 已触发 |
-| M1 只读接入 | 模拟与接口契约有证据，真实账户未验 | 合约、钱包、权限与身份解析已测；没有真实 Key 核对记录 |
+| M1 只读接入 | 读取链路已用真实只读 key 核对，写入与权限闭环未验 | 真实账户身份、账户模式、钱包、持仓、合约规格、行情与费率字段已核对（只读 key）；交易写路径、期权下单权限与固定出口 IP 未验 |
 | M2 模拟闭环 | 已实现主要链路，验收未全通过 | 持久化、预留、执行、重启、退出和 paper 结算已测；仍缺部分风控、配置变更、时钟和故障组合证据 |
 | M3 非实盘联调 | 未完成 | NAS 部署、认证管理页、备份恢复已有证据；Demo/Testnet、真实告警和全部适用 P0 尚未通过 |
 | M4a / M4b | 未开始 | 没有实盘凭据、启用记录或适用阶段验收证据 |
@@ -36,7 +38,7 @@
 
 | AC / 需求 | 状态 | 已有证据 | 剩余必要子场景 |
 |---|---|---|---|
-| AC-01 · ENV-01/02/03 | 部分验证 | `test_endpoint_mismatch_rejected`、`test_demo_routes_public_and_private_to_separate_hosts`、`test_key_identity_fields_fail_closed`、`test_public_reads_have_no_auth_and_paper_discards_credentials`、`test_live_test_guard_blocks_even_explicit_enabled_mock_write`、`test_paper_guard_blocks_remote_writes` | 独立 DSN、live UID 与门槛的非法配置拒绝缺专项测试；实际 UID、账户模式、权限与固定出口未核对 |
+| AC-01 · ENV-01/02/03 | 部分验证 | `test_endpoint_mismatch_rejected`、`test_demo_routes_public_and_private_to_separate_hosts`、`test_key_identity_fields_fail_closed`、`test_public_reads_have_no_auth_and_paper_discards_credentials`、`test_live_test_guard_blocks_even_explicit_enabled_mock_write`、`test_paper_guard_blocks_remote_writes` | 独立 DSN、live UID 与门槛的非法配置拒绝缺专项测试；真实只读 key 的 UID、账户模式与权限集合已核对，固定出口 IP 未满足（该 key 无 IP 限制） |
 | AC-02 · MKT-01、SPT-01 | 部分验证 | `test_spot_spec_has_no_pagination_and_uses_limit_precision`、`test_option_specs_all_bases_paginated_and_strike_from_symbol`、`test_repeated_cursor_fails_instead_of_partial_snapshot`、`test_spot_no_leverage_and_signed_json_bytes` | 规格更新后拒单、退市/非 Trading 状态拒开仓缺服务层断言；全部出站路径不调用借贷/划转尚无独立证明 |
 | AC-03 · MKT-02/03、RSK-03 | 部分验证 | `test_ws_invalid_delta_requires_fresh_snapshot`、`test_ws_no_snapshot_and_reconnect_invalidate_delta`、`test_ws_crossed_book_invalidates_without_applying_partial_changes`、`test_private_disconnect_invalidates_before_backoff`、`test_missing_option_greeks_never_zero_delta` | 行情失效→暂停→重建→恢复的服务层组合场景未验；不可变决策行情快照引用未完整关联；worker 主链路目前为 REST 轮询 |
 | AC-04 · STR-01/02 | 部分验证 | `test_schedule_100_duplicates_claim_once_and_skip_missed`、`test_enabled_template_schedule_fills_once_across_restart`、`test_global_physical_ids` | 时钟回拨与时区跨日去重、过期信号拒绝、意图所有必填字段正确填充缺专项断言 |
@@ -59,7 +61,7 @@
 | AC-21 · SEC-01/02/03 | 部分验证 | `tests/test_web.py` 的认证/会话/CSRF/限流/脱敏用例；`tests/test_valuation_secrets.py` 的权限/属主/读取失败/脱敏用例；NAS 和本机数据库回环监听实测 | 缺代码/日志/镜像/导出的自动化全量泄漏扫描；实际固定出口与 API 权限未验；凭据轮换未做账户演练；API 凭据装载器未达到管理身份文件的同等软链接/描述符加固 |
 | AC-22 · NFR-01/02/05 | 待验证 | 有容量与磁盘阈值配置、磁盘检查实现 | 没有容量负载、P95 延迟、CPU/内存、磁盘增长或磁盘不足暂停证据；数据保留清理尚未实现 |
 | AC-23 · OPS-05、NFR-04、LED-02 | 部分验证 | `deploy/backup.sh` 流式加密；异机复制及独立库恢复已实测；恢复命令已记录在手册 | 尚无自动化恢复演练、备份后成交回填、只读服务启动及 RTO/RPO 测量；当前备份脚本仅覆盖 paper 数据库 |
-| AC-24 · ENV-02、OPT-01/03/04 | 待验证 | REST 契约测试覆盖目录、钱包、期权参数、完整历史枚举和深度限制 | 没有真实凭据；期权权限、reduceOnly、模式、数量/报价/Greeks 单位、费用、成交/撤单/交割能力均未实测 |
+| AC-24 · ENV-02、OPT-01/03/04 | 待验证 | REST 契约测试覆盖目录、钱包、期权参数、完整历史枚举和深度限制 | 真实只读 key 已核对权限集合、账户模式、费率（期权 taker 0.0003、现货 taker 0.001，与 CR-02 模型一致）、合约规格与行情字段；reduceOnly、数量/报价/Greeks 单位、成交、撤单与交割仍需可写凭据实测 |
 | AC-25 · EXE-03、SPT-02、OPT-02、LED-04 | 部分验证 | `test_costs_follow_fee_units_and_strategy`、`test_inventory_close_competition_and_strategy_ownership`、`test_settlement_evidence_idempotency_and_cost_release`、`test_paper_settlement_checkpoint_and_ledger_replay`、重复权益防护单测 | 成本测试是单策略；同合约双策略多批买入/部分卖出未验；跨币费用组合及支付→估值→退出/结算全过程未串联验证 |
 | AC-26 · NFR-06、STR-02 | 待验证 | `test_schedule_100_duplicates_claim_once_and_skip_missed`；`test_day_key_and_day_start_follow_configured_timezone` 验证了日界线转换 | 时钟前跳/回拨/偏差超限暂停未演练；`Deadline` 不受墙钟影响、退避稳定性、时间恢复后的资格检查缺专项断言 |
 | AC-27 · RSK-02、OPT-03、ENV-02 | 部分验证 | `test_wallet_debt_not_double_counted_or_spendable`、`test_portfolio_unknown_holds_have_zero_spendable_cash`、现金预留竞争及冻结重叠证据测试 | 结算币现金不足但抵押品充足、运行中新负债→暂停/告警、无自动借贷/划转缺专项端到端场景 |
@@ -81,7 +83,7 @@
 
 **估值恢复与锁定熔断不同。** `TradingService._value` 在本次估值不完整时写暂停并立即返回；只有本次估值完整、基线可用后才清除 `VALUATION_UNAVAILABLE`。`LOSS_CIRCUIT_BREAKER` 和 `DRAWDOWN_LIMIT` 属锁定原因，不随该清除动作解除。因此不能仅凭 `VALUATION_UNAVAILABLE` 是技术暂停，就认定系统会用旧净值解除熔断。仍需补组合回归测试。
 
-**提现权限已参与身份门槛。** `TradingService._account_sync` 的 `identity_ok` 包含 `not key.withdraw_enabled`；失败会写 `ACCOUNT_UNTRUSTED` 暂停。当前缺口是该服务分支的专项断言与真实账户验证，不能表述为“只展示、不强制”。
+**提现权限已参与身份门槛。** `TradingService._account_sync` 的 `identity_ok` 包含 `not key.withdraw_enabled`；失败会写 `ACCOUNT_UNTRUSTED` 暂停。真实账户上该 key 的 `withdraw_enabled` 为关闭，但因 `readOnly=1` 身份门槛整体不通过，无法在真实账户上走到该断言；缺口是服务分支的专项断言，不能表述为“只展示、不强制”。
 
 ### 3.3 主要实现边界
 
