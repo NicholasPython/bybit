@@ -150,7 +150,7 @@ NAS 使用已有本地 Python 基础层构建成功。标准 `Containerfile` 在
 
 | 文件 | 收集项数 | 主要覆盖 |
 |---|---|---|
-| `tests/test_adapters.py` | 71 | REST/WS 契约、签名、端点、分页、身份、现金语义、限流与重试 |
+| `tests/test_adapters.py` | 76 | REST/WS 契约、签名、端点、分页、身份、现金语义、空应计利息、限流与重试 |
 | `tests/test_web.py` | 42 | 认证、会话、CSRF、命令幂等、脱敏、CSV、管理身份文件 |
 | `tests/test_execution.py` | 19 | UNKNOWN、终态/晚到成交、预留、恢复、租约、对账、结算 |
 | `tests/test_core.py` | 15 | Delta 区间、现金/库存竞争、成本费用、调度去重、物理单号 |
@@ -163,6 +163,6 @@ NAS 使用已有本地 Python 基础层构建成功。标准 `Containerfile` 在
 | `tests/test_valuation_secrets.py` | 28 | 权益、损益、回撤、日界线、空头拒绝、凭据权限/属主/读取失败/脱敏 |
 | `tests/test_ops.py` | 1 | 告警投递、重试、去重、恢复 |
 | `tests/test_cli.py` | 1 | 管理身份生成、权限与拒绝覆盖 |
-| **合计** | **335** | 另有 Node 页面提示回归 4 项 |
+| **合计** | **340** | 另有 Node 页面提示回归 4 项 |
 
 本文未以 import 次数代替代码覆盖率，也未测得行/分支覆盖率百分比。各 AC 的剩余差距基于具体输入与断言是否存在；测试通过和真实部署正常均不自动赋予实盘发单资格。
