@@ -251,6 +251,16 @@ async def test_control_requires_origin_and_csrf(client, database, overrides):
         ("RESUME", {"pause_id": 3, "reason": "对账完成后核验"}),
         ("CONFIRM_TAKEOVER", {"evidence": "已检查旧 worker PID 结束", "reason": "服务接管"}),
         ("INITIALIZE_BASELINE", {"reason": "明确从当前时点建立首次风险起点"}),
+        (
+            "REGISTER_EXTERNAL_CASH_FLOW",
+            {
+                "asset": "USDT",
+                "amount": "5.55",
+                "kind": "TRANSFER_IN",
+                "reference": "bybit-transfer-20261101",
+                "reason": "主账户划入子账户",
+            },
+        ),
     ],
 )
 async def test_all_commands_only_enqueue_once(client, database, kind, payload):
@@ -292,6 +302,46 @@ async def test_commands_reject_invalid_scope_and_confirmation(client, changes):
     headers = await login(client)
     body = {**command("CANCEL_ORDER", {"order_link_ids": ["one"]}), **changes}
     assert (await client.post("/api/commands", json=body, headers=headers)).status_code == 422
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"asset": "USDT", "amount": "5.55", "kind": "TRANSFER_IN"},  # 缺少流水标识与原因
+        {"asset": "USDT", "amount": "-5.55", "kind": "TRANSFER_IN",
+         "reference": "r", "reason": "x"},
+        {"asset": "USDT", "amount": "0", "kind": "TRANSFER_IN", "reference": "r", "reason": "x"},
+        {"asset": "USDT", "amount": "5.55", "kind": "UNKNOWN", "reference": "r", "reason": "x"},
+        {"asset": "usdt!", "amount": "5.55", "kind": "TRANSFER_IN",
+         "reference": "r", "reason": "x"},
+        {"asset": "USDT", "amount": "5.55", "kind": "TRANSFER_IN", "reference": "", "reason": "x"},
+        {"asset": "USDT", "amount": "5.55", "kind": "TRANSFER_IN", "reference": "r", "reason": "x",
+         "extra": "not-allowed"},
+    ],
+)
+async def test_external_cash_flow_payload_is_validated(client, payload):
+    """外部资金流登记只接受估值币种、正金额和已知类型。"""
+    headers = await login(client)
+    body = command("REGISTER_EXTERNAL_CASH_FLOW", payload)
+    assert (await client.post("/api/commands", json=body, headers=headers)).status_code == 422
+
+
+async def test_external_cash_flow_requires_explicit_confirmation(client):
+    headers = await login(client)
+    body = command(
+        "REGISTER_EXTERNAL_CASH_FLOW",
+        {
+            "asset": "USDT",
+            "amount": "5.55",
+            "kind": "TRANSFER_IN",
+            "reference": "bybit-transfer-20261101",
+            "reason": "主账户划入",
+        },
+    )
+    body["confirmation"] = None
+    assert (await client.post("/api/commands", json=body, headers=headers)).status_code == 422
+    body["confirmation"] = "确认"
+    assert (await client.post("/api/commands", json=body, headers=headers)).status_code == 202
 
 
 @pytest.mark.parametrize("qty", ["0", "-1", "NaN", "Infinity", "1e9", "0.0000000000000000001", 1.2])

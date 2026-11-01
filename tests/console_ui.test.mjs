@@ -76,7 +76,7 @@ function createDocument(commandButtons) {
   };
 }
 
-async function boot({ commands = [], pending = null, commandResponder = null } = {}) {
+async function boot({ commands = [], pending = null, commandResponder = null, commandKind = "CANCEL_BOT_OPEN_ORDERS" } = {}) {
   const requests = [];
   const store = new Map();
   if (pending) store.set(PENDING_KEY, JSON.stringify(pending));
@@ -98,7 +98,7 @@ async function boot({ commands = [], pending = null, commandResponder = null } =
     control_commands: [...commands],
   };
   const commandButtons = [new FakeNode("button")];
-  commandButtons[0].dataset.command = "CANCEL_BOT_OPEN_ORDERS";
+  commandButtons[0].dataset.command = commandKind;
   const document = createDocument(commandButtons);
   const fetchStub = async (path, options = {}) => {
     const body = options.body ? JSON.parse(options.body) : null;
@@ -240,4 +240,35 @@ test("ISSUE-002：待处理记录清除后提示仍随持久化结果更新", as
   assert.match(notice.textContent, /已执行/, "清除待处理后提示仍应跟随最终结果");
   assert.equal(notice.textContent.includes("待处理"), false, "不应残留待处理提示");
   assert.equal(app.element("retry-pending").hidden, true, "不应再提示重试未确认命令");
+});
+
+test("外部资金流登记：表单收集范围并要求正金额与确认词", async () => {
+  const app = await boot({ commandKind: "REGISTER_EXTERNAL_CASH_FLOW" });
+  await app.commandButtons[0].dispatch("click");
+  assert.equal(app.element("command-title").textContent, "登记外部资金流");
+
+  app.element("field-asset").value = "usdt";
+  app.element("field-amount").value = "5.55";
+  app.element("field-kind").value = "TRANSFER_IN";
+  app.element("field-reference").value = "bybit-transfer-20261101";
+  app.element("field-reason").value = "主账户划入子账户";
+
+  app.element("confirmation").value = CONFIRMATION;
+  app.element("field-amount").value = "0";
+  await app.element("command-form").dispatch("submit");
+  assert.match(app.element("command-error").textContent, /必须是正数/);
+  assert.equal(app.requests.filter((request) => request.path === "/api/commands").length, 0);
+
+  app.element("field-amount").value = "5.55";
+  await app.element("command-form").dispatch("submit");
+
+  const posted = app.requests.filter((request) => request.path === "/api/commands")[0].body;
+  assert.equal(posted.kind, "REGISTER_EXTERNAL_CASH_FLOW");
+  assert.deepEqual(posted.payload, {
+    asset: "USDT",
+    amount: "5.55",
+    kind: "TRANSFER_IN",
+    reference: "bybit-transfer-20261101",
+    reason: "主账户划入子账户",
+  });
 });

@@ -26,6 +26,8 @@ class CommandKind(StrEnum):
     RESUME = "RESUME"
     CONFIRM_TAKEOVER = "CONFIRM_TAKEOVER"
     INITIALIZE_BASELINE = "INITIALIZE_BASELINE"
+    #: 登记外部充值/提现/划转（LED-03 / LED-04）。
+    REGISTER_EXTERNAL_CASH_FLOW = "REGISTER_EXTERNAL_CASH_FLOW"
 
 
 class CommandStatus(StrEnum):
@@ -103,6 +105,7 @@ class ControlCommandManager:
         reduce_handler=None,
         takeover_handler=None,
         baseline_handler=None,
+        cash_flow_handler=None,
     ):
         async with self.sessionmaker() as session:
             claimed = await session.scalar(
@@ -128,6 +131,7 @@ class ControlCommandManager:
                 reduce_handler=reduce_handler,
                 takeover_handler=takeover_handler,
                 baseline_handler=baseline_handler,
+                cash_flow_handler=cash_flow_handler,
             )
             status = CommandStatus.EXECUTED
         except (ValueError, RuntimeError) as exc:
@@ -153,6 +157,7 @@ class ControlCommandManager:
         reduce_handler,
         takeover_handler,
         baseline_handler,
+        cash_flow_handler,
     ):
         payload = command.payload or {}
         if command.kind == CommandKind.PAUSE_NEW_RISK:
@@ -168,6 +173,7 @@ class ControlCommandManager:
             CommandKind.REDUCE: reduce_handler,
             CommandKind.CONFIRM_TAKEOVER: takeover_handler,
             CommandKind.INITIALIZE_BASELINE: baseline_handler,
+            CommandKind.REGISTER_EXTERNAL_CASH_FLOW: cash_flow_handler,
         }
         if command.kind in handlers:
             handler = handlers[command.kind]

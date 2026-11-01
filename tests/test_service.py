@@ -12,6 +12,8 @@ from bybitbot.adapters.base import InstrumentSpec, OrderBook, Ticker
 from bybitbot.adapters.paper import PaperAdapter
 from bybitbot.clock import now_utc
 from bybitbot.db.models import (
+    CashFlow,
+    ControlCommand,
     EquityBaseline,
     Execution,
     Instrument,
@@ -25,6 +27,7 @@ from bybitbot.execution.lease import LeaseState
 from bybitbot.ops.control import CommandKind
 from bybitbot.service import TradingService
 from bybitbot.settings.loader import load_config
+from bybitbot.settings.models import Environment
 from bybitbot.strategy.base import IntentDraft
 
 
@@ -721,3 +724,133 @@ async def test_paper_settlement_checkpoint_and_ledger_replay(database, settlemen
             assert await session.scalar(select(func.count()).select_from(Execution)) == 1
     finally:
         await service.close()
+
+
+def live_service_config(config):
+    """把示例配置切到非模拟环境，用于测试外部资金流登记。"""
+    return config.model_copy(update={"active_environment": Environment.TESTNET})
+
+
+async def register_flow(service, payload, *, command_id=None):
+    row, _ = await service.commands.submit(
+        command_id=command_id or str(uuid.uuid4()),
+        kind=CommandKind.REGISTER_EXTERNAL_CASH_FLOW,
+        payload=payload,
+        requested_by="test-operator",
+    )
+    await service._process_commands()
+    async with service.database.sessionmaker() as session:
+        return await session.get(ControlCommand, row.id)
+
+
+async def test_external_cash_flow_is_recorded_with_audit(database):
+    config = live_service_config(load_config("config/config.example.yaml"))
+    service = TradingService(config, database, market_adapter=FixedMarket())
+    service.executor = None
+    service.identity_ok = True
+    row = await register_flow(service, {
+        "asset": "USDT",
+        "amount": "5.55",
+        "kind": "TRANSFER_IN",
+        "reference": "bybit-transfer-20261101",
+        "reason": "主账户划入子账户",
+    })
+    assert row.status == "EXECUTED", row.result
+    assert row.result["amount"] == "5.55" and row.result["external"] is True
+    async with database.sessionmaker() as session:
+        flow = await session.scalar(select(CashFlow))
+        assert flow is not None
+        assert flow.asset == "USDT" and flow.amount == D("5.55")
+        assert flow.kind == "TRANSFER_IN" and flow.external is True
+        event = await session.scalar(
+            select(LedgerEvent).where(
+                LedgerEvent.event_type == "REGISTER_EXTERNAL_CASH_FLOW"
+            )
+        )
+        assert event is not None
+        assert event.payload["operator"] == "test-operator"
+        assert event.payload["reference"] == "bybit-transfer-20261101"
+
+
+async def test_external_cash_flow_direction_follows_kind(database):
+    config = live_service_config(load_config("config/config.example.yaml"))
+    service = TradingService(config, database, market_adapter=FixedMarket())
+    service.executor = None
+    service.identity_ok = True
+    row = await register_flow(service, {
+        "asset": "USDT",
+        "amount": "2.5",
+        "kind": "WITHDRAWAL",
+        "reference": "bybit-withdrawal-1",
+        "reason": "提现",
+    })
+    assert row.status == "EXECUTED", row.result
+    assert row.result["amount"] == "-2.5"
+    async with database.sessionmaker() as session:
+        flow = await session.scalar(select(CashFlow))
+        assert flow.amount == D("-2.5")
+
+
+async def test_external_cash_flow_cannot_be_registered_twice(database):
+    config = live_service_config(load_config("config/config.example.yaml"))
+    service = TradingService(config, database, market_adapter=FixedMarket())
+    service.executor = None
+    service.identity_ok = True
+    payload = {
+        "asset": "USDT",
+        "amount": "5.55",
+        "kind": "TRANSFER_IN",
+        "reference": "bybit-transfer-20261101",
+        "reason": "主账户划入子账户",
+    }
+    first = await register_flow(service, payload)
+    assert first.status == "EXECUTED", first.result
+    second = await register_flow(service, payload)
+    assert second.status == "REJECTED"
+    async with database.sessionmaker() as session:
+        assert await session.scalar(select(func.count()).select_from(CashFlow)) == 1
+
+
+@pytest.mark.parametrize(
+    ("payload", "environment", "identity", "expected"),
+    [
+        (
+            {"asset": "BTC", "amount": "1", "kind": "DEPOSIT", "reference": "r1", "reason": "x"},
+            "testnet", True, "只能登记估值币种",
+        ),
+        (
+            {"asset": "USDT", "amount": "0", "kind": "DEPOSIT", "reference": "r2", "reason": "x"},
+            "testnet", True, "金额必须为正数",
+        ),
+        (
+            {"asset": "USDT", "amount": "1", "kind": "UNKNOWN", "reference": "r3", "reason": "x"},
+            "testnet", True, "未知的外部资金流类型",
+        ),
+        (
+            {"asset": "USDT", "amount": "1", "kind": "DEPOSIT", "reference": "", "reason": "x"},
+            "testnet", True, "交易所侧的资金流水标识",
+        ),
+        (
+            {"asset": "USDT", "amount": "1", "kind": "DEPOSIT", "reference": "r5", "reason": "x"},
+            "testnet", False, "账户身份未通过验证",
+        ),
+        (
+            {"asset": "USDT", "amount": "1", "kind": "DEPOSIT", "reference": "r6", "reason": "x"},
+            "paper", True, "模拟环境不登记外部资金流",
+        ),
+    ],
+)
+async def test_external_cash_flow_rejects_unusable_input(
+    database, payload, environment, identity, expected
+):
+    config = live_service_config(load_config("config/config.example.yaml"))
+    if environment == "paper":
+        config = config.model_copy(update={"active_environment": Environment.PAPER})
+    service = TradingService(config, database, market_adapter=FixedMarket())
+    service.executor = None
+    service.identity_ok = identity
+    row = await register_flow(service, payload)
+    assert row.status == "REJECTED"
+    assert expected in row.result["error"]
+    async with database.sessionmaker() as session:
+        assert await session.scalar(select(func.count()).select_from(CashFlow)) == 0

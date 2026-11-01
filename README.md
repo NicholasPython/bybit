@@ -60,7 +60,7 @@ uv run ruff check src tests deploy
 uv run pytest -q
 ```
 
-最新结果为 **340 项通过**。测试在 `BYBITBOT_TESTING=1` 下运行；`tests/conftest.py` 阻断 httpx 的默认同步和异步 HTTP transport，交易所 HTTP 响应使用 `httpx.MockTransport`，交易行为使用 `PaperAdapter` 合成。数据库用例各自使用独立 PostgreSQL schema，结束后只删除自己的 schema。这不是操作系统级网络隔离，也不构成真实 Bybit 能力验收。管理页命令提示另有 `node --test tests/console_ui.test.mjs`（4 项）覆盖。
+最新结果为 **358 项通过**。测试在 `BYBITBOT_TESTING=1` 下运行；`tests/conftest.py` 阻断 httpx 的默认同步和异步 HTTP transport，交易所 HTTP 响应使用 `httpx.MockTransport`，交易行为使用 `PaperAdapter` 合成。数据库用例各自使用独立 PostgreSQL schema，结束后只删除自己的 schema。这不是操作系统级网络隔离，也不构成真实 Bybit 能力验收。管理页命令提示另有 `node --test tests/console_ui.test.mjs`（4 项）覆盖。
 
 ## 配置
 
@@ -157,7 +157,7 @@ uv run bybitbot --config config/config.yaml web --auth secrets/admin.json --host
 
 ```
 src/bybitbot/     应用代码
-tests/            340 项 Python 隔离测试、4 项页面提示测试
+tests/            358 项 Python 隔离测试、5 项页面提示测试
 alembic/          数据库迁移（当前 head: 8a4d17c2f905）
 config/           配置示例（无密钥）
 deploy/           容器、Quadlet、备份、Mac 端监控与安装脚本

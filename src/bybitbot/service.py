@@ -15,7 +15,7 @@ import logging
 import shutil
 import time
 from dataclasses import asdict, replace
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 from sqlalchemy import func, select, text, update
@@ -163,6 +163,15 @@ class DecisionView:
 
 
 class TradingService:
+    #: 外部资金流类型与方向（LED-03 / LED-04）。金额一律填正数，
+    #: 方向由类型决定，避免把提现登记成充值。
+    _EXTERNAL_FLOW_SIGNS = {
+        "DEPOSIT": 1,
+        "TRANSFER_IN": 1,
+        "WITHDRAWAL": -1,
+        "TRANSFER_OUT": -1,
+    }
+
     def __init__(
         self,
         config: AppConfig,
@@ -1016,7 +1025,91 @@ class TradingService:
                 reduce_handler=self._reduce,
                 takeover_handler=self._takeover,
                 baseline_handler=self._initialize_baseline,
+                cash_flow_handler=self._register_external_cash_flow,
             )
+
+    async def _register_external_cash_flow(self, command):
+        """登记外部充值/提现/划转（LED-03 / LED-04）。
+
+        账户外的资金变化必须显式登记：未登记的现金变化会被判为
+        ``EXTERNAL_CASH_CHANGE`` 并触发 CRITICAL 暂停；登记后外部资金计入
+        账户总风险但不归属任何策略，日亏损与回撤按净流量调整。
+        """
+        if self.environment == "paper":
+            raise RuntimeError("模拟环境不登记外部资金流")
+        if not self.identity_ok:
+            raise RuntimeError("账户身份未通过验证，不能登记外部资金流")
+        payload = command.payload or {}
+        currency = self.config.ops.valuation.currency.upper()
+        asset = str(payload.get("asset", "")).strip().upper()
+        if asset != currency:
+            raise ValueError(f"只能登记估值币种 {currency} 的外部资金流")
+        kind = str(payload.get("kind", ""))
+        sign = self._EXTERNAL_FLOW_SIGNS.get(kind)
+        if sign is None:
+            raise ValueError("未知的外部资金流类型")
+        reference = str(payload.get("reference", "")).strip()
+        if not reference:
+            raise ValueError("必须填写交易所侧的资金流水标识")
+        try:
+            amount = Decimal(str(payload.get("amount")))
+        except (InvalidOperation, ValueError, TypeError):
+            raise ValueError("金额无法解析") from None
+        if not amount.is_finite() or amount <= 0:
+            raise ValueError("金额必须为正数，资金方向由类型决定")
+        occurred_at = now_utc()
+        raw_time = payload.get("occurred_at")
+        if raw_time:
+            try:
+                parsed = dt.datetime.fromisoformat(str(raw_time))
+            except ValueError:
+                raise ValueError("资金发生时间无法解析") from None
+            if parsed.tzinfo is None:
+                raise ValueError("资金发生时间必须带时区")
+            if parsed > occurred_at + dt.timedelta(minutes=5):
+                raise ValueError("资金发生时间不能晚于当前时间")
+            occurred_at = parsed
+        signed = amount * sign
+        # 以交易所流水标识去重：同一笔划转不能被两条命令重复登记。
+        dedupe_key = f"external-cash-flow:{reference}"[:256]
+        async with self.database.sessionmaker() as session:
+            flow = await self.ledger.record_cash_flow(
+                session,
+                asset=asset,
+                amount=signed,
+                kind=kind,
+                dedupe_key=dedupe_key,
+                occurred_at=occurred_at,
+                external=True,
+            )
+            if flow is None:
+                raise RuntimeError("该笔资金流已经登记过")
+            await self.ledger.append_event(
+                session,
+                event_type="REGISTER_EXTERNAL_CASH_FLOW",
+                dedupe_key=f"audit:external-cash-flow:{command.command_id}",
+                payload={
+                    "category": "cash_flow",
+                    "operator": command.requested_by,
+                    "command_id": command.command_id,
+                    "cash_flow_id": flow.id,
+                    "asset": asset,
+                    "amount": str(signed),
+                    "kind": kind,
+                    "reference": reference,
+                    "reason": str(payload.get("reason", "")),
+                },
+                occurred_at=occurred_at,
+            )
+            await session.commit()
+        return {
+            "cash_flow_id": flow.id,
+            "asset": asset,
+            "amount": str(signed),
+            "kind": kind,
+            "reference": reference,
+            "external": True,
+        }
 
     async def _initialize_baseline(self, command):
         if not self.identity_ok:

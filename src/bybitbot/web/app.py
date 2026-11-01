@@ -134,6 +134,27 @@ class TakeoverPayload(_RequestModel):
     reason: Reason
 
 
+class CashFlowPayload(_RequestModel):
+    """登记外部充值/提现/划转。金额填正数，方向由类型决定。"""
+
+    asset: Annotated[
+        str, StringConstraints(strip_whitespace=True, to_upper=True, pattern=r"^[A-Z0-9]{2,16}$")
+    ]
+    amount: Amount
+    kind: Literal["DEPOSIT", "WITHDRAWAL", "TRANSFER_IN", "TRANSFER_OUT"]
+    reference: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)
+    ]
+    occurred_at: dt.datetime | None = None
+    reason: Reason
+
+    @model_validator(mode="after")
+    def positive_amount(self) -> CashFlowPayload:
+        if Decimal(self.amount) <= 0:
+            raise ValueError("amount must be positive")
+        return self
+
+
 _PAYLOAD_MODELS = {
     "PAUSE_NEW_RISK": PausePayload,
     "CANCEL_BOT_OPEN_ORDERS": CancelOpenPayload,
@@ -142,6 +163,7 @@ _PAYLOAD_MODELS = {
     "RESUME": ResumePayload,
     "CONFIRM_TAKEOVER": TakeoverPayload,
     "INITIALIZE_BASELINE": PausePayload,
+    "REGISTER_EXTERNAL_CASH_FLOW": CashFlowPayload,
 }
 
 
@@ -157,6 +179,7 @@ class CommandRequest(_RequestModel):
         "RESUME",
         "CONFIRM_TAKEOVER",
         "INITIALIZE_BASELINE",
+        "REGISTER_EXTERNAL_CASH_FLOW",
     ]
     payload: dict[str, Any] = Field(max_length=8)
     confirmation: str | None = Field(default=None, max_length=8)

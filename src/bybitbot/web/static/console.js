@@ -39,6 +39,7 @@
     PAUSE_NEW_RISK: "暂停新增风险", CANCEL_BOT_OPEN_ORDERS: "撤销 bot 开仓单",
     CANCEL_ORDER: "撤销指定 bot 订单", REDUCE: "受限减仓", RESUME: "恢复指定暂停",
     CONFIRM_TAKEOVER: "确认执行者接管", INITIALIZE_BASELINE: "建立首次风险基线",
+    REGISTER_EXTERNAL_CASH_FLOW: "登记外部资金流",
   };
   const state = (value) => text(stateNames[value], text(value, "未知"));
   const badge = (value, label) => {
@@ -301,6 +302,7 @@
     RESUME: [["pause_id", "暂停编号", "id", true], ["reason", "恢复原因", "textarea", true]],
     CONFIRM_TAKEOVER: [["evidence", "旧进程已经停止的证据", "textarea", true], ["reason", "接管原因", "textarea", true]],
     INITIALIZE_BASELINE: [["reason", "建立风险起点的原因", "textarea", true]],
+    REGISTER_EXTERNAL_CASH_FLOW: [["asset", "币种", "symbol", true], ["amount", "金额（正数）", "decimal", true], ["kind", "资金流类型", "cashflow", true], ["reference", "交易所流水标识", "text", true], ["occurred_at", "发生时间（ISO 8601，可留空）", "text"], ["reason", "登记原因", "textarea", true]],
   };
   const descriptions = {
     PAUSE_NEW_RISK: "暂停账户新增风险，交易服务会处理 bot 开仓挂单。已有可信库存的退出仍需按规则校验。",
@@ -310,6 +312,7 @@
     RESUME: "每次只申请解除指定暂停。未知订单须先取得交易事实证据；人工确认不会替代对账。其他暂停继续生效。",
     CONFIRM_TAKEOVER: "确认旧执行者已停止，并记录可核查依据。仅有数据库锁或服务页面连通不能证明旧执行者已停止。",
     INITIALIZE_BASELINE: "以完整估值建立首次风险起点，首日标记为不完整交易日。此操作不会覆盖已有起点，也不覆盖接入前损失。",
+    REGISTER_EXTERNAL_CASH_FLOW: "登记账户外的充值、提现或划转。金额填正数，方向由类型决定；只登记估值币种。交易所流水标识用于日后核对，登记会记录操作者与时间。",
   };
   function scopeText(kind, payload = {}, environment) {
     let summary = `环境 ${environment || snapshot?.environment || "未知"}`;
@@ -317,6 +320,7 @@
     else if (kind === "REDUCE") summary += `；策略 ${payload.strategy_id || "未填写"}；${payload.category || "未选择"} ${payload.symbol || "未填写"}；数量 ${payload.qty || "未填写"}；价格不低于 ${payload.price_floor || "未填写"}`;
     else if (kind === "RESUME") summary += `；暂停 #${payload.pause_id || "未填写"}`;
     else if (kind === "CANCEL_BOT_OPEN_ORDERS") summary += `；${payload.strategy_id ? `策略 ${payload.strategy_id}` : "全部策略"}；${payload.symbol || "全部标的"}；仅 bot 开仓单`;
+    else if (kind === "REGISTER_EXTERNAL_CASH_FLOW") summary += `；${payload.asset || "未填写"} ${payload.amount || "未填写"}；${payload.kind || "未选择"}；流水 ${payload.reference || "未填写"}`;
     else summary += "；当前账户";
     return summary;
   }
@@ -356,9 +360,12 @@
       const wrapper = node("div");
       const id = `field-${key}`;
       const caption = node("label", label); caption.htmlFor = id;
-      const input = node(type === "textarea" ? "textarea" : type === "category" ? "select" : "input");
+      const input = node(type === "textarea" ? "textarea" : ["category", "cashflow"].includes(type) ? "select" : "input");
       input.id = id; input.name = key; input.required = !!required; input.autocomplete = "off";
       if (type === "category") for (const [value, title] of [["spot", "现货 spot"], ["option", "期权 option"]]) {
+        const option = node("option", title); option.value = value; input.append(option);
+      }
+      if (type === "cashflow") for (const [value, title] of [["DEPOSIT", "充值 deposit"], ["TRANSFER_IN", "划入 transfer in"], ["WITHDRAWAL", "提现 withdrawal"], ["TRANSFER_OUT", "划出 transfer out"]]) {
         const option = node("option", title); option.value = value; input.append(option);
       }
       if (["id", "decimal"].includes(type)) input.inputMode = type === "id" ? "numeric" : "decimal";
