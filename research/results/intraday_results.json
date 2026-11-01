@@ -45,8 +45,9 @@
       "XRPUSDT",
       "ZROUSDT"
     ],
-    "start_open": "2024-01-01",
-    "end_open": "2026-11-01",
+    "start_open": "2024-01-01T00:00:00Z",
+    "end_open": "2026-11-01T16:00:00Z",
+    "min_30d_mean_daily_turnover_usdt": 1000000,
     "cost": {
       "fee": 0.001,
       "slippage": 0.0005
@@ -24942,36 +24943,36 @@
       "hold_days": 24,
       "per_trade": 0.05
     },
-    "total_return": -0.15047337770364366,
-    "cagr": -0.0558524990218634,
-    "vol": 0.2313774648883545,
-    "sharpe": -0.1323924054497527,
-    "sortino": -0.18036104850797668,
-    "max_drawdown": -0.27669391254188247,
-    "calmar": -0.20185662383667058,
-    "turnover_per_year": 139.76443884917146,
-    "exposure": 0.19421824734621312,
-    "trades": 20907,
+    "total_return": -0.12242155080628558,
+    "cagr": -0.04498043812130759,
+    "vol": 0.23047980645170657,
+    "sharpe": -0.08414878217970792,
+    "sortino": -0.11491359808834076,
+    "max_drawdown": -0.2576125606772509,
+    "calmar": -0.17460498821585485,
+    "turnover_per_year": 136.51313942962335,
+    "exposure": 0.18982951309661003,
+    "trades": 19996,
     "periods": 24856,
     "years": 2.837442922374429,
-    "positive_day_fraction": 0.37540231734792406,
+    "positive_day_fraction": 0.3713791438686836,
     "yearly": {
-      "2024": 0.09377282018388722,
-      "2025": -0.10998760748582426,
-      "2026": -0.12732243266207577
+      "2024": 0.10626221063590524,
+      "2025": -0.11608826177125042,
+      "2026": -0.1025320028506741
     },
     "grid_size": 36,
     "grid_sharpe_distribution": {
-      "min": -2.8636897569051865,
-      "median": -0.8438229464031475,
-      "max": -0.1323924054497527,
-      "mean": -0.9780128092971159
+      "min": -2.831714047038443,
+      "median": -0.7995692707884037,
+      "max": -0.08414878217970792,
+      "mean": -0.9712462579392024
     },
     "grid_positive_ratio": 0.0,
     "bootstrap": {
       "annual_arithmetic_mean_ci_95": [
-        -0.26589832131150215,
-        0.2014401186676776
+        -0.2584483995880594,
+        0.2176217621122553
       ],
       "block_periods": 48,
       "draws": 1000,
@@ -24988,23 +24989,10 @@
         "hold_days": 24,
         "per_trade": 0.05
       },
-      "sharpe": -0.1323924054497527,
-      "cagr": -0.0558524990218634,
-      "max_drawdown": -0.27669391254188247,
-      "turnover_per_year": 139.76443884917146
-    },
-    {
-      "params": {
-        "family": "reversion",
-        "lookback": 24,
-        "z_threshold": 2.5,
-        "hold_days": 24,
-        "per_trade": 0.05
-      },
-      "sharpe": -0.166470325014881,
-      "cagr": -0.019754231544453993,
-      "max_drawdown": -0.17010081951058553,
-      "turnover_per_year": 36.016968362999506
+      "sharpe": -0.08414878217970792,
+      "cagr": -0.04498043812130759,
+      "max_drawdown": -0.2576125606772509,
+      "turnover_per_year": 136.51313942962335
     },
     {
       "params": {
@@ -25014,23 +25002,23 @@
         "hold_days": 24,
         "per_trade": 0.05
       },
-      "sharpe": -0.1690705520688587,
-      "cagr": -0.045025552465687624,
-      "max_drawdown": -0.2718848025297903,
-      "turnover_per_year": 86.33454417787884
+      "sharpe": -0.10219632060775206,
+      "cagr": -0.033105997376938534,
+      "max_drawdown": -0.2685388910813009,
+      "turnover_per_year": 83.29808565987486
     },
     {
       "params": {
         "family": "reversion",
-        "lookback": 6,
+        "lookback": 24,
         "z_threshold": 2.5,
         "hold_days": 24,
         "per_trade": 0.05
       },
-      "sharpe": -0.24430645695195377,
-      "cagr": -0.050465368832848245,
-      "max_drawdown": -0.25865309641600276,
-      "turnover_per_year": 64.35856856957507
+      "sharpe": -0.17038543011870222,
+      "cagr": -0.019185516950174453,
+      "max_drawdown": -0.17564001256618667,
+      "turnover_per_year": 34.09319973321927
     },
     {
       "params": {
@@ -25040,10 +25028,10 @@
         "hold_days": 12,
         "per_trade": 0.05
       },
-      "sharpe": -0.3016450616279781,
-      "cagr": -0.04371204651881544,
-      "max_drawdown": -0.25591076452878403,
-      "turnover_per_year": 68.34261795070483
+      "sharpe": -0.2580424339913825,
+      "cagr": -0.038212549643757754,
+      "max_drawdown": -0.2422385006122444,
+      "turnover_per_year": 65.7651608939191
     },
     {
       "params": {
@@ -25053,10 +25041,23 @@
         "hold_days": 24,
         "per_trade": 0.05
       },
-      "sharpe": -0.334845035024161,
-      "cagr": -0.02965665746738111,
-      "max_drawdown": -0.17267638385393647,
-      "turnover_per_year": 29.757935435018023
+      "sharpe": -0.2778431619978745,
+      "cagr": -0.02421546027576782,
+      "max_drawdown": -0.1715357257971546,
+      "turnover_per_year": 28.58848605085459
+    },
+    {
+      "params": {
+        "family": "reversion",
+        "lookback": 6,
+        "z_threshold": 2.5,
+        "hold_days": 24,
+        "per_trade": 0.05
+      },
+      "sharpe": -0.3103133476279739,
+      "cagr": -0.05975687133496799,
+      "max_drawdown": -0.26984286120937906,
+      "turnover_per_year": 62.0845780469931
     },
     {
       "params": {
@@ -25066,49 +25067,10 @@
         "hold_days": 12,
         "per_trade": 0.05
       },
-      "sharpe": -0.5055729491757598,
-      "cagr": -0.10690398480629215,
-      "max_drawdown": -0.3524455257181377,
-      "turnover_per_year": 166.52189088549852
-    },
-    {
-      "params": {
-        "family": "reversion",
-        "lookback": 24,
-        "z_threshold": 2.5,
-        "hold_days": 12,
-        "per_trade": 0.05
-      },
-      "sharpe": -0.5793160425759515,
-      "cagr": -0.038551229512637564,
-      "max_drawdown": -0.1601717936981869,
-      "turnover_per_year": 37.75097696137738
-    },
-    {
-      "params": {
-        "family": "reversion",
-        "lookback": 12,
-        "z_threshold": 2.5,
-        "hold_days": 24,
-        "per_trade": 0.05
-      },
-      "sharpe": -0.6111277849338971,
-      "cagr": -0.06921162090566091,
-      "max_drawdown": -0.2057818763953747,
-      "turnover_per_year": 34.858613192963716
-    },
-    {
-      "params": {
-        "family": "reversion",
-        "lookback": 12,
-        "z_threshold": 1.5,
-        "hold_days": 24,
-        "per_trade": 0.05
-      },
-      "sharpe": -0.6481679562507846,
-      "cagr": -0.18028008801464124,
-      "max_drawdown": -0.5624994866446686,
-      "turnover_per_year": 178.4099500876988
+      "sharpe": -0.4755518341168492,
+      "cagr": -0.10104519909225507,
+      "max_drawdown": -0.3476401782664226,
+      "turnover_per_year": 161.26435554710707
     },
     {
       "params": {
@@ -25118,49 +25080,23 @@
         "hold_days": 12,
         "per_trade": 0.05
       },
-      "sharpe": -0.6594030322631071,
-      "cagr": -0.09866454246503875,
-      "max_drawdown": -0.31428137525543487,
-      "turnover_per_year": 98.59323957159432
-    },
-    {
-      "params": {
-        "family": "reversion",
-        "lookback": 48,
-        "z_threshold": 1.5,
-        "hold_days": 24,
-        "per_trade": 0.05
-      },
-      "sharpe": -0.6705336248205922,
-      "cagr": -0.15569211454007292,
-      "max_drawdown": -0.49316729912536594,
-      "turnover_per_year": 116.83595160870142
-    },
-    {
-      "params": {
-        "family": "reversion",
-        "lookback": 24,
-        "z_threshold": 1.5,
-        "hold_days": 24,
-        "per_trade": 0.05
-      },
-      "sharpe": -0.6826979992585072,
-      "cagr": -0.17515154999252025,
-      "max_drawdown": -0.49333570730044907,
-      "turnover_per_year": 156.91812455052434
+      "sharpe": -0.5758452744862615,
+      "cagr": -0.08646616873465118,
+      "max_drawdown": -0.2941832271406446,
+      "turnover_per_year": 94.52886531178794
     },
     {
       "params": {
         "family": "reversion",
         "lookback": 12,
-        "z_threshold": 2.0,
+        "z_threshold": 2.5,
         "hold_days": 24,
         "per_trade": 0.05
       },
-      "sharpe": -0.7196748385678576,
-      "cagr": -0.14552068294660536,
-      "max_drawdown": -0.3916398805733198,
-      "turnover_per_year": 94.95324041486695
+      "sharpe": -0.5816379363302006,
+      "cagr": -0.06493952116467006,
+      "max_drawdown": -0.1953949479342587,
+      "turnover_per_year": 33.412195103335925
     },
     {
       "params": {
@@ -25170,23 +25106,75 @@
         "hold_days": 6,
         "per_trade": 0.05
       },
-      "sharpe": -0.7282547372063949,
-      "cagr": -0.042725650543004035,
-      "max_drawdown": -0.1434573377171653,
-      "turnover_per_year": 38.22597488729013
+      "sharpe": -0.6355527439580304,
+      "cagr": -0.03681377128103658,
+      "max_drawdown": -0.12836256354562758,
+      "turnover_per_year": 36.515340892859975
+    },
+    {
+      "params": {
+        "family": "reversion",
+        "lookback": 24,
+        "z_threshold": 2.5,
+        "hold_days": 12,
+        "per_trade": 0.05
+      },
+      "sharpe": -0.6511336043699841,
+      "cagr": -0.040762178466682064,
+      "max_drawdown": -0.16046877387544634,
+      "turnover_per_year": 35.736741833367155
     },
     {
       "params": {
         "family": "reversion",
         "lookback": 48,
-        "z_threshold": 2.0,
+        "z_threshold": 1.5,
         "hold_days": 24,
         "per_trade": 0.05
       },
-      "sharpe": -0.765481748551053,
-      "cagr": -0.10163677254485148,
-      "max_drawdown": -0.3428494630232496,
-      "turnover_per_year": 61.61957295644309
+      "sharpe": -0.7193992911969246,
+      "cagr": -0.1620264217896834,
+      "max_drawdown": -0.4862095750291753,
+      "turnover_per_year": 113.12094699670243
+    },
+    {
+      "params": {
+        "family": "reversion",
+        "lookback": 24,
+        "z_threshold": 1.5,
+        "hold_days": 24,
+        "per_trade": 0.05
+      },
+      "sharpe": -0.7240003738191292,
+      "cagr": -0.18173619353157155,
+      "max_drawdown": -0.5025301391792414,
+      "turnover_per_year": 152.45933554212274
+    },
+    {
+      "params": {
+        "family": "reversion",
+        "lookback": 12,
+        "z_threshold": 1.5,
+        "hold_days": 24,
+        "per_trade": 0.05
+      },
+      "sharpe": -0.7294171952518272,
+      "cagr": -0.1960063262513836,
+      "max_drawdown": -0.5877354891798867,
+      "turnover_per_year": 174.08475490773642
+    },
+    {
+      "params": {
+        "family": "reversion",
+        "lookback": 24,
+        "z_threshold": 2.5,
+        "hold_days": 6,
+        "per_trade": 0.05
+      },
+      "sharpe": -0.7374770876446931,
+      "cagr": -0.03462194975046684,
+      "max_drawdown": -0.13171426922441276,
+      "turnover_per_year": 38.09190761490363
     },
     {
       "params": {
@@ -25196,23 +25184,23 @@
         "hold_days": 6,
         "per_trade": 0.05
       },
-      "sharpe": -0.7667964677911404,
-      "cagr": -0.07392551398584468,
-      "max_drawdown": -0.263121338141582,
-      "turnover_per_year": 71.36714180994798
+      "sharpe": -0.756473496596649,
+      "cagr": -0.0721810994901727,
+      "max_drawdown": -0.25695741650619797,
+      "turnover_per_year": 68.59439680361997
     },
     {
       "params": {
         "family": "reversion",
-        "lookback": 24,
-        "z_threshold": 2.5,
-        "hold_days": 6,
+        "lookback": 12,
+        "z_threshold": 2.0,
+        "hold_days": 24,
         "per_trade": 0.05
       },
-      "sharpe": -0.8035823330397482,
-      "cagr": -0.03914259254157704,
-      "max_drawdown": -0.14100646607941703,
-      "turnover_per_year": 40.163883735405456
+      "sharpe": -0.770035715684338,
+      "cagr": -0.1524822318691379,
+      "max_drawdown": -0.4046717918855023,
+      "turnover_per_year": 91.84605952929712
     },
     {
       "params": {
@@ -25222,10 +25210,23 @@
         "hold_days": 12,
         "per_trade": 0.05
       },
-      "sharpe": -0.8840635597665466,
-      "cagr": -0.06414766312829923,
-      "max_drawdown": -0.18271000016642558,
-      "turnover_per_year": 35.92488632339516
+      "sharpe": -0.7920148605594772,
+      "cagr": -0.056531559178933044,
+      "max_drawdown": -0.163696101324462,
+      "turnover_per_year": 34.37912753119751
+    },
+    {
+      "params": {
+        "family": "reversion",
+        "lookback": 48,
+        "z_threshold": 2.0,
+        "hold_days": 24,
+        "per_trade": 0.05
+      },
+      "sharpe": -0.8071236810173301,
+      "cagr": -0.10477321036408138,
+      "max_drawdown": -0.3461354249727524,
+      "turnover_per_year": 59.312127262854
     },
     {
       "params": {
@@ -25235,36 +25236,10 @@
         "hold_days": 24,
         "per_trade": 0.05
       },
-      "sharpe": -0.9207306148586215,
-      "cagr": -0.2586532484213888,
-      "max_drawdown": -0.6640262365297458,
-      "turnover_per_year": 223.411199002617
-    },
-    {
-      "params": {
-        "family": "reversion",
-        "lookback": 48,
-        "z_threshold": 2.0,
-        "hold_days": 12,
-        "per_trade": 0.05
-      },
-      "sharpe": -1.0443972186512889,
-      "cagr": -0.10784126202043376,
-      "max_drawdown": -0.2971240909225745,
-      "turnover_per_year": 72.28491292406082
-    },
-    {
-      "params": {
-        "family": "reversion",
-        "lookback": 48,
-        "z_threshold": 1.5,
-        "hold_days": 12,
-        "per_trade": 0.05
-      },
-      "sharpe": -1.0766292060651785,
-      "cagr": -0.20210391976294084,
-      "max_drawdown": -0.5061881678334101,
-      "turnover_per_year": 148.8445439598487
+      "sharpe": -0.9848147094049079,
+      "cagr": -0.27080686131807286,
+      "max_drawdown": -0.6825275435170075,
+      "turnover_per_year": 219.20564491497072
     },
     {
       "params": {
@@ -25274,10 +25249,10 @@
         "hold_days": 12,
         "per_trade": 0.05
       },
-      "sharpe": -1.0965884645278456,
-      "cagr": -0.06682552786966389,
-      "max_drawdown": -0.18339991327709027,
-      "turnover_per_year": 33.429979830784596
+      "sharpe": -1.0782613714631626,
+      "cagr": -0.06362482579815865,
+      "max_drawdown": -0.1754275582703161,
+      "turnover_per_year": 32.09079295655012
     },
     {
       "params": {
@@ -25287,10 +25262,10 @@
         "hold_days": 12,
         "per_trade": 0.05
       },
-      "sharpe": -1.1488483457936178,
-      "cagr": -0.23045926364859315,
-      "max_drawdown": -0.5571397344120794,
-      "turnover_per_year": 198.71983890503435
+      "sharpe": -1.083186110788565,
+      "cagr": -0.21785176569940856,
+      "max_drawdown": -0.5345631667422679,
+      "turnover_per_year": 191.413140961173
     },
     {
       "params": {
@@ -25300,10 +25275,36 @@
         "hold_days": 6,
         "per_trade": 0.05
       },
-      "sharpe": -1.2055041871456347,
-      "cagr": -0.13507821459786917,
-      "max_drawdown": -0.358054531636375,
-      "turnover_per_year": 112.10527915127473
+      "sharpe": -1.109412348231969,
+      "cagr": -0.12388922419150983,
+      "max_drawdown": -0.3343565875969974,
+      "turnover_per_year": 107.44549484210191
+    },
+    {
+      "params": {
+        "family": "reversion",
+        "lookback": 48,
+        "z_threshold": 1.5,
+        "hold_days": 12,
+        "per_trade": 0.05
+      },
+      "sharpe": -1.1253894347795808,
+      "cagr": -0.20630682002098222,
+      "max_drawdown": -0.509624386647288,
+      "turnover_per_year": 143.46989697259477
+    },
+    {
+      "params": {
+        "family": "reversion",
+        "lookback": 48,
+        "z_threshold": 2.0,
+        "hold_days": 12,
+        "per_trade": 0.05
+      },
+      "sharpe": -1.23149484587901,
+      "cagr": -0.12235276435827214,
+      "max_drawdown": -0.3228741511155204,
+      "turnover_per_year": 69.41455151893076
     },
     {
       "params": {
@@ -25313,10 +25314,10 @@
         "hold_days": 6,
         "per_trade": 0.05
       },
-      "sharpe": -1.3469323600167251,
-      "cagr": -0.18474045909491532,
-      "max_drawdown": -0.4650858498502336,
-      "turnover_per_year": 185.7612709015476
+      "sharpe": -1.2702784910024896,
+      "cagr": -0.1744029802436886,
+      "max_drawdown": -0.449166910821746,
+      "turnover_per_year": 179.06879511312286
     },
     {
       "params": {
@@ -25326,10 +25327,10 @@
         "hold_days": 6,
         "per_trade": 0.05
       },
-      "sharpe": -1.3559045539096544,
-      "cagr": -0.16110215801931793,
-      "max_drawdown": -0.4208124400920059,
-      "turnover_per_year": 123.09377675421885
+      "sharpe": -1.2986125161663442,
+      "cagr": -0.15311578922123126,
+      "max_drawdown": -0.40441687070146337,
+      "turnover_per_year": 118.17510637639975
     },
     {
       "params": {
@@ -25339,10 +25340,10 @@
         "hold_days": 12,
         "per_trade": 0.05
       },
-      "sharpe": -1.3796046548391363,
-      "cagr": -0.26517994389244626,
-      "max_drawdown": -0.6593795168686998,
-      "turnover_per_year": 229.00654317020692
+      "sharpe": -1.3551772166652378,
+      "cagr": -0.25952374296589176,
+      "max_drawdown": -0.6518607170361899,
+      "turnover_per_year": 222.27607670075477
     },
     {
       "params": {
@@ -25352,10 +25353,10 @@
         "hold_days": 6,
         "per_trade": 0.05
       },
-      "sharpe": -1.3894215617426047,
-      "cagr": -0.07013996987700766,
-      "max_drawdown": -0.18900070610128827,
-      "turnover_per_year": 37.25903840598152
+      "sharpe": -1.409115655583724,
+      "cagr": -0.06781016283476426,
+      "max_drawdown": -0.18322175214232883,
+      "turnover_per_year": 35.78787471556405
     },
     {
       "params": {
@@ -25365,10 +25366,10 @@
         "hold_days": 12,
         "per_trade": 0.05
       },
-      "sharpe": -1.4153018818495546,
-      "cagr": -0.19099234109460173,
-      "max_drawdown": -0.4728013077727955,
-      "turnover_per_year": 107.15688970229435
+      "sharpe": -1.411927447239488,
+      "cagr": -0.18786649963020507,
+      "max_drawdown": -0.46658299928771085,
+      "turnover_per_year": 102.82995894057971
     },
     {
       "params": {
@@ -25378,23 +25379,10 @@
         "hold_days": 6,
         "per_trade": 0.05
       },
-      "sharpe": -1.4285129137062176,
-      "cagr": -0.22697776623800192,
-      "max_drawdown": -0.5540879669950864,
-      "turnover_per_year": 182.43732851334377
-    },
-    {
-      "params": {
-        "family": "reversion",
-        "lookback": 6,
-        "z_threshold": 1.5,
-        "hold_days": 12,
-        "per_trade": 0.05
-      },
-      "sharpe": -1.692105863605197,
-      "cagr": -0.3549076096203494,
-      "max_drawdown": -0.7461221942624545,
-      "turnover_per_year": 311.3080682829601
+      "sharpe": -1.4565071290611862,
+      "cagr": -0.22731543903425144,
+      "max_drawdown": -0.5487821587177453,
+      "turnover_per_year": 175.8293024294139
     },
     {
       "params": {
@@ -25404,23 +25392,23 @@
         "hold_days": 6,
         "per_trade": 0.05
       },
-      "sharpe": -1.757732119729213,
-      "cagr": -0.2873758685544021,
-      "max_drawdown": -0.6329110817641729,
-      "turnover_per_year": 245.54577376687382
+      "sharpe": -1.6540329659980015,
+      "cagr": -0.27073833177770845,
+      "max_drawdown": -0.6073699479951415,
+      "turnover_per_year": 234.47866493707588
     },
     {
       "params": {
         "family": "reversion",
-        "lookback": 48,
-        "z_threshold": 2.0,
-        "hold_days": 6,
+        "lookback": 6,
+        "z_threshold": 1.5,
+        "hold_days": 12,
         "per_trade": 0.05
       },
-      "sharpe": -1.7971622141966623,
-      "cagr": -0.15086266498083423,
-      "max_drawdown": -0.3787031244924105,
-      "turnover_per_year": 83.28097702878836
+      "sharpe": -1.655910377204493,
+      "cagr": -0.347418439255637,
+      "max_drawdown": -0.7382071361842184,
+      "turnover_per_year": 304.3210303601
     },
     {
       "params": {
@@ -25430,10 +25418,23 @@
         "hold_days": 6,
         "per_trade": 0.05
       },
-      "sharpe": -1.9159923068149072,
-      "cagr": -0.3103278346902083,
-      "max_drawdown": -0.7006657791869767,
-      "turnover_per_year": 282.9748946344042
+      "sharpe": -1.8754663546755344,
+      "cagr": -0.30293350360665183,
+      "max_drawdown": -0.6916922749608642,
+      "turnover_per_year": 273.69789724591203
+    },
+    {
+      "params": {
+        "family": "reversion",
+        "lookback": 48,
+        "z_threshold": 2.0,
+        "hold_days": 6,
+        "per_trade": 0.05
+      },
+      "sharpe": -1.9749716930740626,
+      "cagr": -0.1608492744197677,
+      "max_drawdown": -0.39921304301210114,
+      "turnover_per_year": 79.82737137512532
     },
     {
       "params": {
@@ -25443,10 +25444,10 @@
         "hold_days": 6,
         "per_trade": 0.05
       },
-      "sharpe": -2.8636897569051865,
-      "cagr": -0.4413164883463203,
-      "max_drawdown": -0.8212056344888863,
-      "turnover_per_year": 388.6438444870379
+      "sharpe": -2.831714047038443,
+      "cagr": -0.4346258106065727,
+      "max_drawdown": -0.8151510416400116,
+      "turnover_per_year": 377.2690525023741
     }
   ]
 }

@@ -99,12 +99,14 @@ def test_rebalance_keeps_weights_constant() -> None:
 
 
 def test_join_results_compounds_without_overlap() -> None:
-    panel = make_panel([[100.0, 110.0, 121.0, 133.1, 146.4]], ["AAA"])
-    first = run_backtest(panel, lambda i, nav: None, Cost(0, 0), 0, 2, "a")
-    second = run_backtest(panel, lambda i, nav: None, Cost(0, 0), 2, 4, "b")
+    panel = make_panel([[100.0, 110.0, 121.0, 110.0, 99.0]], ["AAA"])
+    first = run_backtest(panel, lambda i, nav: {"AAA": 1.0}, Cost(0, 0), 0, 2, "a")
+    second = run_backtest(panel, lambda i, nav: {"AAA": 1.0}, Cost(0, 0), 2, 4, "b")
     joined = join_results([first, second], "joined")
     assert len(joined.daily_returns) == len(first.daily_returns) + len(second.daily_returns)
-    assert abs(joined.equity[-1] - 1.0) < 1e-12
+    assert math.isclose(first.equity[-1], 1.21)
+    assert math.isclose(second.equity[-1], 99.0 / 121.0)
+    assert math.isclose(joined.equity[-1], 0.99)
     assert len(set(joined.dates)) == len(joined.dates)
 
 
@@ -232,6 +234,38 @@ def test_chart_keeps_dates_aligned_and_normalizes() -> None:
     for _, actual_dates, equity in build_series(results, "2024-01-02"):
         assert actual_dates == dates
         assert equity == [1.0, 2.0]
+
+
+def test_cost_rejects_nonfinite_inputs() -> None:
+    for fee, slip in ((math.nan, 0.0), (0.0, math.nan), (math.inf, 0.0)):
+        try:
+            Cost(fee, slip)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("Nonfinite costs must be rejected")
+
+
+def test_loader_rejects_unobserved_final_boundary() -> None:
+    import csv
+    import tempfile
+
+    from backtest import load_panel
+
+    with tempfile.TemporaryDirectory() as folder:
+        root = pathlib.Path(folder)
+        (root / "klines").mkdir()
+        with (root / "klines" / "BTCUSDT.csv").open("w", newline="") as handle:
+            writer = csv.writer(handle)
+            writer.writerow(["timestamp", "open", "high", "low", "close", "volume", "turnover"])
+            for i in range(365):
+                writer.writerow([DAY * (i + 1), 100, 100, 100, 100, 1, 100])
+        try:
+            load_panel(root, as_of="1971-01-02")
+        except ValueError as exc:
+            assert "boundary absent" in str(exc)
+        else:
+            raise AssertionError("A date without a source candle must not be fabricated")
 
 
 def main() -> None:

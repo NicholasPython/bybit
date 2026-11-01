@@ -118,6 +118,8 @@ def load_panel(
         series[path.stem] = rows
     if "BTCUSDT" not in series:
         raise ValueError("BTCUSDT history required for market filter")
+    if end not in series["BTCUSDT"]:
+        raise ValueError(f"Requested boundary absent from BTCUSDT data: {as_of}")
     first = min(min(rows) for rows in series.values())
     dates = list(range(first, end + 1, DAY_MS))
     n = len(dates)
@@ -191,7 +193,11 @@ class Cost:
     slippage: float = 0.0005
 
     def __post_init__(self) -> None:
-        if min(self.fee, self.slippage) < 0 or self.rate >= 0.05:
+        if (
+            not all(math.isfinite(x) for x in (self.fee, self.slippage))
+            or min(self.fee, self.slippage) < 0
+            or self.rate >= 0.05
+        ):
             raise ValueError("Invalid execution cost")
 
     @property

@@ -25,6 +25,7 @@ from backtest import (  # noqa: E402
     Cost,
     Panel,
     StrategySet,
+    bar_str,
     bootstrap_mean_ci,
     day_str,
     metrics,
@@ -94,7 +95,11 @@ def load_intraday(data_dir: pathlib.Path) -> Panel:
                 chunk = c_row[i - 20 : i + 1]
                 rets = [math.log(b / a) for a, b in zip(chunk, chunk[1:], strict=False)]
                 v_row[i] = statistics.stdev(rets) * math.sqrt(PERIODS_YEAR)
-            if age >= MIN_BARS and v_row[i] > 0.02:
+            if (
+                age >= MIN_BARS
+                and v_row[i] > 0.02
+                and statistics.fmean(turnover[i - MIN_BARS + 1 : i + 1]) * 24 >= 1_000_000
+            ):
                 eligible[i].append(k)
         closes.append(c_row)
         opens.append(o_row)
@@ -127,8 +132,9 @@ def main() -> None:
             "periods_per_year": PERIODS_YEAR,
             "universe_selection": "Top 40 by turnover at the 2026-11-01 snapshot; hindsight bias",
             "symbols": panel.symbols,
-            "start_open": day_str(panel.dates[0]),
-            "end_open": day_str(panel.dates[-1]),
+            "start_open": bar_str(panel.dates[0], PERIODS_YEAR),
+            "end_open": bar_str(panel.dates[-1], PERIODS_YEAR),
+            "min_30d_mean_daily_turnover_usdt": 1_000_000,
             "cost": {"fee": cost.fee, "slippage": cost.slippage},
         },
     }

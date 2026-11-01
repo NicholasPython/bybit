@@ -254,6 +254,9 @@ def main() -> None:
         "equal_weight_universe_m30": {"family": "equal_weight", "rebalance": 30},
     }
     for name, params in benchmarks.items():
+        if params.get("symbol") and params["symbol"] not in panel.symbols:
+            print(f"跳过缺少历史的基准: {params['symbol']}", flush=True)
+            continue
         full = run_one(panel, strategy, params, cost, 0, full_end, name)
         oos = run_one(panel, strategy, params, cost, oos_start, full_end, name)
         report["benchmarks"][name] = {
@@ -285,12 +288,7 @@ def main() -> None:
         dsr = deflated_sharpe(
             best_is["daily_returns"], [r["sharpe"] for r in is_rows], len(full_grid)
         )
-        oos_of_best = next(
-            r
-            for r in oos_rows
-            if json.dumps(r["params"], sort_keys=True)
-            == json.dumps(best_is["params"], sort_keys=True)
-        )
+        oos_of_best = next(r for r in oos_rows if r["params"] == best_is["params"])
         wf_summary, wf_segments = walk_forward(panel, strategy, wf_grid, cost, wf_start)
 
         # 成本敏感性：用样本内选出的参数，在三种成本下看样本外表现。
