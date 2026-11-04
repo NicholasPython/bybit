@@ -293,6 +293,14 @@
     premium_stop_loss: "权利金止损",
     before_expiry: "到期前退出",
   };
+  // 每种退出规则只显示有业务含义的字段，其余（重试次数、有效期等）属于
+  // 执行细节，展示出来反而淹没真正的阈值。
+  const RULE_FIELDS = {
+    hold_period: ["hold_seconds"],
+    profit_threshold: ["profit_threshold_pct"],
+    premium_stop_loss: ["stop_loss_pct"],
+    before_expiry: [],
+  };
 
   function renderStrategyParams(data) {
     const versions = (data.config_versions || []).filter((v) => v.active);
@@ -314,8 +322,10 @@
       for (const rule of rules) {
         const line = node("p");
         line.append(node("span", `${RULE_LABELS[rule.kind] || rule.kind}：`, "muted"));
-        const detail = Object.keys(rule).filter((k) => k !== "kind")
-          .map((k) => `${k}=${rule[k]}`).join("，");
+        const fields = RULE_FIELDS[rule.kind] || [];
+        const detail = fields
+          .filter((key) => rule[key] !== undefined && rule[key] !== null)
+          .map((key) => `${key}=${rule[key]}`).join("，");
         line.append(node("span", detail || "按全局配置", "number"));
         ruleBox.append(line);
       }
