@@ -42,6 +42,13 @@ class OptionBuyParams:
     max_premium: Decimal = Decimal("0")
     min_open_interest: Decimal = Decimal("0")
     max_spread_ratio: Decimal = Decimal("0.05")
+    #: 每边费用占权利金比例上限（taker 口径）；None 表示不限制。
+    #: 这是"最低权利金"的指数自适应写法：费率随标的指数价变动，
+    #: 固定的权利金下限在标的涨价后会失真。缺标的指数价时按封顶比例
+    #: （7%）估算，比例必然超限，属于保守方向。
+    max_fee_ratio: Decimal | None = None
+    #: 有目标 Delta 时优先选最接近目标的合约，而不是最便宜的合约。
+    prefer_target_delta: bool = True
     ttl_seconds: int = 120
     enabled: bool = False
     #: 期权费用口径（CR-02）：按官方公式随标的指数价变化，
@@ -55,6 +62,8 @@ class ExitRuleParams:
     hold_seconds: int | None = None
     profit_threshold: Decimal | None = None
     exit_before_expiry_seconds: int | None = None
+    #: 权利金亏损止损比例（占成本的比例，如 0.25 表示亏 25% 即退出）。
+    premium_stop_loss: Decimal | None = None
     price_floor_ratio: Decimal = Decimal("0")
     max_chase: int = 1
 
@@ -66,6 +75,10 @@ def exit_rules(params: ExitRuleParams) -> tuple[dict[str, object], ...]:
     if params.profit_threshold is not None:
         rules.append(
             {"kind": "profit_threshold", "profit_threshold_pct": str(params.profit_threshold * 100)}
+        )
+    if params.premium_stop_loss is not None:
+        rules.append(
+            {"kind": "premium_stop_loss", "stop_loss_pct": str(params.premium_stop_loss * 100)}
         )
     if params.exit_before_expiry_seconds is not None:
         rules.append(
@@ -152,7 +165,21 @@ class ScheduledOptionBuyStrategy:
         if not p.enabled:
             return []
         candidates = self._candidates(deps, deps.now)
-        candidates.sort(key=lambda c: (c["premium"], c["expiry"], c["symbol"]))
+        if p.target_delta is not None and p.prefer_target_delta:
+            # 有目标 Delta 时先按 Delta 接近度排序：最便宜的合约通常是深度虚值、
+            # 临近到期的彩票，费用占权利金比例高且没有可验证的期望。
+            candidates.sort(
+                key=lambda c: (
+                    abs(abs(c["delta"]) - abs(p.target_delta)),
+                    c["premium"],
+                    c["expiry"],
+                    c["symbol"],
+                )
+            )
+            sort_rule = "|delta-target| asc, ask asc, expiry asc, symbol asc"
+        else:
+            candidates.sort(key=lambda c: (c["premium"], c["expiry"], c["symbol"]))
+            sort_rule = "ask asc, expiry asc, symbol asc"
         if not candidates:
             return []
         best = candidates[0]
@@ -181,10 +208,11 @@ class ScheduledOptionBuyStrategy:
                 rationale={
                     "candidates": len(candidates),
                     "chosen": spec.symbol,
-                    "sort_rule": "ask asc, expiry asc, symbol asc",
+                    "sort_rule": sort_rule,
                     "delta": str(best["delta"]),
                     "fee_rate": str(ratio),
                     "fee_version": p.fee_model.version,
+                    "max_fee_ratio": str(p.max_fee_ratio) if p.max_fee_ratio is not None else None,
                 },
             )
         ]
@@ -240,6 +268,11 @@ class ScheduledOptionBuyStrategy:
                 continue
             if quote.ask_price < p.min_premium:
                 continue
+            index_price = getattr(quote, "index_price", None)
+            fee_ratio = self._fee_ratio(p, quote.ask_price, index_price)
+            if p.max_fee_ratio is not None and fee_ratio > p.max_fee_ratio:
+                # 费用占权利金比例过高：再便宜的合约，费用也会吃掉大部分权利金。
+                continue
             if p.strike_range is not None:
                 underlying_quote = deps.quote("spot", f"{p.underlying}{p.currency}")
                 if (
@@ -258,7 +291,8 @@ class ScheduledOptionBuyStrategy:
                     "expiry": spec.delivery_time,
                     "symbol": spec.symbol,
                     "delta": quote.delta,
-                    "index_price": getattr(quote, "index_price", None),
+                    "index_price": index_price,
+                    "fee_ratio": fee_ratio,
                 }
             )
         return out

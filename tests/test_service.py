@@ -229,6 +229,47 @@ class OptionMarket(FixedMarket):
         )
 
 
+class DriftingOptionMarket(OptionMarket):
+    """可改价的期权行情：用于验证权利金止损触发。"""
+
+    def __init__(self):
+        super().__init__()
+        self.bid = D("1")
+        self.ask = D("1.001")
+
+    async def get_ticker(self, category, symbol):
+        if category == "spot":
+            return await super().get_ticker(category, symbol)
+        moment = now_utc()
+        return Ticker(
+            category,
+            symbol,
+            bid_price=self.bid,
+            ask_price=self.ask,
+            bid_size=D("100"),
+            ask_size=D("100"),
+            mark_price=self.ask,
+            open_interest=D("50"),
+            delta=D("0.5"),
+            iv=D("0.6"),
+            source_ts=moment,
+            received_at=moment,
+        )
+
+    async def get_orderbook(self, category, symbol, limit=50):
+        if category == "spot":
+            return await super().get_orderbook(category, symbol, limit)
+        moment = now_utc()
+        return OrderBook(
+            category,
+            symbol,
+            ((self.bid, D("100")),),
+            ((self.ask, D("100")),),
+            source_ts=moment,
+            received_at=moment,
+        )
+
+
 @pytest.mark.parametrize("category", ["spot", "option"])
 async def test_enabled_template_schedule_fills_once_across_restart(database, category):
     config = load_config("config/config.example.yaml")
@@ -263,6 +304,9 @@ async def test_enabled_template_schedule_fills_once_across_restart(database, cat
                 update={
                     "strike_range_pct": (D("90"), D("110")),
                     "delta_range": (D("0.4"), D("0.6")),
+                    # 合成合约权利金极低，费用占比必然超限；本用例只验证调度与
+                    # 成交链路，费用上限另有独立用例。
+                    "max_fee_ratio": None,
                     "no_open_window_start_hour_utc": 0,
                     "no_open_window_end_hour_utc": 0,
                 }
@@ -638,6 +682,83 @@ async def test_exit_rebuild_preserves_deadline_quantity_and_floor(database, cate
                 )
                 == 2
             )
+    finally:
+        await service.close()
+
+
+async def test_option_premium_stop_loss_triggers_exit(database):
+    """权利金亏损超过阈值即退出：真实账户复盘里 20.8 小时亏 44% 没有止损。"""
+    config = load_config("config/config.example.yaml")
+    chosen = config.strategies[1].model_copy(update={"symbols": ("BTC",)})
+    config = config.model_copy(
+        update={
+            "strategies": (chosen,),
+            "option": config.option.model_copy(
+                update={
+                    "no_open_window_start_hour_utc": 0,
+                    "no_open_window_end_hour_utc": 0,
+                    "max_fee_ratio": None,
+                }
+            ),
+        }
+    )
+    market = DriftingOptionMarket()
+    service = TradingService(config, database, market_adapter=market)
+    try:
+        await service.start()
+        await command(service, CommandKind.INITIALIZE_BASELINE, {"reason": "stop loss test"})
+        await command(
+            service,
+            CommandKind.CONFIRM_TAKEOVER,
+            {"reason": "stop loss test", "evidence": "isolated schema"},
+        )
+        await service.tick()
+        strategy_id, (_, version) = next(iter(service.strategies.items()))
+        symbol = "BTC-10NOV26-100-C"
+        spec = service.specs[("option", symbol)]
+        draft = IntentDraft(
+            action="OPTION_BUY_OPEN",
+            category="option",
+            symbol=symbol,
+            side="Buy",
+            qty=D("0.1"),
+            qty_unit="contract",
+            currency="USDT",
+            spend_limit=D("1"),
+            price_limit=D("1.001"),
+            underlying="BTC",
+            delivery_time=spec.delivery_time,
+            options_type=spec.options_type,
+            strike_price=spec.strike_price,
+            exit_rules=(
+                {
+                    "kind": "premium_stop_loss",
+                    "stop_loss_pct": "25",
+                    "exit_validity_seconds": 300,
+                    "max_reprice_attempts": 1,
+                },
+            ),
+        )
+        outcome = await service._submit_draft(strategy_id, version, draft, planned_at=now_utc())
+        assert outcome["status"] == "ACCEPTED", outcome
+        await service.tick()
+        async with database.sessionmaker() as session:
+            inventory = await session.scalar(select(Inventory).where(Inventory.qty > 0))
+            assert inventory is not None
+            assert inventory.avg_cost > 0
+            assert await session.scalar(
+                select(func.count()).select_from(TradeIntent).where(TradeIntent.side == "sell")
+            ) == 0
+        # 权利金腰斩：亏损远超 25% 阈值。
+        market.bid = D("0.5")
+        market.ask = D("0.501")
+        await service.tick()
+        async with database.sessionmaker() as session:
+            exit_intent = await session.scalar(
+                select(TradeIntent).where(TradeIntent.side == "sell")
+            )
+            assert exit_intent is not None
+            assert exit_intent.signal_id.startswith("exit:")
     finally:
         await service.close()
 

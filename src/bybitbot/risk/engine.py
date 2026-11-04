@@ -98,6 +98,8 @@ class RiskContext:
     account_spot_exposure: Decimal = Decimal("0")
     #: 账户级期权权利金预算占用。
     account_premium_used: Decimal = Decimal("0")
+    #: 风控权益（估值币种）；比例类限额以此为分母。
+    risk_equity: Decimal = Decimal("0")
     #: 各标的期权权利金占用。
     premium_used_per_underlying: dict[str, Decimal] = field(default_factory=dict)
     #: 各到期日的权利金占用。
@@ -204,6 +206,7 @@ class RiskEngine:
 
         if is_option:
             checks.append(self._check_option_premium_budget(intent, ctx))
+            checks.append(self._check_premium_equity_ratio(intent, ctx))
             checks.append(self._check_option_window(intent))
             checks.append(self._check_option_expiry(intent))
             checks.append(self._check_premium_concentration(intent, ctx))
@@ -471,6 +474,32 @@ class RiskEngine:
                 detail=f"期权权利金将达到 {after}，超过预算 {budget}",
             )
         return RiskCheckResult(code="PREMIUM_BUDGET", approved=True)
+
+    def _check_premium_equity_ratio(self, intent: TradeIntent, ctx: RiskContext) -> RiskCheckResult:
+        """权利金总额占风控权益的比例上限。
+
+        与绝对权利金预算相互独立：权益下降时按比例自动收紧，
+        权益不可用时拒绝开仓（无法证明比例合规）。
+        """
+        ratio = self._limits.max_premium_to_equity_ratio
+        if ratio is None:
+            return RiskCheckResult(code="PREMIUM_EQUITY_RATIO", approved=True)
+        equity = ctx.risk_equity
+        if equity <= 0:
+            return RiskCheckResult(
+                code="PREMIUM_EQUITY_RATIO",
+                approved=False,
+                detail="风控权益不可用，无法校验权利金占权益比例",
+            )
+        after = ctx.account_premium_used + intent.spend_limit
+        limit = equity * ratio
+        if after > limit:
+            return RiskCheckResult(
+                code="PREMIUM_EQUITY_RATIO",
+                approved=False,
+                detail=f"期权权利金将达到 {after}，超过权益 {equity} 的 {ratio} 倍（{limit}）",
+            )
+        return RiskCheckResult(code="PREMIUM_EQUITY_RATIO", approved=True)
 
     def _check_option_window(self, intent: TradeIntent) -> RiskCheckResult:
         """禁开仓窗口（OPT-04）。"""

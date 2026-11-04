@@ -1230,6 +1230,19 @@ class TradingService:
             )
         target = self.config.option.delta_range
         strike = self.config.option.strike_range_pct
+        # 策略 params 优先于全局 option 配置：单个实例可以收紧自己的
+        # 到期窗口、Delta 区间、行权价带、权利金区间与费用占比上限。
+        delta_low = params.get("delta_low")
+        delta_high = params.get("delta_high")
+        if delta_low is not None and delta_high is not None:
+            target = (Decimal(delta_low), Decimal(delta_high))
+        strike_low = params.get("strike_low_pct")
+        strike_high = params.get("strike_high_pct")
+        if strike_low is not None and strike_high is not None:
+            strike = (Decimal(strike_low), Decimal(strike_high))
+        min_days = int(params.get("min_days_to_expiry", self.config.option.min_days_to_expiry))
+        max_days = int(params.get("max_days_to_expiry", self.config.option.max_days_to_expiry))
+        fee_ratio_cap = params.get("max_fee_ratio")
         return ScheduledOptionBuyStrategy(
             cfg.name,
             OptionBuyParams(
@@ -1237,14 +1250,19 @@ class TradingService:
                 currency=cfg.budget_per_run.currency,
                 allowed_types=self.config.option.allowed_option_types,
                 options_type=params.get("options_type"),
-                min_days_to_expiry=self.config.option.min_days_to_expiry,
-                max_days_to_expiry=self.config.option.max_days_to_expiry,
+                min_days_to_expiry=min_days,
+                max_days_to_expiry=max_days,
                 target_delta=(sum(target) / 2 if target else None),
                 delta_tolerance=((target[1] - target[0]) / 2 if target else Decimal("0.25")),
                 strike_range=tuple(value / 100 for value in strike) if strike else None,
                 min_premium=Decimal(params.get("min_premium", "0")),
                 max_premium=Decimal(params.get("max_premium", "0")),
                 min_open_interest=Decimal(params.get("min_open_interest", "0")),
+                max_fee_ratio=(
+                    Decimal(fee_ratio_cap)
+                    if fee_ratio_cap is not None
+                    else self.config.option.max_fee_ratio
+                ),
                 premium_budget=cap,
                 enabled=True,
                 ttl_seconds=cfg.signal_ttl_seconds,
@@ -1672,6 +1690,11 @@ class TradingService:
             strategy_spot_exposure=strategy_spot,
             account_spot_exposure=account_spot,
             account_premium_used=premium,
+            risk_equity=(
+                self.valuation.equity
+                if self.valuation is not None and self.valuation.complete
+                else ZERO
+            ),
             premium_used_per_underlying=by_base,
             premium_used_per_expiry=by_expiry,
             open_order_count=len(orders),
@@ -1822,6 +1845,19 @@ class TradingService:
                     proceeds = quote.bid_price * (1 - rate)
                     due = (proceeds / item.avg_cost - 1) * 100 >= Decimal(
                         rule["profit_threshold_pct"]
+                    )
+                if (
+                    kind == "premium_stop_loss"
+                    and category == "option"
+                    and quote
+                    and quote.bid_price
+                    and item.avg_cost > 0
+                ):
+                    # 权利金止损：按可成交的买一价（含费用）相对持仓成本亏损判定。
+                    rate = self._fee_ratio(category, item.symbol, quote.bid_price)
+                    proceeds = quote.bid_price * (1 - rate)
+                    due = (proceeds / item.avg_cost - 1) * 100 <= -Decimal(
+                        rule["stop_loss_pct"]
                     )
                 if due and trigger is None:
                     trigger = (owner, rule)

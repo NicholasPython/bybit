@@ -122,10 +122,14 @@ risk:
   max_drawdown: {value: "50", currency: USDT}
   delta_limit_per_underlying:
     BTC: "1.0"
-    ETH: "10.0"
+    ETH: "1.0"
   premium_cost_limit_per_underlying:
     BTC: {value: "60", currency: USDT}
+    ETH: {value: "20", currency: USDT}
   premium_cost_limit_per_expiry: {}
+  # 期权权利金总额占风控权益的比例上限；null 表示不启用。
+  # 与绝对权利金预算相互独立：权益下降时按比例自动收紧。
+  max_premium_to_equity_ratio: "0.2"
 
 # --------------------------------------------------------------------------
 # 行情（§5.2 行情）
@@ -160,15 +164,19 @@ execution:
 # --------------------------------------------------------------------------
 option:
   allowed_option_types: [Call]
-  min_days_to_expiry: 1
+  min_days_to_expiry: 7
   max_days_to_expiry: 45
-  strike_range_pct: null
-  delta_range: null
+  strike_range_pct: [90, 110]
+  delta_range: [0.30, 0.60]
   no_open_window_start_hour_utc: 21
   no_open_window_end_hour_utc: 23
   no_open_window_order_ttl_seconds: 1800
   exit_before_expiry_seconds: 86400
   max_settle_coin_cash_ratio: "1"
+  # 每边费用占权利金比例上限（taker 口径）；null 表示不限制。
+  # 等价于随标的指数价浮动的最低权利金要求：费用 =
+  # min(标的指数价 × 0.0003, 权利金 × 0.07)。
+  max_fee_ratio: "0.01"
 
 # --------------------------------------------------------------------------
 # 运维（§5.2 运维）
@@ -238,7 +246,29 @@ strategies:
     cooldown_seconds: 604800
     budget_per_run: {value: "20", currency: USDT}
     max_spend_per_trade: {value: "20", currency: USDT}
+    # 单腿期权买入的筛选参数：先按 Delta 接近度选合约，费用占权利金
+    # 比例超限的合约一律不选（最便宜的合约通常是临近到期的彩票）。
+    params:
+      options_type: Call
+      min_days_to_expiry: "7"
+      max_days_to_expiry: "45"
+      delta_low: "0.30"
+      delta_high: "0.60"
+      strike_low_pct: "90"
+      strike_high_pct: "110"
+      min_premium: "50"
+      max_premium: "200"
+      max_fee_ratio: "0.01"
     exit_rules:
+      # 权利金亏损 25% 即退出；到期前 24 小时退出；最长持有 14 天。
+      - kind: premium_stop_loss
+        stop_loss_pct: "25"
+        max_reprice_attempts: 1
+        exit_validity_seconds: 300
+      - kind: hold_period
+        hold_seconds: 1209600
+        max_reprice_attempts: 1
+        exit_validity_seconds: 300
       - kind: before_expiry
         max_reprice_attempts: 1
         exit_validity_seconds: 300

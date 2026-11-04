@@ -117,6 +117,8 @@ ssh nas 'podman tag localhost/bybitbot:release-20261031-r2 localhost/bybitbot:0.
 
 回退到 `pre-dogfood-20261101` 前，必须同时核对旧配置格式与旧 paper 检查点兼容性；仅切镜像标签不足以回滚本次费用口径。若发布后已有交易事实，先保持暂停并审计，不能直接用旧检查点覆盖新账本。完整整改记录见 [remediation-2026-11-01.md](remediation-2026-11-01.md)。
 
+2026-11-02 期权收紧发布已核验：镜像 `a9bc0bca0a096c1097cef1d993bc272ed887511ef2b0885144b4e593e69f5f37`，发布标签 `localhost/bybitbot:option-controls-20261102`（已移动为 `0.1.0`），回滚点 `localhost/bybitbot:pre-option-controls-20261102`（`5ea93d176eca`）。配置原文件以 0600 保存为 `~/.config/bybitbot/config.pre-option-controls-20261102.yaml`。本次收紧 `eth-call-weekly` 的到期窗口、Delta 区间、行权价带、权利金与费用占比上限，并新增权利金止损、持有期限、ETH 权利金与 Delta 上限、权利金占权益比例上限；策略生成 v2 配置版本后停在对账暂停，`CONFIG_CHANGED` 锁定暂停未解除，两策略仍禁用，订单/成交/意图/库存均为零。改动依据与逐项验证见 [option-controls-2026-11-02.md](option-controls-2026-11-02.md)。
+
 依赖锁变化时先重建基础层；该文件复用 NAS 已有的 Python 3.12.15 基础镜像，并通过 `--require-hashes` 安装依赖：
 
 ```bash
