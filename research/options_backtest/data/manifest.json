@@ -1,0 +1,86 @@
+{
+  "requestedStartUtc": "2021-07-05T00:00:00+00:00",
+  "cutoffUtc": "2026-11-14T08:00:00+00:00",
+  "fetchCompletedUtc": "2026-11-14T17:41:30.785246+00:00",
+  "source": "https://api.bybit.com/v5/market/kline",
+  "parameters": {
+    "category": "spot",
+    "interval": "60",
+    "limit": 1000
+  },
+  "semantics": "timestamp=UTC milliseconds of hourly candle START; hourly last candle END <= cutoff. Daily08 open uses boundary bar open only; signal_close=previous completed 07:00 candle close; previous_daily_close=prior daily08 signal_close. Spot is only a proxy: no option index TWAP, historical option quotes, IV, bid/ask, cross-margin or actual fees history acquired.",
+  "symbols": {
+    "BTCUSDT": {
+      "pages": 47,
+      "rows": 46988,
+      "firstCandleStartUtc": "2021-07-05T12:00:00+00:00",
+      "lastCandleStartUtc": "2026-11-14T07:00:00+00:00",
+      "lastCandleEndUtc": "2026-11-14T08:00:00+00:00",
+      "sourceAvailabilityFloorUtc": "2021-07-05T12:00:00+00:00",
+      "unavailableBeforeSourceFloorBars": 12,
+      "unavailableBeforeSourceFloorUtc": [
+        "2021-07-05T00:00:00+00:00",
+        "2021-07-05T11:00:00+00:00"
+      ],
+      "expectedRows": 46988,
+      "missingBars": 0,
+      "gaps": [],
+      "duplicateRows": 0,
+      "conflictingDuplicates": 0,
+      "invalidOHLC": 0,
+      "misalignedTimestamps": 0,
+      "barsOutsideRequestedRange": 0,
+      "boundaryCandlePresent": true,
+      "boundaryCandleStartUtc": "2026-11-14T08:00:00+00:00",
+      "hourlyBarsEndingAfterCutoff": 0,
+      "hourlyCsv": "data/hourly/BTCUSDT.csv",
+      "hourlySha256": "168d4f24cfff5e6499ff55dac54080bd07576e3043b357e10c539371cd0fb14f",
+      "daily08Rows": 1958,
+      "daily08FirstUtc": "2021-07-06T08:00:00+00:00",
+      "daily08LastUtc": "2026-11-14T08:00:00+00:00",
+      "daily08MissingAnchors": [
+        "2021-07-05T08:00:00+00:00"
+      ],
+      "daily08Csv": "data/daily08/BTCUSDT.csv",
+      "daily08Sha256": "79472be628929673f2062a82190eee98883ed39b65cb3e367ba362ab0cfb4ad3",
+      "firstFetchUtc": "2026-11-14T17:00:26.929552+00:00",
+      "lastFetchUtc": "2026-11-14T17:28:43.688241+00:00"
+    },
+    "ETHUSDT": {
+      "pages": 47,
+      "rows": 46988,
+      "firstCandleStartUtc": "2021-07-05T12:00:00+00:00",
+      "lastCandleStartUtc": "2026-11-14T07:00:00+00:00",
+      "lastCandleEndUtc": "2026-11-14T08:00:00+00:00",
+      "sourceAvailabilityFloorUtc": "2021-07-05T12:00:00+00:00",
+      "unavailableBeforeSourceFloorBars": 12,
+      "unavailableBeforeSourceFloorUtc": [
+        "2021-07-05T00:00:00+00:00",
+        "2021-07-05T11:00:00+00:00"
+      ],
+      "expectedRows": 46988,
+      "missingBars": 0,
+      "gaps": [],
+      "duplicateRows": 0,
+      "conflictingDuplicates": 0,
+      "invalidOHLC": 0,
+      "misalignedTimestamps": 0,
+      "barsOutsideRequestedRange": 0,
+      "boundaryCandlePresent": true,
+      "boundaryCandleStartUtc": "2026-11-14T08:00:00+00:00",
+      "hourlyBarsEndingAfterCutoff": 0,
+      "hourlyCsv": "data/hourly/ETHUSDT.csv",
+      "hourlySha256": "89f8dd4bdb539acccc9b6f5c5b75733fdd961c01c1a587af5d8e899852b1363b",
+      "daily08Rows": 1958,
+      "daily08FirstUtc": "2021-07-06T08:00:00+00:00",
+      "daily08LastUtc": "2026-11-14T08:00:00+00:00",
+      "daily08MissingAnchors": [
+        "2021-07-05T08:00:00+00:00"
+      ],
+      "daily08Csv": "data/daily08/ETHUSDT.csv",
+      "daily08Sha256": "ec3ee38543e4ed4a06023b777550122a79383ab30403562f9cdf653d94ec465f",
+      "firstFetchUtc": "2026-11-14T17:00:27.952459+00:00",
+      "lastFetchUtc": "2026-11-14T17:28:36.312537+00:00"
+    }
+  }
+}
