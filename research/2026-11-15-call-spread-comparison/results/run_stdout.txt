@@ -1,0 +1,167 @@
+{
+  "manifest": "research/2026-11-15-call-spread-comparison/snapshots/market-6urlbkxh/manifest.json",
+  "manifestSha256": "da61835620414c8c107820e8d6ca77bf239c7eb82135f5d7e10f410d371d7988",
+  "collectionStartedUtc": "2026-11-15T10:27:42.521840+00:00",
+  "collectionCompletedUtc": "2026-11-15T10:27:51.827479+00:00",
+  "asOfUtc": "2026-11-15T10:27:43.322000+00:00",
+  "budgetUSDT": "25",
+  "feeRate": "0.0003",
+  "premiumCap": "0.07",
+  "perLegAdverseTicks": 1,
+  "futureFeesIncludedInRiskBudget": false,
+  "selectionIsExploratoryNotIndependent": true,
+  "markets": {
+    "BTC": {
+      "spot": "65496.4",
+      "lastHourlyClose": "65352.3",
+      "lastHourlyCloseUtc": "2026-11-15T10:00:00+00:00",
+      "lastDailyClose": "64153.8",
+      "lastDailyCloseUtc": "2026-11-15T00:00:00+00:00",
+      "dailySma20": "75904.38",
+      "previousDailySma20": "76704.45",
+      "dailySma50": "80221.406",
+      "hourlyReturn24hPct": "-3.049638025160218371706622360",
+      "last3HourlyCloses": [
+        "64012.1",
+        "65214.9",
+        "65352.3"
+      ],
+      "weakRegime": true,
+      "strongRegime": false,
+      "rv": {
+        "1": {
+          "observations": 24,
+          "annualizedPct": 104.61770529460284,
+          "priceReturnPct": "-3.049638025160218371706622360"
+        },
+        "3": {
+          "observations": 72,
+          "annualizedPct": 73.2228645597216,
+          "priceReturnPct": "-11.08155582072169030258419063"
+        },
+        "7": {
+          "observations": 168,
+          "annualizedPct": 57.39866784929367,
+          "priceReturnPct": "-13.93595796377140825316555716"
+        },
+        "30": {
+          "observations": 720,
+          "annualizedPct": 40.58666704044554,
+          "priceReturnPct": "-20.32267267486942400257494404"
+        }
+      }
+    },
+    "ETH": {
+      "spot": "1828.64",
+      "lastHourlyClose": "1822.52",
+      "lastHourlyCloseUtc": "2026-11-15T10:00:00+00:00",
+      "lastDailyClose": "1769.5",
+      "lastDailyCloseUtc": "2026-11-15T00:00:00+00:00",
+      "dailySma20": "2191.2345",
+      "previousDailySma20": "2219.266",
+      "dailySma50": "2397.643",
+      "hourlyReturn24hPct": "-4.750655893635479925996383440",
+      "last3HourlyCloses": [
+        "1782.38",
+        "1811.41",
+        "1822.52"
+      ],
+      "weakRegime": true,
+      "strongRegime": false,
+      "rv": {
+        "1": {
+          "observations": 24,
+          "annualizedPct": 137.28732478725524,
+          "priceReturnPct": "-4.750655893635479925996383440"
+        },
+        "3": {
+          "observations": 72,
+          "annualizedPct": 94.10596899121381,
+          "priceReturnPct": "-10.95106637676202574939535338"
+        },
+        "7": {
+          "observations": 168,
+          "annualizedPct": 78.80017312940679,
+          "priceReturnPct": "-18.53967487741975854932932852"
+        },
+        "30": {
+          "observations": 720,
+          "annualizedPct": 55.99682699962648,
+          "priceReturnPct": "-25.63146254478385414541388850"
+        }
+      }
+    }
+  },
+  "universe": {
+    "BTC": {
+      "catalogTotal": 896,
+      "tradingCalls": 387,
+      "calls10to40dWithTicker": 113,
+      "liquidMinSizeCalls10to40d": 68,
+      "responseTimeUtc": "2026-11-15T10:27:44.942000+00:00",
+      "byExpiry": {
+        "2026-12-25T08:00:00+00:00": 42,
+        "2026-12-04T08:00:00+00:00": 29,
+        "2026-11-27T08:00:00+00:00": 42
+      }
+    },
+    "ETH": {
+      "catalogTotal": 772,
+      "tradingCalls": 335,
+      "calls10to40dWithTicker": 99,
+      "liquidMinSizeCalls10to40d": 61,
+      "responseTimeUtc": "2026-11-15T10:27:49.634000+00:00",
+      "byExpiry": {
+        "2026-12-25T08:00:00+00:00": 36,
+        "2026-11-27T08:00:00+00:00": 41,
+        "2026-12-04T08:00:00+00:00": 22
+      }
+    }
+  },
+  "counts": {
+    "BTC:bear_call_credit": {
+      "structuralBudgetCandidates": 7,
+      "allCostFiltersPass": 0,
+      "costAndRegimePass": 0,
+      "failedFilters": {
+        "rewardAtLeast25PctRisk": 7,
+        "entryFrictionLe15PctMaxProfit": 7,
+        "roundTripLe25PctMaxProfit": 7,
+        "twoTickRewardAtLeast25PctRisk": 7
+      }
+    },
+    "BTC:bull_call_debit": {
+      "structuralBudgetCandidates": 8,
+      "allCostFiltersPass": 8,
+      "costAndRegimePass": 0,
+      "failedFilters": {}
+    },
+    "ETH:bear_call_credit": {
+      "structuralBudgetCandidates": 8,
+      "allCostFiltersPass": 0,
+      "costAndRegimePass": 0,
+      "failedFilters": {
+        "rewardAtLeast25PctRisk": 8,
+        "entryFrictionLe15PctMaxProfit": 7,
+        "roundTripLe25PctMaxProfit": 7,
+        "twoTickRewardAtLeast25PctRisk": 8,
+        "twoTickLossWithinBudgetAtSameQty": 1
+      }
+    },
+    "ETH:bull_call_debit": {
+      "structuralBudgetCandidates": 6,
+      "allCostFiltersPass": 6,
+      "costAndRegimePass": 0,
+      "failedFilters": {}
+    }
+  }
+}
+SELECTED {"base": "BTC", "strategy": "bull_call_debit", "expiryUtc": "2026-11-27T08:00:00+00:00", "dte": "11.89741525462962962962962963", "index": "65495.11175414", "width": "3000", "quantity": "0.01", "budgetOnlyQty": "0.01", "visibleQtyCap": "1.5", "quantityStep": "0.01", "entryBuyPrice": "2525", "entrySellPrice": "1020", "entryFees": "0.39297067052484", "premiumDebitBeforeFees": "15.05", "netEntryDebit": "15.44297067052484", "maxLossBeforeFutureFees": "15.44297067052484", "maxProfitBeforeFutureFees": "14.55702932947516", "minQtyLoss": "15.44297067052484", "budgetUnused": "9.55702932947516", "breakevenBeforeFutureFees": "66544.297067052484", "breakevenDistancePctFromIndex": "1.601929189541636489463622100", "rewardRisk": "0.9426314172349865200500565138", "lossPerMaxProfit": "1.060860036824671409913760237", "binaryEndpointHitRateNotProbabilityPct": "51.47656890174946666666666667", "firstLongCashOutlay": "25.44648533526242", "entryFrictionVsMid": "0.71797067052484", "entryFrictionPctMaxProfit": "4.932123541656185954775625408", "sameSnapshotRoundTripLoss": "1.43594134104968", "roundTripPctRisk": "9.298349208098823281752785560", "roundTripPctMaxProfit": "9.864247083312371909551250816", "sameSnapshotExitFees": "0.39297067052484", "twoTickMaxLossSameQty": "15.54297067052484", "twoTickMaxProfitSameQty": "14.45702932947516", "twoTickRewardRisk": "0.9301329608046535043002359120", "filters": {"legsSpreadLe5Pct": true, "rewardAtLeast25PctRisk": true, "entryFrictionLe15PctMaxProfit": true, "roundTripLe15PctRisk": true, "roundTripLe25PctMaxProfit": true, "twoTickRewardAtLeast25PctRisk": true, "twoTickLossWithinBudgetAtSameQty": true}, "costEligible": true, "regimeEligible": false, "long": "BTC-27NOV26-65000-C-USDT", "short": "BTC-27NOV26-68000-C-USDT"}
+SELECTED {"base": "BTC", "strategy": "bull_call_debit", "expiryUtc": "2026-12-04T08:00:00+00:00", "dte": "18.89741525462962962962962963", "index": "65495.11175414", "width": "3000", "quantity": "0.01", "budgetOnlyQty": "0.01", "visibleQtyCap": "2", "quantityStep": "0.01", "entryBuyPrice": "2995", "entrySellPrice": "1450", "entryFees": "0.39297067052484", "premiumDebitBeforeFees": "15.45", "netEntryDebit": "15.84297067052484", "maxLossBeforeFutureFees": "15.84297067052484", "maxProfitBeforeFutureFees": "14.15702932947516", "minQtyLoss": "15.84297067052484", "budgetUnused": "9.15702932947516", "breakevenBeforeFutureFees": "66584.297067052484", "breakevenDistancePctFromIndex": "1.663002449711272839506153400", "rewardRisk": "0.8935842667318509422859680994", "lossPerMaxProfit": "1.119088638005398727302824163", "binaryEndpointHitRateNotProbabilityPct": "52.809902235082800", "firstLongCashOutlay": "30.14648533526242", "entryFrictionVsMid": "0.81797067052484", "entryFrictionPctMaxProfit": "5.777841180436153137865972805", "sameSnapshotRoundTripLoss": "1.63594134104968", "roundTripPctRisk": "10.32597594902626394768886204", "roundTripPctMaxProfit": "11.55568236087230627573194561", "sameSnapshotExitFees": "0.39297067052484", "twoTickMaxLossSameQty": "15.94297067052484", "twoTickMaxProfitSameQty": "14.05702932947516", "twoTickRewardRisk": "0.8817070306391277380452811307", "filters": {"legsSpreadLe5Pct": true, "rewardAtLeast25PctRisk": true, "entryFrictionLe15PctMaxProfit": true, "roundTripLe15PctRisk": true, "roundTripLe25PctMaxProfit": true, "twoTickRewardAtLeast25PctRisk": true, "twoTickLossWithinBudgetAtSameQty": true}, "costEligible": true, "regimeEligible": false, "long": "BTC-4DEC26-65000-C-USDT", "short": "BTC-4DEC26-68000-C-USDT"}
+SELECTED {"base": "BTC", "strategy": "bull_call_debit", "expiryUtc": "2026-12-25T08:00:00+00:00", "dte": "39.89741525462962962962962963", "index": "65495.11175414", "width": "5000", "quantity": "0.01", "budgetOnlyQty": "0.01", "visibleQtyCap": "2", "quantityStep": "0.01", "entryBuyPrice": "4110", "entrySellPrice": "1800", "entryFees": "0.39297067052484", "premiumDebitBeforeFees": "23.10", "netEntryDebit": "23.49297067052484", "maxLossBeforeFutureFees": "23.49297067052484", "maxProfitBeforeFutureFees": "26.50702932947516", "minQtyLoss": "23.49297067052484", "budgetUnused": "1.50702932947516", "breakevenBeforeFutureFees": "67349.297067052484", "breakevenDistancePctFromIndex": "2.831028550455568034069564700", "rewardRisk": "1.128296191282947063201993010", "lossPerMaxProfit": "0.8862920992961379707121856138", "binaryEndpointHitRateNotProbabilityPct": "46.9859413410496800", "firstLongCashOutlay": "41.29648533526242", "entryFrictionVsMid": "0.94297067052484", "entryFrictionPctMaxProfit": "3.557436251357974592098990196", "sameSnapshotRoundTripLoss": "1.88594134104968", "roundTripPctRisk": "8.027683546278174899180230522", "roundTripPctMaxProfit": "7.114872502715949184197980392", "sameSnapshotExitFees": "0.39297067052484", "twoTickMaxLossSameQty": "23.59297067052484", "twoTickMaxProfitSameQty": "26.40702932947516", "twoTickRewardRisk": "1.119275300183625394701159354", "filters": {"legsSpreadLe5Pct": true, "rewardAtLeast25PctRisk": true, "entryFrictionLe15PctMaxProfit": true, "roundTripLe15PctRisk": true, "roundTripLe25PctMaxProfit": true, "twoTickRewardAtLeast25PctRisk": true, "twoTickLossWithinBudgetAtSameQty": true}, "costEligible": true, "regimeEligible": false, "long": "BTC-25DEC26-65000-C-USDT", "short": "BTC-25DEC26-70000-C-USDT"}
+SELECTED {"base": "ETH", "strategy": "bull_call_debit", "expiryUtc": "2026-11-27T08:00:00+00:00", "dte": "11.89741525462962962962962963", "index": "1829.06397162", "width": "75", "quantity": "0.6", "budgetOnlyQty": "0.6", "visibleQtyCap": "6.7", "quantityStep": "0.1", "entryBuyPrice": "79.0", "entrySellPrice": "43.1", "entryFees": "0.6584630297832", "premiumDebitBeforeFees": "21.54", "netEntryDebit": "22.1984630297832", "maxLossBeforeFutureFees": "22.1984630297832", "maxProfitBeforeFutureFees": "22.8015369702168", "minQtyLoss": "3.6997438382972", "budgetUnused": "2.8015369702168", "breakevenBeforeFutureFees": "1861.997438382972", "breakevenDistancePctFromIndex": "1.800563964627375158072602700", "rewardRisk": "1.027167373688190424533891691", "lossPerMaxProfit": "0.9735511715187738989515464149", "binaryEndpointHitRateNotProbabilityPct": "49.32991784396266666666666667", "firstLongCashOutlay": "47.7292315148916", "entryFrictionVsMid": "1.2284630297832", "entryFrictionPctMaxProfit": "5.387632559102526204012578557", "sameSnapshotRoundTripLoss": "2.4569260595664", "roundTripPctRisk": "11.06800077226065243344129440", "roundTripPctMaxProfit": "10.77526511820505240802515711", "sameSnapshotExitFees": "0.6584630297832", "twoTickMaxLossSameQty": "22.3184630297832", "twoTickMaxProfitSameQty": "22.6815369702168", "twoTickRewardRisk": "1.016267873820392141718383419", "filters": {"legsSpreadLe5Pct": true, "rewardAtLeast25PctRisk": true, "entryFrictionLe15PctMaxProfit": true, "roundTripLe15PctRisk": true, "roundTripLe25PctMaxProfit": true, "twoTickRewardAtLeast25PctRisk": true, "twoTickLossWithinBudgetAtSameQty": true}, "costEligible": true, "regimeEligible": false, "long": "ETH-27NOV26-1825-C-USDT", "short": "ETH-27NOV26-1900-C-USDT"}
+NEARESTREJECTED {"base": "BTC", "strategy": "bear_call_credit", "expiryUtc": "2026-11-27T08:00:00+00:00", "dte": "11.89741525462962962962962963", "index": "65495.11175414", "width": "2000", "quantity": "0.01", "budgetOnlyQty": "0.01", "visibleQtyCap": "0.5", "quantityStep": "0.01", "entryBuyPrice": "340", "entrySellPrice": "715", "entryFees": "0.39297067052484", "premiumDebitBeforeFees": "-3.75", "netEntryDebit": "-3.35702932947516", "maxLossBeforeFutureFees": "16.64297067052484", "maxProfitBeforeFutureFees": "3.35702932947516", "minQtyLoss": "16.64297067052484", "budgetUnused": "8.35702932947516", "breakevenBeforeFutureFees": "69335.702932947516", "breakevenDistancePctFromIndex": "5.863935606713044605015243700", "rewardRisk": "0.2017085408568646650998804620", "lossPerMaxProfit": "4.957648276825395541482814687", "binaryEndpointHitRateNotProbabilityPct": "83.214853352624200", "firstLongCashOutlay": "3.59648533526242", "entryFrictionVsMid": "0.56797067052484", "entryFrictionPctMaxProfit": "16.91884743269838750160023824", "sameSnapshotRoundTripLoss": "1.13594134104968", "roundTripPctRisk": "6.825352057259005085194215737", "roundTripPctMaxProfit": "33.83769486539677500320047647", "sameSnapshotExitFees": "0.39297067052484", "twoTickMaxLossSameQty": "16.74297067052484", "twoTickMaxProfitSameQty": "3.25702932947516", "twoTickRewardRisk": "0.1945311494338932788401710466", "filters": {"legsSpreadLe5Pct": true, "rewardAtLeast25PctRisk": false, "entryFrictionLe15PctMaxProfit": false, "roundTripLe15PctRisk": true, "roundTripLe25PctMaxProfit": false, "twoTickRewardAtLeast25PctRisk": false, "twoTickLossWithinBudgetAtSameQty": true}, "costEligible": false, "regimeEligible": true, "long": "BTC-27NOV26-71000-C-USDT", "short": "BTC-27NOV26-69000-C-USDT"}
+NEARESTREJECTED {"base": "BTC", "strategy": "bear_call_credit", "expiryUtc": "2026-12-04T08:00:00+00:00", "dte": "18.89741525462962962962962963", "index": "65495.11175414", "width": "2000", "quantity": "0.01", "budgetOnlyQty": "0.01", "visibleQtyCap": "2", "quantityStep": "0.01", "entryBuyPrice": "460", "entrySellPrice": "815", "entryFees": "0.39297067052484", "premiumDebitBeforeFees": "-3.55", "netEntryDebit": "-3.15702932947516", "maxLossBeforeFutureFees": "16.84297067052484", "maxProfitBeforeFutureFees": "3.15702932947516", "minQtyLoss": "16.84297067052484", "budgetUnused": "8.15702932947516", "breakevenBeforeFutureFees": "70315.702932947516", "breakevenDistancePctFromIndex": "7.360230480869135181057260800", "rewardRisk": "0.1874389851547954113388809444", "lossPerMaxProfit": "5.335069431656150575107395048", "binaryEndpointHitRateNotProbabilityPct": "84.214853352624200", "firstLongCashOutlay": "4.79648533526242", "entryFrictionVsMid": "0.61797067052484", "entryFrictionPctMaxProfit": "19.57443552250984210515208154", "sameSnapshotRoundTripLoss": "1.23594134104968", "roundTripPctRisk": "7.338024658634444510266566779", "roundTripPctMaxProfit": "39.14887104501968421030416308", "sameSnapshotExitFees": "0.39297067052484", "twoTickMaxLossSameQty": "16.94297067052484", "twoTickMaxProfitSameQty": "3.05702932947516", "twoTickRewardRisk": "0.1804305389487204274277453831", "filters": {"legsSpreadLe5Pct": true, "rewardAtLeast25PctRisk": false, "entryFrictionLe15PctMaxProfit": false, "roundTripLe15PctRisk": true, "roundTripLe25PctMaxProfit": false, "twoTickRewardAtLeast25PctRisk": false, "twoTickLossWithinBudgetAtSameQty": true}, "costEligible": false, "regimeEligible": true, "long": "BTC-4DEC26-72000-C-USDT", "short": "BTC-4DEC26-70000-C-USDT"}
+NEARESTREJECTED {"base": "BTC", "strategy": "bear_call_credit", "expiryUtc": "2026-12-25T08:00:00+00:00", "dte": "39.89741525462962962962962963", "index": "65495.11175414", "width": "2000", "quantity": "0.01", "budgetOnlyQty": "0.01", "visibleQtyCap": "2", "quantityStep": "0.01", "entryBuyPrice": "865", "entrySellPrice": "1240", "entryFees": "0.39297067052484", "premiumDebitBeforeFees": "-3.75", "netEntryDebit": "-3.35702932947516", "maxLossBeforeFutureFees": "16.64297067052484", "maxProfitBeforeFutureFees": "3.35702932947516", "minQtyLoss": "16.64297067052484", "budgetUnused": "8.35702932947516", "breakevenBeforeFutureFees": "72335.702932947516", "breakevenDistancePctFromIndex": "10.44443011943577085820509210", "rewardRisk": "0.2017085408568646650998804620", "lossPerMaxProfit": "4.957648276825395541482814687", "binaryEndpointHitRateNotProbabilityPct": "83.214853352624200", "firstLongCashOutlay": "8.84648533526242", "entryFrictionVsMid": "0.64297067052484", "entryFrictionPctMaxProfit": "19.15296553650791082965629374", "sameSnapshotRoundTripLoss": "1.28594134104968", "roundTripPctRisk": "7.726633462901653584019126084", "roundTripPctMaxProfit": "38.30593107301582165931258749", "sameSnapshotExitFees": "0.39297067052484", "twoTickMaxLossSameQty": "16.74297067052484", "twoTickMaxProfitSameQty": "3.25702932947516", "twoTickRewardRisk": "0.1945311494338932788401710466", "filters": {"legsSpreadLe5Pct": true, "rewardAtLeast25PctRisk": false, "entryFrictionLe15PctMaxProfit": false, "roundTripLe15PctRisk": true, "roundTripLe25PctMaxProfit": false, "twoTickRewardAtLeast25PctRisk": false, "twoTickLossWithinBudgetAtSameQty": true}, "costEligible": false, "regimeEligible": true, "long": "BTC-25DEC26-74000-C-USDT", "short": "BTC-25DEC26-72000-C-USDT"}
+NEARESTREJECTED {"base": "ETH", "strategy": "bear_call_credit", "expiryUtc": "2026-11-27T08:00:00+00:00", "dte": "11.89741525462962962962962963", "index": "1829.06397162", "width": "75", "quantity": "0.4", "budgetOnlyQty": "0.4", "visibleQtyCap": "102.2", "quantityStep": "0.1", "entryBuyPrice": "14.1", "entrySellPrice": "27.7", "entryFees": "0.4389753531888", "premiumDebitBeforeFees": "-5.44", "netEntryDebit": "-5.0010246468112", "maxLossBeforeFutureFees": "24.9989753531888", "maxProfitBeforeFutureFees": "5.0010246468112", "minQtyLoss": "6.2497438382972", "budgetUnused": "0.0010246468112", "breakevenBeforeFutureFees": "1962.502561617028", "breakevenDistancePctFromIndex": "7.295457789748140072218476400", "rewardRisk": "0.2000491850628303115100134175", "lossPerMaxProfit": "4.998770675751194293920428559", "binaryEndpointHitRateNotProbabilityPct": "83.32991784396266666666666667", "firstLongCashOutlay": "5.8594876765944", "entryFrictionVsMid": "0.6189753531888", "entryFrictionPctMaxProfit": "12.37697065907237310610936168", "sameSnapshotRoundTripLoss": "1.2379507063776", "roundTripPctRisk": "4.952005787787980035905819206", "roundTripPctMaxProfit": "24.75394131814474621221872336", "sameSnapshotExitFees": "0.4389753531888", "twoTickMaxLossSameQty": "25.0789753531888", "twoTickMaxProfitSameQty": "4.9210246468112", "twoTickRewardRisk": "0.1962211205804103990513786011", "filters": {"legsSpreadLe5Pct": true, "rewardAtLeast25PctRisk": false, "entryFrictionLe15PctMaxProfit": true, "roundTripLe15PctRisk": true, "roundTripLe25PctMaxProfit": true, "twoTickRewardAtLeast25PctRisk": false, "twoTickLossWithinBudgetAtSameQty": false}, "costEligible": false, "regimeEligible": true, "long": "ETH-27NOV26-2025-C-USDT", "short": "ETH-27NOV26-1950-C-USDT"}
+NEARESTREJECTED {"base": "ETH", "strategy": "bear_call_credit", "expiryUtc": "2026-12-04T08:00:00+00:00", "dte": "18.89741525462962962962962963", "index": "1829.06397162", "width": "50", "quantity": "0.5", "budgetOnlyQty": "0.5", "visibleQtyCap": "20", "quantityStep": "0.1", "entryBuyPrice": "20.6", "entrySellPrice": "29.5", "entryFees": "0.5487191914860", "premiumDebitBeforeFees": "-4.45", "netEntryDebit": "-3.9012808085140", "maxLossBeforeFutureFees": "21.0987191914860", "maxProfitBeforeFutureFees": "3.9012808085140", "minQtyLoss": "4.2197438382972", "budgetUnused": "3.9012808085140", "breakevenBeforeFutureFees": "2007.802561617028", "breakevenDistancePctFromIndex": "9.772134423418740370278925000", "rewardRisk": "0.1849060491827527664684952560", "lossPerMaxProfit": "5.408151893460474513671899749", "binaryEndpointHitRateNotProbabilityPct": "84.39487676594400", "firstLongCashOutlay": "10.5743595957430", "entryFrictionVsMid": "0.8237191914860", "entryFrictionPctMaxProfit": "21.11407078640296830839890526", "sameSnapshotRoundTripLoss": "1.6474383829720", "roundTripPctRisk": "7.808238822557501278810069470", "roundTripPctMaxProfit": "42.22814157280593661679781052", "sameSnapshotExitFees": "0.5487191914860", "twoTickMaxLossSameQty": "21.1987191914860", "twoTickMaxProfitSameQty": "3.8012808085140", "twoTickRewardRisk": "0.1793165320120236770507517070", "filters": {"legsSpreadLe5Pct": true, "rewardAtLeast25PctRisk": false, "entryFrictionLe15PctMaxProfit": false, "roundTripLe15PctRisk": true, "roundTripLe25PctMaxProfit": false, "twoTickRewardAtLeast25PctRisk": false, "twoTickLossWithinBudgetAtSameQty": true}, "costEligible": false, "regimeEligible": true, "long": "ETH-4DEC26-2050-C-USDT", "short": "ETH-4DEC26-2000-C-USDT"}

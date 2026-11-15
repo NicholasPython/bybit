@@ -45,3 +45,10 @@ data/
 # 起始快照已入库，其余原始响应留在本地，账本 run-v1/ 保留摘要与校验和。
 research/2026-11-15-options-forward/snapshots/quote-*/
 research/2026-11-15-options-forward/run-v1/runner.lock
+
+# 条件转强实验的原始逐次行情与进程锁留在本地；账本保留校验链。
+research/2026-11-15-bull-call-forward/snapshots/market-*/
+research/2026-11-15-bull-call-forward/bull-transport-check-*/
+research/2026-11-15-bull-call-forward/run-v1/runner.lock
+# 每次采样复制一份对向实验账本证据，五天会累积数百份；起始证据入库，后续留在本地。
+research/2026-11-15-bull-call-forward/run-v1/evidence/opposite-*/

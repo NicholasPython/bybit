@@ -1,0 +1,11 @@
+{
+  "alerts": {
+    "sampling_stale:1794740775526": {
+      "type": "sampling_stale",
+      "lastMs": 1794740775526,
+      "delivered": true,
+      "deliveredUtc": "2026-11-15T13:13:43.522129+00:00",
+      "reportPath": "/Users/nicholaswang/Desktop/code/bybit/research/2026-11-15-options-forward/OBSERVATION_ALERT.md"
+    }
+  }
+}
