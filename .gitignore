@@ -40,3 +40,8 @@ data/
 .idea/
 .vscode/
 *.swp
+
+# 前向纸面验证的进行中产物：原始快照每 15 分钟新增约 1MB，5 天采样会撑大仓库；
+# 起始快照已入库，其余原始响应留在本地，账本 run-v1/ 保留摘要与校验和。
+research/2026-11-15-options-forward/snapshots/quote-*/
+research/2026-11-15-options-forward/run-v1/runner.lock
