@@ -1,4 +1,5 @@
 {
-  "status": "ok",
-  "utc": "2026-11-15T14:23:02.207000+00:00"
+  "status": "error",
+  "utc": "2026-11-16T02:07:31.644000+00:00",
+  "error": "CalledProcessError: Command '['/usr/bin/curl', '-q', '--noproxy', '*', '--max-time', '25', '--fail', '--silent', '--show-error', 'https://api.bybit.com/v5/market/time?']' returned non-zero exit status 35."
 }
