@@ -68,6 +68,7 @@ from bybitbot.strategy.templates import (
     ScheduledSpotBuyStrategy,
     SpotBuyParams,
 )
+from bybitbot.validation.sampling import ValidationSampler, ValidationStore
 from bybitbot.valuation import ValuationInput, ValuationPolicy, value_account
 
 logger = logging.getLogger(__name__)
@@ -532,6 +533,11 @@ class TradingService:
         await self._clock_and_disk()
         await self._market()
         await self._account_sync()
+        # Read-only observations continue while new trading exposure is paused.
+        await ValidationSampler(
+            ValidationStore(self.database.sessionmaker, self.environment, self.uid),
+            self.market_adapter,
+        ).tick()
         await self._process_commands()
         paused = (
             bool(await self.pauses.active_pauses()) or self.lease.state is not LeaseState.ELIGIBLE

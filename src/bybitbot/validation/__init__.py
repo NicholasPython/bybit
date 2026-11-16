@@ -12,8 +12,8 @@
 * :mod:`~bybitbot.validation.observation` —— 观察缺口记账；
 * :mod:`~bybitbot.validation.protocol` —— 阈值口径（可直读冻结的协议 JSON）。
 
-**这里只做判断，不做交易**：没有下单、没有写库、没有凭据。指标与价差计算为
-纯函数；PositionLedger 只修改自身内存状态，持久化与执行由调用方负责。
+顶层导出的指标与价差计算为纯函数；PositionLedger 只修改自身内存状态。
+持久化与公开行情采样位于 models / sampling 子模块，实际成交由产品执行链路负责。
 """
 
 from bybitbot.validation.indicators import (

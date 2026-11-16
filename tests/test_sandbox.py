@@ -161,7 +161,11 @@ async def test_real_migrations_acceptance_and_repeat_preserve_existing_ledger(
         database = Database(config.profile.db_dsn)
         async with database.sessionmaker() as session:
             version = await session.scalar(text("SELECT version_num FROM alembic_version"))
-        assert version == "8a4d17c2f905"
+        from alembic.config import Config
+        from alembic.script import ScriptDirectory
+
+        migration_config = Config("alembic.ini")
+        assert version == ScriptDirectory.from_config(migration_config).get_current_head()
 
         async def snapshot():
             async with database.sessionmaker() as session:
