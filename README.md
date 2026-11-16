@@ -9,6 +9,7 @@
 - 2026-11-01 测试报告整改与发布证据：[docs/remediation-2026-11-01.md](docs/remediation-2026-11-01.md)
 - 2026-11-16 公共层与本地 paper 系统交付：[docs/paper-system-2026-11-16.md](docs/paper-system-2026-11-16.md)
 - 公共层边界与研究迁移：[docs/shared-domain.md](docs/shared-domain.md)
+- 研究前向账本与交易系统模块映射（2026-11-16 暂停后的证据与缺口）：[docs/research-ledger-mapping-2026-11-16.md](docs/research-ledger-mapping-2026-11-16.md)
 
 ## 组成
 
