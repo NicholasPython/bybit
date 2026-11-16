@@ -194,11 +194,19 @@ def _catalog(pages: list[dict]) -> dict:
     return _unique_symbols(all_rows)
 
 
-def completed_candles(record: dict, cutoff: int, width: int, minimum: int) -> list[tuple]:
-    if _integer(record["params"]["end"]) != cutoff:
-        raise ValueError("Candle request must use common first-time cutoff")
+def completed_closes(
+    rows: list, cutoff: int, width: int, minimum: int
+) -> list[tuple[int, Decimal]]:
+    """校验 K 线行，返回**完整** K 线的 ``(毫秒时间戳, 收盘价)``。
+
+    与 :func:`completed_candles` 同一套规则，但输入是 K 线行本身 ——
+    在线采样路径不落原始响应文件时也走这里，避免同一口径写两遍。
+    """
+    cutoff, width, minimum = map(_integer, (cutoff, width, minimum))
+    if width <= 0 or minimum <= 0 or not isinstance(rows, list):
+        raise ValueError("Candle width/minimum must be positive and rows must be a list")
     completed = []
-    for row in _rows(record):
+    for row in rows:
         if not isinstance(row, list) or not row:
             raise ValueError("Malformed candle")
         timestamp = _integer(row[0])
@@ -218,6 +226,12 @@ def completed_candles(record: dict, cutoff: int, width: int, minimum: int) -> li
     if completed[-1][0] + width != cutoff // width * width:
         raise ValueError("Stale completed candle boundary")
     return completed
+
+
+def completed_candles(record: dict, cutoff: int, width: int, minimum: int) -> list[tuple]:
+    if _integer(record["params"]["end"]) != cutoff:
+        raise ValueError("Candle request must use common first-time cutoff")
+    return completed_closes(_rows(record), cutoff, width, minimum)
 
 
 def normalize_instrument(instrument: dict, base: str, option_type="Call") -> dict:
