@@ -33,30 +33,7 @@ from decimal import Decimal
 from bybitbot.adapters.base import AccountView, PositionView
 from bybitbot.clock import local_day, local_day_start_utc
 from bybitbot.money import dec
-
-
-@dataclass(frozen=True)
-class ValuationPolicy:
-    """版本化的估值政策。
-
-    ``version`` 必须随快照一起保存；历史序列按版本分组，不混算。
-    """
-
-    version: str
-    #: 估值币种（用户选择，实盘前锁定）。
-    currency: str
-    #: 日界线时区。
-    day_boundary_tz: str = "Asia/Shanghai"
-    #: 期权估值用的标记价来源字段（``mark_price`` / ``last_price``）。
-    option_price_field: str = "mark_price"
-    #: 现货/汇率源标识，仅用于记录，估值由调用方提供换算结果。
-    fx_source: str = "spot_mid"
-
-    def __post_init__(self) -> None:
-        if not self.version:
-            raise ValueError("估值政策必须有版本号")
-        if not self.currency:
-            raise ValueError("估值政策必须有估值币种")
+from bybitbot.terms.valuation import ValuationPolicy, option_value
 
 
 @dataclass
@@ -149,7 +126,13 @@ def value_account(policy: ValuationPolicy, data: ValuationInput) -> Valuation:
             missing_rate.append(settle)
             continue
         multiplier = data.contract_multiplier.get(position.symbol, Decimal("1"))
-        value = dec(price) * size * dec(multiplier) * dec(rate)
+        try:
+            value = option_value(
+                price=dec(price), qty=size, multiplier=dec(multiplier), rate=dec(rate)
+            )
+        except ValueError:
+            missing_rate.append(f"{position.symbol}:无效价格、乘数或汇率")
+            continue
         option_total += value
         details["options"][position.symbol] = str(value)
     total += option_total

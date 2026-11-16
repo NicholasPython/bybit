@@ -1,0 +1,12 @@
+{
+  "rawResponseHashesVerified": 11,
+  "candidateCalculationsIndependentlyVerified": 29,
+  "payoffAndDeliveryScenariosVerified": 290,
+  "candidateEntryLegsUsingPremiumFeeCap": 3,
+  "costPassCount": 14,
+  "costAndRegimePassCount": 0,
+  "checkedAgainstRawMetadataAndBidAsk": true,
+  "analysisSha256": "b277bf0b1759394f70c57b2bee598518a8437c2b4e58bfa1edd1d5f6dbef45fe",
+  "realFillsVerified": false,
+  "accountMarginVerified": false
+}

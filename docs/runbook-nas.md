@@ -117,6 +117,10 @@ ssh nas 'podman tag localhost/bybitbot:release-20261031-r2 localhost/bybitbot:0.
 
 回退到 `pre-dogfood-20261101` 前，必须同时核对旧配置格式与旧 paper 检查点兼容性；仅切镜像标签不足以回滚本次费用口径。若发布后已有交易事实，先保持暂停并审计，不能直接用旧检查点覆盖新账本。完整整改记录见 [remediation-2026-11-01.md](remediation-2026-11-01.md)。
 
+2026-11-02 期权收紧发布已核验：镜像 `a9bc0bca0a096c1097cef1d993bc272ed887511ef2b0885144b4e593e69f5f37`，发布标签 `localhost/bybitbot:option-controls-20261102`（已移动为 `0.1.0`），回滚点 `localhost/bybitbot:pre-option-controls-20261102`（`5ea93d176eca`）。配置原文件以 0600 保存为 `~/.config/bybitbot/config.pre-option-controls-20261102.yaml`。本次收紧 `eth-call-weekly` 的到期窗口、Delta 区间、行权价带、权利金与费用占比上限，并新增权利金止损、持有期限、ETH 权利金与 Delta 上限、权利金占权益比例上限；策略生成 v2 配置版本后停在对账暂停，`CONFIG_CHANGED` 锁定暂停未解除，两策略仍禁用，订单/成交/意图/库存均为零。改动依据与逐项验证见 [option-controls-2026-11-02.md](option-controls-2026-11-02.md)。
+
+2026-11-04 复核补丁发布已核验：镜像 `abb970cb269ffde3c1ffc99cfab677be3af378694150e6021db723e9a964e86f`，发布标签 `localhost/bybitbot:option-controls-20261104-r2`（已移动为 `0.1.0`），回滚点 `localhost/bybitbot:pre-option-controls-guard-20261104`（`a9bc0bca0a096c1097cef1d993bc272ed887511ef2b0885144b4e593e69f5f37`，即 11-02 发布镜像）。同日中间镜像 `localhost/bybitbot:option-controls-20261104`（`edff2cbaedfb`）已被 r2 取代，不再使用。配置本次未变，仍以 0600 保存在 `~/.config/bybitbot/config.yaml`；`config check` 通过（两个策略 `enabled: false`、`live_allowed: false`）。补丁只补两处缺口：权利金止损在配置期就拒绝挂在现货策略上（现货按买一价判定权利金成本，永远不会触发），以及操作台的退出规则只展示业务字段（重试次数、有效期等执行细节不再淹没阈值）。配置版本仍为 v2，未写入新版本；运行状态 `PAUSED_OPEN`、无 `last_error`，`CONFIG_CHANGED`（锁定）、`NOTIFICATION_FAILURE`、`VALUATION_UNAVAILABLE` 三条暂停均未解除，订单/成交/意图/库存全部为零。
+
 依赖锁变化时先重建基础层；该文件复用 NAS 已有的 Python 3.12.15 基础镜像，并通过 `--require-hashes` 安装依赖：
 
 ```bash

@@ -245,6 +245,7 @@
       ...["budget_per_run", "max_spend_per_trade"].map((key) => ({ value: (r) => { const v = data.config_versions?.find((v) => v.strategy_id === r.id && v.active); return amount(v?.[key], v?.currency); }, className: "numeric" })),
       (r) => data.config_versions?.find((v) => v.strategy_id === r.id && v.active)?.currency || currency,
     ], "暂无持久化策略实例。请启动交易服务以校验并载入配置。");
+    renderStrategyParams(data);
     renderLimits(data.configuration);
     table("pauses-body", data.pauses, [
       (r) => stacked(`#${r.id}`, `${r.scope}${r.scope_key ? ` ${r.scope_key}` : ""}`),
@@ -271,6 +272,78 @@
     if (tracked) $("command-notice").textContent = commandNotice(tracked);
   }
 
+  const PARAM_LABELS = {
+    options_type: "期权类型",
+    min_days_to_expiry: "最少到期天数",
+    max_days_to_expiry: "最多到期天数",
+    delta_low: "Delta 下界",
+    delta_high: "Delta 上界",
+    strike_low_pct: "行权价下界(%)",
+    strike_high_pct: "行权价上界(%)",
+    min_premium: "最低权利金",
+    max_premium: "最高权利金",
+    max_fee_ratio: "费用占权利金上限",
+    min_open_interest: "最低持仓量",
+    max_price_deviation: "最大价格偏离",
+    min_qty: "最小数量",
+  };
+  const RULE_LABELS = {
+    hold_period: "持有到期",
+    profit_threshold: "止盈",
+    premium_stop_loss: "权利金止损",
+    before_expiry: "到期前退出",
+  };
+  // 每种退出规则只显示有业务含义的字段，其余（重试次数、有效期等）属于
+  // 执行细节，展示出来反而淹没真正的阈值。
+  const RULE_FIELDS = {
+    hold_period: ["hold_seconds"],
+    profit_threshold: ["profit_threshold_pct"],
+    premium_stop_loss: ["stop_loss_pct"],
+    before_expiry: [],
+  };
+
+  function renderStrategyParams(data) {
+    const versions = (data.config_versions || []).filter((v) => v.active);
+    const names = new Map((data.strategies || []).map((s) => [s.id, s.name]));
+    const rows = versions.map((v) => {
+      const params = v.params || {};
+      const paramBox = node("div");
+      const entries = Object.keys(PARAM_LABELS).filter((key) => params[key] !== undefined);
+      if (!entries.length) paramBox.append(node("p", "无额外参数，按全局配置执行", "muted"));
+      for (const key of entries) {
+        const line = node("p");
+        line.append(node("span", `${PARAM_LABELS[key]}：`, "muted"));
+        line.append(node("span", params[key], "number"));
+        paramBox.append(line);
+      }
+      const ruleBox = node("div");
+      const rules = v.exit_rules || [];
+      if (!rules.length) ruleBox.append(node("p", "未配置退出规则", "muted"));
+      for (const rule of rules) {
+        const line = node("p");
+        line.append(node("span", `${RULE_LABELS[rule.kind] || rule.kind}：`, "muted"));
+        const fields = RULE_FIELDS[rule.kind] || [];
+        const detail = fields
+          .filter((key) => rule[key] !== undefined && rule[key] !== null)
+          .map((key) => `${key}=${rule[key]}`).join("，");
+        line.append(node("span", detail || "按全局配置", "number"));
+        ruleBox.append(line);
+      }
+      return {
+        name: names.get(v.strategy_id) || `策略 ${v.strategy_id}`,
+        version: v.version,
+        params: paramBox,
+        rules: ruleBox,
+      };
+    });
+    table("strategy-params-body", rows, [
+      (r) => r.name,
+      { value: (r) => r.version, className: "numeric" },
+      { value: (r) => r.params, className: "wrap" },
+      { value: (r) => r.rules, className: "wrap" },
+    ], "暂无生效的策略配置版本。交易服务载入配置后会写入不可变版本。");
+  }
+
   function renderLimits(config) {
     const rows = [];
     const add = (name, value, unit, scope) => rows.push({ name, value, unit, scope });
@@ -290,6 +363,16 @@
     add("账户快照有效期", config?.market?.account_state_max_age_seconds, "秒", "账户身份与状态");
     add("最大价差", amount(config?.market?.max_spread_bps), "基点", "有效买卖报价");
     add("最大价格偏离", amount(config?.market?.max_price_deviation_bps), "基点", "有边界限价执行");
+    const option = config?.option || {};
+    add("期权到期窗口", `${text(option.min_days_to_expiry, "—")}～${text(option.max_days_to_expiry, "—")}`, "天", "新开仓的距到期天数");
+    if (option.delta_range) add("期权 Delta 区间", option.delta_range.map((v) => amount(v)).join("～"), "绝对 Delta", "筛选候选合约");
+    if (option.strike_range_pct) add("期权行权价带", option.strike_range_pct.map((v) => amount(v)).join("～"), "% 现价", "筛选候选合约");
+    if (option.max_fee_ratio !== null && option.max_fee_ratio !== undefined) {
+      add("期权费用占权利金上限", amount(option.max_fee_ratio), "比例（每边 taker）", "超过即不选该合约");
+    }
+    if (config?.risk?.max_premium_to_equity_ratio !== null && config?.risk?.max_premium_to_equity_ratio !== undefined) {
+      add("权利金占权益比例上限", amount(config.risk.max_premium_to_equity_ratio), "比例", "期权权利金总额对风控权益");
+    }
     add("日界线时区", config?.day_boundary_tz, "时区", "日损益基线，内部时间 UTC");
     table("limits-body", rows, [(r) => r.name, { value: (r) => r.value, className: "numeric" }, (r) => r.unit, { value: (r) => r.scope, className: "wrap" }]);
   }

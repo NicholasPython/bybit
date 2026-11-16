@@ -1,0 +1,316 @@
+{
+  "protocolHash": "72edcb96199c60b42c8b9c58bb1a8a76708db1b50693580768e78d641ac38406",
+  "simulation": true,
+  "marginValidated": false,
+  "frozenMs": 1794748935447,
+  "endMs": 1795180935447,
+  "lastMs": 1794752582207,
+  "processed": {
+    "9270030536ec179f406c192e451fe98a6e7e793c54015897149e63c601c8f05c": {
+      "path": "/Users/nicholaswang/Desktop/code/bybit/research/2026-11-15-bull-call-forward/snapshots/market-y_sjhsry/manifest.json",
+      "oppositePath": "/Users/nicholaswang/Desktop/code/bybit/research/2026-11-15-bull-call-forward/run-v1/evidence/opposite-gcxq6_t0/ledger.json",
+      "oppositeHash": "f9af8b067e731310778524f9d82771724a002cebd80d4255c1563844efc4913d",
+      "ms": 1794748948593
+    },
+    "02ee083a6def69e6bef2c43feb0c3d7c881992c5bb055e8f92d60363cd15b362": {
+      "path": "/Users/nicholaswang/Desktop/code/bybit/research/2026-11-15-bull-call-forward/snapshots/market-ntylh2nd/manifest.json",
+      "oppositePath": "/Users/nicholaswang/Desktop/code/bybit/research/2026-11-15-bull-call-forward/run-v1/evidence/opposite-gvp5t9d9/ledger.json",
+      "oppositeHash": "1531e9a19acb9d0440acca9dc6329647627b7c96d13955862851efead9e60895",
+      "ms": 1794749858343
+    },
+    "89d4c9e49378a36b5e249ca161fdd9072c423027f0e8bc3a0919638e0eef5020": {
+      "path": "/Users/nicholaswang/Desktop/code/bybit/research/2026-11-15-bull-call-forward/snapshots/market-ir5rn2xu/manifest.json",
+      "oppositePath": "/Users/nicholaswang/Desktop/code/bybit/research/2026-11-15-bull-call-forward/run-v1/evidence/opposite-1i5puwc4/ledger.json",
+      "oppositeHash": "e436f3f0db9769a749be26524761f4cb6742ef3587d5a9c78353ac001314b39c",
+      "ms": 1794750768293
+    },
+    "d1bcab201e839aa326ae165b50bdb6ac921a3706b92998d8c2ac6db4057df207": {
+      "path": "/Users/nicholaswang/Desktop/code/bybit/research/2026-11-15-bull-call-forward/snapshots/market-78qa16dv/manifest.json",
+      "oppositePath": "/Users/nicholaswang/Desktop/code/bybit/research/2026-11-15-bull-call-forward/run-v1/evidence/opposite-i7a1fsyl/ledger.json",
+      "oppositeHash": "c3b15fc9b60e4274bfb0d6f3665552aa842ab9b415af4fbda9e1f1b98839df13",
+      "ms": 1794751677118
+    },
+    "84b2fba4c8daa4a0e9adfbb2b897ab6d89b07e4ef81d9a1497d848a3af6d499b": {
+      "path": "/Users/nicholaswang/Desktop/code/bybit/research/2026-11-15-bull-call-forward/snapshots/market-w5n_nygg/manifest.json",
+      "oppositePath": "/Users/nicholaswang/Desktop/code/bybit/research/2026-11-15-bull-call-forward/run-v1/evidence/opposite-ok3fzzun/ledger.json",
+      "oppositeHash": "dddafdda8830f975b0f439f42e9bfab776ab679deb5a908a9cb5669b20366cf5",
+      "ms": 1794752582207
+    }
+  },
+  "events": [],
+  "samples": [
+    {
+      "ms": 1794748948593,
+      "utc": "2026-11-15T13:22:28.593000+00:00",
+      "signals": {
+        "BTC": {
+          "eligible": false,
+          "hourClose": "65507.6",
+          "dailyClose": "64153.8",
+          "sma20": "75904.38",
+          "previousSma20": "76704.45",
+          "sma50": "80221.406",
+          "return24h": "-0.0222965157496473959538219294",
+          "last3HourlyCloses": [
+            "65588.5",
+            "65346.4",
+            "65507.6"
+          ],
+          "lastHourMs": 1794747600000,
+          "lastDayMs": 1794700800000
+        },
+        "ETH": {
+          "eligible": false,
+          "hourClose": "1835.95",
+          "dailyClose": "1769.5",
+          "sma20": "2191.2345",
+          "previousSma20": "2219.266",
+          "sma50": "2397.643",
+          "return24h": "-0.0337969760600367335554187257",
+          "last3HourlyCloses": [
+            "1831.51",
+            "1823.71",
+            "1835.95"
+          ],
+          "lastHourMs": 1794747600000,
+          "lastDayMs": 1794700800000
+        }
+      },
+      "conflicts": {
+        "BTC": true,
+        "ETH": true
+      },
+      "netPnl": {
+        "BTC": "0",
+        "ETH": "0"
+      },
+      "phases": {
+        "BTC": "waiting",
+        "ETH": "waiting"
+      }
+    },
+    {
+      "ms": 1794749858343,
+      "utc": "2026-11-15T13:37:38.343000+00:00",
+      "signals": {
+        "BTC": {
+          "eligible": false,
+          "hourClose": "65507.6",
+          "dailyClose": "64153.8",
+          "sma20": "75904.38",
+          "previousSma20": "76704.45",
+          "sma50": "80221.406",
+          "return24h": "-0.0222965157496473959538219294",
+          "last3HourlyCloses": [
+            "65588.5",
+            "65346.4",
+            "65507.6"
+          ],
+          "lastHourMs": 1794747600000,
+          "lastDayMs": 1794700800000
+        },
+        "ETH": {
+          "eligible": false,
+          "hourClose": "1835.95",
+          "dailyClose": "1769.5",
+          "sma20": "2191.2345",
+          "previousSma20": "2219.266",
+          "sma50": "2397.643",
+          "return24h": "-0.0337969760600367335554187257",
+          "last3HourlyCloses": [
+            "1831.51",
+            "1823.71",
+            "1835.95"
+          ],
+          "lastHourMs": 1794747600000,
+          "lastDayMs": 1794700800000
+        }
+      },
+      "conflicts": {
+        "BTC": true,
+        "ETH": true
+      },
+      "netPnl": {
+        "BTC": "0",
+        "ETH": "0"
+      },
+      "phases": {
+        "BTC": "waiting",
+        "ETH": "waiting"
+      }
+    },
+    {
+      "ms": 1794750768293,
+      "utc": "2026-11-15T13:52:48.293000+00:00",
+      "signals": {
+        "BTC": {
+          "eligible": false,
+          "hourClose": "65507.6",
+          "dailyClose": "64153.8",
+          "sma20": "75904.38",
+          "previousSma20": "76704.45",
+          "sma50": "80221.406",
+          "return24h": "-0.0222965157496473959538219294",
+          "last3HourlyCloses": [
+            "65588.5",
+            "65346.4",
+            "65507.6"
+          ],
+          "lastHourMs": 1794747600000,
+          "lastDayMs": 1794700800000
+        },
+        "ETH": {
+          "eligible": false,
+          "hourClose": "1835.95",
+          "dailyClose": "1769.5",
+          "sma20": "2191.2345",
+          "previousSma20": "2219.266",
+          "sma50": "2397.643",
+          "return24h": "-0.0337969760600367335554187257",
+          "last3HourlyCloses": [
+            "1831.51",
+            "1823.71",
+            "1835.95"
+          ],
+          "lastHourMs": 1794747600000,
+          "lastDayMs": 1794700800000
+        }
+      },
+      "conflicts": {
+        "BTC": true,
+        "ETH": true
+      },
+      "netPnl": {
+        "BTC": "0",
+        "ETH": "0"
+      },
+      "phases": {
+        "BTC": "waiting",
+        "ETH": "waiting"
+      }
+    },
+    {
+      "ms": 1794751677118,
+      "utc": "2026-11-15T14:07:57.118000+00:00",
+      "signals": {
+        "BTC": {
+          "eligible": false,
+          "hourClose": "65434.1",
+          "dailyClose": "64153.8",
+          "sma20": "75904.38",
+          "previousSma20": "76704.45",
+          "sma50": "80221.406",
+          "return24h": "-0.0210074478367161293990562283",
+          "last3HourlyCloses": [
+            "65346.4",
+            "65507.6",
+            "65434.1"
+          ],
+          "lastHourMs": 1794751200000,
+          "lastDayMs": 1794700800000
+        },
+        "ETH": {
+          "eligible": false,
+          "hourClose": "1830.8",
+          "dailyClose": "1769.5",
+          "sma20": "2191.2345",
+          "previousSma20": "2219.266",
+          "sma50": "2397.643",
+          "return24h": "-0.0332817623545936013264126136",
+          "last3HourlyCloses": [
+            "1823.71",
+            "1835.95",
+            "1830.8"
+          ],
+          "lastHourMs": 1794751200000,
+          "lastDayMs": 1794700800000
+        }
+      },
+      "conflicts": {
+        "BTC": true,
+        "ETH": true
+      },
+      "netPnl": {
+        "BTC": "0",
+        "ETH": "0"
+      },
+      "phases": {
+        "BTC": "waiting",
+        "ETH": "waiting"
+      }
+    },
+    {
+      "ms": 1794752582207,
+      "utc": "2026-11-15T14:23:02.207000+00:00",
+      "signals": {
+        "BTC": {
+          "eligible": false,
+          "hourClose": "65434.1",
+          "dailyClose": "64153.8",
+          "sma20": "75904.38",
+          "previousSma20": "76704.45",
+          "sma50": "80221.406",
+          "return24h": "-0.0210074478367161293990562283",
+          "last3HourlyCloses": [
+            "65346.4",
+            "65507.6",
+            "65434.1"
+          ],
+          "lastHourMs": 1794751200000,
+          "lastDayMs": 1794700800000
+        },
+        "ETH": {
+          "eligible": false,
+          "hourClose": "1830.8",
+          "dailyClose": "1769.5",
+          "sma20": "2191.2345",
+          "previousSma20": "2219.266",
+          "sma50": "2397.643",
+          "return24h": "-0.0332817623545936013264126136",
+          "last3HourlyCloses": [
+            "1823.71",
+            "1835.95",
+            "1830.8"
+          ],
+          "lastHourMs": 1794751200000,
+          "lastDayMs": 1794700800000
+        }
+      },
+      "conflicts": {
+        "BTC": true,
+        "ETH": true
+      },
+      "netPnl": {
+        "BTC": "0",
+        "ETH": "0"
+      },
+      "phases": {
+        "BTC": "waiting",
+        "ETH": "waiting"
+      }
+    }
+  ],
+  "positions": {
+    "BTC": {
+      "base": "BTC",
+      "phase": "waiting",
+      "cash": "0",
+      "fees": "0",
+      "reservedRisk": "0",
+      "longHeld": false,
+      "shortHeld": false,
+      "pending": null
+    },
+    "ETH": {
+      "base": "ETH",
+      "phase": "waiting",
+      "cash": "0",
+      "fees": "0",
+      "reservedRisk": "0",
+      "longHeld": false,
+      "shortHeld": false,
+      "pending": null
+    }
+  },
+  "checkpointHash": "2956f3c830aacaa1ff7eb1913c7c002946960599c0bcc526a5ece9628bc0847a"
+}

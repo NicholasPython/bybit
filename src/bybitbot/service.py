@@ -84,8 +84,19 @@ def json_value(value):
 
 
 def config_fingerprint(config: AppConfig) -> str:
-    safe = config.model_dump(mode="json", exclude={"environments"})
-    return hashlib.sha256(json.dumps(safe, sort_keys=True).encode()).hexdigest()[:20]
+    # 集合无业务顺序；必须在 JSON 转为列表前排序，否则不同进程可能产生不同版本。
+    safe = config.model_dump(mode="python", exclude={"environments"})
+
+    def encode(value):
+        if isinstance(value, (set, frozenset)):
+            return sorted(value)
+        if isinstance(value, dt.datetime):
+            return value.isoformat()
+        return str(value)
+
+    return hashlib.sha256(json.dumps(safe, sort_keys=True, default=encode).encode()).hexdigest()[
+        :20
+    ]
 
 
 class StateStore:
@@ -320,7 +331,11 @@ class TradingService:
                 await self.adapter.__aenter__()
                 self._owned_adapters.append(self.adapter)
         if self.market_adapter is None:
-            if self.environment == "paper":
+            if self.environment == "paper" and self.config.paper.market_source == "synthetic":
+                from bybitbot.adapters.synthetic import SyntheticMarket
+
+                self.market_adapter = SyntheticMarket(self.config.paper.synthetic_expiry)
+            elif self.environment == "paper":
                 self.market_adapter = BybitRestAdapter(
                     base_url=self.config.paper.public_market_url,
                     allow_trade_writes=False,
@@ -508,8 +523,9 @@ class TradingService:
                 updated.profile != self.config.profile
                 or updated.runtime.proxy != self.config.runtime.proxy
                 or updated.fees != self.config.fees
+                or updated.paper != self.config.paper
             ):
-                raise RuntimeError("环境、端点、凭据、代理或费用口径变更需重启")
+                raise RuntimeError("环境、端点、凭据、代理、模拟行情或费用口径变更需重启")
             if config_fingerprint(updated) != self._config_hash:
                 self.config = updated
                 await self._apply_config()
@@ -1230,6 +1246,19 @@ class TradingService:
             )
         target = self.config.option.delta_range
         strike = self.config.option.strike_range_pct
+        # 策略 params 优先于全局 option 配置：单个实例可以收紧自己的
+        # 到期窗口、Delta 区间、行权价带、权利金区间与费用占比上限。
+        delta_low = params.get("delta_low")
+        delta_high = params.get("delta_high")
+        if delta_low is not None and delta_high is not None:
+            target = (Decimal(delta_low), Decimal(delta_high))
+        strike_low = params.get("strike_low_pct")
+        strike_high = params.get("strike_high_pct")
+        if strike_low is not None and strike_high is not None:
+            strike = (Decimal(strike_low), Decimal(strike_high))
+        min_days = int(params.get("min_days_to_expiry", self.config.option.min_days_to_expiry))
+        max_days = int(params.get("max_days_to_expiry", self.config.option.max_days_to_expiry))
+        fee_ratio_cap = params.get("max_fee_ratio")
         return ScheduledOptionBuyStrategy(
             cfg.name,
             OptionBuyParams(
@@ -1237,14 +1266,19 @@ class TradingService:
                 currency=cfg.budget_per_run.currency,
                 allowed_types=self.config.option.allowed_option_types,
                 options_type=params.get("options_type"),
-                min_days_to_expiry=self.config.option.min_days_to_expiry,
-                max_days_to_expiry=self.config.option.max_days_to_expiry,
+                min_days_to_expiry=min_days,
+                max_days_to_expiry=max_days,
                 target_delta=(sum(target) / 2 if target else None),
                 delta_tolerance=((target[1] - target[0]) / 2 if target else Decimal("0.25")),
                 strike_range=tuple(value / 100 for value in strike) if strike else None,
                 min_premium=Decimal(params.get("min_premium", "0")),
                 max_premium=Decimal(params.get("max_premium", "0")),
                 min_open_interest=Decimal(params.get("min_open_interest", "0")),
+                max_fee_ratio=(
+                    Decimal(fee_ratio_cap)
+                    if fee_ratio_cap is not None
+                    else self.config.option.max_fee_ratio
+                ),
                 premium_budget=cap,
                 enabled=True,
                 ttl_seconds=cfg.signal_ttl_seconds,
@@ -1672,6 +1706,11 @@ class TradingService:
             strategy_spot_exposure=strategy_spot,
             account_spot_exposure=account_spot,
             account_premium_used=premium,
+            risk_equity=(
+                self.valuation.equity
+                if self.valuation is not None and self.valuation.complete
+                else ZERO
+            ),
             premium_used_per_underlying=by_base,
             premium_used_per_expiry=by_expiry,
             open_order_count=len(orders),
@@ -1812,17 +1851,23 @@ class TradingService:
                     and (spec.delivery_time - now_utc()).total_seconds()
                     <= self.config.option.exit_before_expiry_seconds
                 )
-                if (
-                    kind == "profit_threshold"
-                    and quote
-                    and quote.bid_price
-                    and item.avg_cost > 0
-                ):
+                if kind == "profit_threshold" and quote and quote.bid_price and item.avg_cost > 0:
                     rate = self._fee_ratio(category, item.symbol, quote.bid_price)
                     proceeds = quote.bid_price * (1 - rate)
                     due = (proceeds / item.avg_cost - 1) * 100 >= Decimal(
                         rule["profit_threshold_pct"]
                     )
+                if (
+                    kind == "premium_stop_loss"
+                    and category == "option"
+                    and quote
+                    and quote.bid_price
+                    and item.avg_cost > 0
+                ):
+                    # 权利金止损：按可成交的买一价（含费用）相对持仓成本亏损判定。
+                    rate = self._fee_ratio(category, item.symbol, quote.bid_price)
+                    proceeds = quote.bid_price * (1 - rate)
+                    due = (proceeds / item.avg_cost - 1) * 100 <= -Decimal(rule["stop_loss_pct"])
                 if due and trigger is None:
                     trigger = (owner, rule)
             if trigger is None:
@@ -2057,7 +2102,11 @@ class TradingService:
                 "valuation_complete": bool(self.valuation and self.valuation.complete),
                 "baseline_available": self.baseline_ok,
                 "config_version": self._config_hash,
-                "source": "paper 模拟，保守可见深度模型"
+                "source": (
+                    "paper 模拟 · 离线合成行情 · 可见深度模型"
+                    if self.config.paper.market_source == "synthetic"
+                    else "paper 模拟 · Bybit 公共行情 · 可见深度模型"
+                )
                 if self.environment == "paper"
                 else self.environment,
                 "clock_checked": self._clock_at > 0,

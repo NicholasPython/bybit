@@ -270,6 +270,9 @@ class RiskLimits(BaseModel):
     premium_cost_limit_per_underlying: dict[str, DecimalAmount] = Field(default_factory=dict)
     #: 按到期日的权利金成本上限（键为 UTC 到期日）。
     premium_cost_limit_per_expiry: dict[str, DecimalAmount] = Field(default_factory=dict)
+    #: 期权权利金总额占风控权益的比例上限；None 表示不限制。
+    #: 与绝对权利金预算相互独立：权益下降时按比例自动收紧。
+    max_premium_to_equity_ratio: Annotated[Decimal, Field(gt=0, le=1)] | None = None
 
     @field_validator("delta_limit_per_underlying")
     @classmethod
@@ -372,6 +375,10 @@ class OptionConfig(BaseModel):
     #: 到期前多久开始执行退出规则。
     exit_before_expiry_seconds: Annotated[int, Field(ge=0)] = 86400
     max_settle_coin_cash_ratio: Annotated[Decimal, Field(gt=0)] = Decimal("1")
+    #: 每边费用占权利金比例上限（taker 口径）；None 表示不限制。
+    #: 按官方公式，费用 = min(标的指数价 × 0.0003, 权利金 × 0.07)，
+    #: 因此该比例等价于随指数价浮动的最低权利金要求。
+    max_fee_ratio: Annotated[Decimal, Field(gt=0, le=1)] | None = None
 
     @model_validator(mode="after")
     def _consistent(self) -> OptionConfig:
@@ -387,6 +394,8 @@ class OptionConfig(BaseModel):
             low, high = self.delta_range
             if not 0 <= low <= high <= 1:
                 raise ValueError("delta_range 必须是 [0, 1] 内的绝对 Delta 区间")
+        if self.max_fee_ratio is not None and self.max_fee_ratio >= Decimal("0.07"):
+            raise ValueError("max_fee_ratio 必须小于期权费用封顶比例 0.07")
         return self
 
 
@@ -403,9 +412,11 @@ class ExitRuleConfig(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    kind: Literal["hold_period", "profit_threshold", "before_expiry"]
+    kind: Literal["hold_period", "profit_threshold", "before_expiry", "premium_stop_loss"]
     hold_seconds: Annotated[int, Field(ge=0)] | None = None
     profit_threshold_pct: Annotated[Decimal, Field(ge=0)] | None = None
+    #: 权利金止损比例（百分比）：持仓成本亏损达到该比例即退出。
+    stop_loss_pct: Annotated[Decimal, Field(gt=0, lt=100)] | None = None
     max_reprice_attempts: Annotated[int, Field(ge=0, le=10)] = 1
     exit_validity_seconds: Annotated[int, Field(ge=1)] = 300
 
@@ -415,6 +426,8 @@ class ExitRuleConfig(BaseModel):
             raise ValueError("hold_period 退出规则必须给出 hold_seconds")
         if self.kind == "profit_threshold" and self.profit_threshold_pct is None:
             raise ValueError("profit_threshold 退出规则必须给出 profit_threshold_pct")
+        if self.kind == "premium_stop_loss" and self.stop_loss_pct is None:
+            raise ValueError("premium_stop_loss 退出规则必须给出 stop_loss_pct")
         return self
 
 
@@ -465,7 +478,19 @@ class StrategyConfig(BaseModel):
         allowed_params = (
             {"max_price_deviation", "min_qty"}
             if self.kind == "spot_fixed_budget_dca"
-            else {"options_type", "min_premium", "max_premium", "min_open_interest"}
+            else {
+                "options_type",
+                "min_premium",
+                "max_premium",
+                "min_open_interest",
+                "max_fee_ratio",
+                "min_days_to_expiry",
+                "max_days_to_expiry",
+                "delta_low",
+                "delta_high",
+                "strike_low_pct",
+                "strike_high_pct",
+            }
         )
         if self.params.keys() - allowed_params:
             raise ValueError("策略 params 存在未支持的字段")
@@ -479,6 +504,35 @@ class StrategyConfig(BaseModel):
                 raise ValueError(f"{key} 必须为非负有限数")
             if key == "max_price_deviation" and number > 1:
                 raise ValueError("max_price_deviation 必须为 [0, 1] 内的比例")
+            if key == "max_fee_ratio" and not 0 < number < Decimal("0.07"):
+                raise ValueError("max_fee_ratio 必须小于期权费用封顶比例 0.07")
+            if key in {"delta_low", "delta_high"} and number > 1:
+                raise ValueError(f"{key} 必须为 [0, 1] 内的绝对 Delta")
+            if key in {"strike_low_pct", "strike_high_pct"} and number <= 0:
+                raise ValueError(f"{key} 必须为正的现价百分比")
+            if key in {"min_days_to_expiry", "max_days_to_expiry"} and (
+                number != number.to_integral_value()
+            ):
+                raise ValueError(f"{key} 必须为整数天")
+        if (
+            "min_days_to_expiry" in self.params
+            and "max_days_to_expiry" in self.params
+            and Decimal(self.params["min_days_to_expiry"])
+            > Decimal(self.params["max_days_to_expiry"])
+        ):
+            raise ValueError("min_days_to_expiry 不得大于 max_days_to_expiry")
+        if (
+            "delta_low" in self.params
+            and "delta_high" in self.params
+            and Decimal(self.params["delta_low"]) > Decimal(self.params["delta_high"])
+        ):
+            raise ValueError("delta_low 不得大于 delta_high")
+        if (
+            "strike_low_pct" in self.params
+            and "strike_high_pct" in self.params
+            and Decimal(self.params["strike_low_pct"]) > Decimal(self.params["strike_high_pct"])
+        ):
+            raise ValueError("strike_low_pct 不得大于 strike_high_pct")
         minimum = Decimal(self.params.get("min_premium", "0"))
         maximum = Decimal(self.params.get("max_premium", "0"))
         if maximum and minimum > maximum:
@@ -490,6 +544,10 @@ class StrategyConfig(BaseModel):
                 and rule.profit_threshold_pct > 100
             ):
                 raise ValueError("收益阈值百分比不得大于 100")
+            if rule.kind == "premium_stop_loss" and self.kind != "option_single_leg_buy":
+                # 权利金止损按期权买一价与持仓权利金成本比较，现货策略永远不满足，
+                # 写在这里比留到运行时静默失效更早暴露。
+                raise ValueError("premium_stop_loss 仅适用于 option_single_leg_buy 策略")
         return self
 
 
@@ -617,6 +675,24 @@ class PaperConfig(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
     initial_balances: dict[str, Decimal] = Field(default_factory=lambda: {"USDT": Decimal("1000")})
     public_market_url: Literal["https://api.bybit.com"] = "https://api.bybit.com"
+    market_source: Literal["public", "synthetic"] = "public"
+    synthetic_expiry: dt.datetime | None = None
+
+    @model_validator(mode="after")
+    def _synthetic_terms(self) -> PaperConfig:
+        if self.market_source == "synthetic":
+            expiry = self.synthetic_expiry
+            if expiry is None or expiry.tzinfo is None or expiry.utcoffset() is None:
+                raise ValueError("合成行情必须配置带时区的固定到期日")
+            utc = expiry.astimezone(dt.UTC)
+            if not 2000 <= utc.year < 2100 or (
+                utc.hour,
+                utc.minute,
+                utc.second,
+                utc.microsecond,
+            ) != (8, 0, 0, 0):
+                raise ValueError("合成期权到期日必须是 2000—2099 年的 08:00 UTC")
+        return self
 
     @field_validator("initial_balances")
     @classmethod

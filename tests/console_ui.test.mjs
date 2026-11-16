@@ -60,6 +60,13 @@ const flush = async (times = 4) => {
   for (let index = 0; index < times; index += 1) await new Promise((resolve) => setTimeout(resolve, 0));
 };
 
+// 把伪造 DOM 里的文本摊平成一行，便于断言。
+const flatten = (node) => {
+  const own = node.textContent ? String(node.textContent) : "";
+  const children = (node.children || []).map(flatten).join("");
+  return `${own}${children}`;
+};
+
 function createDocument(commandButtons) {
   const elements = new Map();
   return {
@@ -76,7 +83,7 @@ function createDocument(commandButtons) {
   };
 }
 
-async function boot({ commands = [], pending = null, commandResponder = null, commandKind = "CANCEL_BOT_OPEN_ORDERS" } = {}) {
+async function boot({ commands = [], pending = null, commandResponder = null, commandKind = "CANCEL_BOT_OPEN_ORDERS", snapshotPatch = {} } = {}) {
   const requests = [];
   const store = new Map();
   if (pending) store.set(PENDING_KEY, JSON.stringify(pending));
@@ -96,6 +103,7 @@ async function boot({ commands = [], pending = null, commandResponder = null, co
     pauses: [],
     strategies: [],
     control_commands: [...commands],
+    ...snapshotPatch,
   };
   const commandButtons = [new FakeNode("button")];
   commandButtons[0].dataset.command = commandKind;
@@ -271,4 +279,65 @@ test("外部资金流登记：表单收集范围并要求正金额与确认词",
     reference: "bybit-transfer-20261101",
     reason: "主账户划入子账户",
   });
+});
+
+test("策略生效参数：只显示生效版本，列出参数与退出规则", async () => {
+  const app = await boot({
+    snapshotPatch: {
+      strategies: [{ id: "s-eth", name: "eth-call-weekly" }],
+      config_versions: [
+        {
+          id: "v2",
+          strategy_id: "s-eth",
+          version: 2,
+          active: true,
+          params: {
+            options_type: "Call",
+            min_days_to_expiry: "7",
+            max_days_to_expiry: "45",
+            delta_low: "0.30",
+            delta_high: "0.60",
+            strike_low_pct: "90",
+            strike_high_pct: "110",
+            min_premium: "50",
+            max_premium: "200",
+            max_fee_ratio: "0.01",
+          },
+          exit_rules: [
+            { kind: "premium_stop_loss", stop_loss_pct: "25", max_reprice_attempts: "1", exit_validity_seconds: "300" },
+            { kind: "hold_period", hold_seconds: "1209600" },
+            { kind: "before_expiry" },
+          ],
+        },
+        {
+          id: "v1",
+          strategy_id: "s-eth",
+          version: 1,
+          active: false,
+          params: {},
+          exit_rules: [{ kind: "before_expiry" }],
+        },
+      ],
+    },
+  });
+
+  const body = app.element("strategy-params-body");
+  assert.equal(body.children.length, 1, "只应渲染生效版本");
+  const cells = body.children[0].children;
+  assert.equal(cells.length, 4, "应为策略、版本、生效参数、退出规则四列");
+  assert.equal(flatten(cells[0]), "eth-call-weekly");
+  assert.equal(flatten(cells[1]), "2");
+
+  const params = flatten(cells[2]);
+  assert.match(params, /Delta 下界：0\.30/);
+  assert.match(params, /Delta 上界：0\.60/);
+  assert.match(params, /费用占权利金上限：0\.01/);
+  assert.match(params, /最少到期天数：7/);
+  assert.match(params, /行权价下界\(%\)：90/);
+
+  const rules = flatten(cells[3]);
+  assert.match(rules, /权利金止损：stop_loss_pct=25/);
+  assert.match(rules, /持有到期：hold_seconds=1209600/);
+  assert.match(rules, /到期前退出：按全局配置/);
+  assert.equal(rules.includes("max_reprice_attempts"), false, "不应展示执行细节字段");
 });

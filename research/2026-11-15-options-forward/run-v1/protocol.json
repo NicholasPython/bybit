@@ -1,0 +1,29 @@
+{
+  "version": "bear-put-forward-v1",
+  "mode": "research_paper_only",
+  "exchange_margin_validated": false,
+  "cohort": "one minimum-size trade per asset; no re-entry",
+  "sampling_seconds": 900,
+  "max_observation_gap_seconds": 1800,
+  "max_response_age_seconds": 30,
+  "pending_ttl_seconds": 1800,
+  "max_hold_hours": 72,
+  "close_before_expiry_hours": 24,
+  "study_days": 5,
+  "min_entry_days": 10,
+  "max_entry_days": 40,
+  "max_spread_fraction": "0.05",
+  "entry_limit_fraction": "0.02",
+  "adverse_slippage_ticks": 1,
+  "taker_rate": "0.0003",
+  "premium_fee_cap": "0.07",
+  "take_profit_debit_fraction": "0.50",
+  "stop_loss_debit_fraction": "0.50",
+  "max_debit_per_trade_usdt": "25",
+  "max_long_premium_per_trade_usdt": "100",
+  "signal": "latest completed hourly close below both completed-day SMA20/SMA50; completed-hour 24h return < 0",
+  "positions": [
+    {"base": "BTC", "long_symbol": "BTC-27NOV26-65000-P-USDT", "short_symbol": "BTC-27NOV26-60000-P-USDT", "quantity": "0.01"},
+    {"base": "ETH", "long_symbol": "ETH-27NOV26-1800-P-USDT", "short_symbol": "ETH-27NOV26-1700-P-USDT", "quantity": "0.1"}
+  ]
+}

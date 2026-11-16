@@ -1,0 +1,118 @@
+{
+  "startedUtc": "2026-11-15T13:22:15.450778+00:00",
+  "transport": "local curl -q --noproxy '*'; public GET allowlist only",
+  "records": [
+    {
+      "path": "/v5/market/time",
+      "params": {},
+      "startedUtc": "2026-11-15T13:22:15.450867+00:00",
+      "receivedUtc": "2026-11-15T13:22:16.010823+00:00",
+      "file": "request-6n8trr3j/response.json",
+      "sha256": "d92baa34eb586c817f804148f9a9df2bd0f3e35f51ce690ca985bb4f7247de95"
+    },
+    {
+      "path": "/v5/market/instruments-info",
+      "params": {
+        "category": "option",
+        "baseCoin": "BTC",
+        "limit": 1000
+      },
+      "startedUtc": "2026-11-15T13:22:16.013607+00:00",
+      "receivedUtc": "2026-11-15T13:22:17.604715+00:00",
+      "file": "request-wdtkf17s/response.json",
+      "sha256": "82a6f1d8e2d1129036b00db33be8662f6ff7b6b40bef1fc71a17cbd9dc266fae"
+    },
+    {
+      "path": "/v5/market/tickers",
+      "params": {
+        "category": "option",
+        "baseCoin": "BTC"
+      },
+      "startedUtc": "2026-11-15T13:22:17.609075+00:00",
+      "receivedUtc": "2026-11-15T13:22:18.550270+00:00",
+      "file": "request-2mympdhl/response.json",
+      "sha256": "5705a88a946262a0c8a1c474a59e6ef1bfbf292d6189e816ba4ab0b4d3eea77e"
+    },
+    {
+      "path": "/v5/market/kline",
+      "params": {
+        "category": "spot",
+        "symbol": "BTCUSDT",
+        "interval": "60",
+        "limit": 1000,
+        "end": 1794748935898
+      },
+      "startedUtc": "2026-11-15T13:22:18.559229+00:00",
+      "receivedUtc": "2026-11-15T13:22:19.393528+00:00",
+      "file": "request-b2jfbzhl/response.json",
+      "sha256": "66a6f2d0c59c8a4f07495e4fddba2601ff7c391c11626b25911a915004e042ec"
+    },
+    {
+      "path": "/v5/market/kline",
+      "params": {
+        "category": "spot",
+        "symbol": "BTCUSDT",
+        "interval": "D",
+        "limit": 100,
+        "end": 1794748935898
+      },
+      "startedUtc": "2026-11-15T13:22:19.395536+00:00",
+      "receivedUtc": "2026-11-15T13:22:19.888003+00:00",
+      "file": "request-1bdbde6p/response.json",
+      "sha256": "87fe408d4ee629aabab08811da0cf7a41838095de0fb59f349584a8ed511daf6"
+    },
+    {
+      "path": "/v5/market/instruments-info",
+      "params": {
+        "category": "option",
+        "baseCoin": "ETH",
+        "limit": 1000
+      },
+      "startedUtc": "2026-11-15T13:22:19.891066+00:00",
+      "receivedUtc": "2026-11-15T13:22:21.791840+00:00",
+      "file": "request-skmmx2pz/response.json",
+      "sha256": "a22880d6373520ab9db5258d2de8e21a067ec5001bcf846f233e4ef41ed6927b"
+    },
+    {
+      "path": "/v5/market/tickers",
+      "params": {
+        "category": "option",
+        "baseCoin": "ETH"
+      },
+      "startedUtc": "2026-11-15T13:22:21.801782+00:00",
+      "receivedUtc": "2026-11-15T13:22:23.982862+00:00",
+      "file": "request-8wsp7d67/response.json",
+      "sha256": "64472ed559b9c778eea6c32a9f29f7cad404f8f61af4bb40c5a779d445c1fb80"
+    },
+    {
+      "path": "/v5/market/kline",
+      "params": {
+        "category": "spot",
+        "symbol": "ETHUSDT",
+        "interval": "60",
+        "limit": 1000,
+        "end": 1794748935898
+      },
+      "startedUtc": "2026-11-15T13:22:23.991148+00:00",
+      "receivedUtc": "2026-11-15T13:22:27.995823+00:00",
+      "file": "request-blg82qzw/response.json",
+      "sha256": "3db621d6e35341dc049bf56502311a48bf206ffb12cb9a815b0d30adcd308ca3"
+    },
+    {
+      "path": "/v5/market/kline",
+      "params": {
+        "category": "spot",
+        "symbol": "ETHUSDT",
+        "interval": "D",
+        "limit": 100,
+        "end": 1794748935898
+      },
+      "startedUtc": "2026-11-15T13:22:27.999397+00:00",
+      "receivedUtc": "2026-11-15T13:22:28.746735+00:00",
+      "file": "request-ymd7vr1d/response.json",
+      "sha256": "a29e1a61a3d8cc67d43aa4cc78be1121920bce2a43968c6924646d1315d8421e"
+    }
+  ],
+  "asOfMs": 1794748935898,
+  "completedUtc": "2026-11-15T13:22:28.749668+00:00"
+}

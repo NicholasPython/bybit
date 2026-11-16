@@ -384,6 +384,84 @@ def _row(row: Any, fields: str) -> dict[str, Any]:
     return {field: _value(getattr(row, field, None)) for field in fields.split()}
 
 
+#: 策略参数白名单：只有这些键可以出现在页面上，其余一律丢弃。
+_STRATEGY_PARAM_KEYS = frozenset(
+    [
+        "options_type",
+        "min_premium",
+        "max_premium",
+        "min_open_interest",
+        "max_fee_ratio",
+        "min_days_to_expiry",
+        "max_days_to_expiry",
+        "delta_low",
+        "delta_high",
+        "strike_low_pct",
+        "strike_high_pct",
+        "max_price_deviation",
+        "min_qty",
+    ]
+)
+#: 退出规则白名单。
+_EXIT_RULE_KEYS = frozenset(
+    [
+        "kind",
+        "hold_seconds",
+        "profit_threshold_pct",
+        "stop_loss_pct",
+        "max_reprice_attempts",
+        "exit_validity_seconds",
+        "seconds_before_expiry",
+    ]
+)
+
+
+def _strategy_params(payload: Any) -> dict[str, str]:
+    """生效版本的策略参数（白名单 + 脱敏）。
+
+    版本行的 ``params`` 存的是整个策略配置，这里只取其中的 params 子字典，
+    并逐项做数值/枚举清洗，避免把运维自由文本带到页面上。
+    """
+    if not isinstance(payload, dict):
+        return {}
+    raw = payload.get("params")
+    if not isinstance(raw, dict):
+        return {}
+    out: dict[str, str] = {}
+    for key, value in raw.items():
+        if key not in _STRATEGY_PARAM_KEYS:
+            continue
+        if isinstance(value, bool) or value is None:
+            continue
+        text = _number(value) if not isinstance(value, str) else _text(value)
+        if text is None or len(text) > 40:
+            continue
+        out[key] = text
+    return out
+
+
+def _exit_rules(value: Any) -> list[dict[str, Any]]:
+    """生效版本的退出规则（白名单 + 脱敏）。"""
+    if not isinstance(value, list):
+        return []
+    out: list[dict[str, Any]] = []
+    for rule in value[:20]:
+        if not isinstance(rule, dict):
+            continue
+        clean: dict[str, Any] = {}
+        for key in _EXIT_RULE_KEYS:
+            item = rule.get(key)
+            if item is None or isinstance(item, bool):
+                continue
+            text = _number(item) if not isinstance(item, str) else _text(item)
+            if text is None or len(text) > 40:
+                continue
+            clean[key] = text
+        if clean:
+            out.append(clean)
+    return out
+
+
 _RESULT_FIELDS = frozenset(
     [
         "pause_id",
@@ -746,6 +824,8 @@ async def _status(database: Database, config: AppConfig, now: dt.datetime) -> di
                 ),
                 "symbols": [_text(symbol) for symbol in (row.symbols or [])[:100]],
                 "schedule_utc": [_text(at) for at in (row.schedule_utc or [])[:100]],
+                "params": _strategy_params(row.params),
+                "exit_rules": _exit_rules(row.exit_rules or (row.params or {}).get("exit_rules")),
             }
             for row in versions
         ]

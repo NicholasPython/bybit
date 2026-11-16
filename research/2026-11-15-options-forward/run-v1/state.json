@@ -1,0 +1,1497 @@
+{
+  "protocolHash": "8714be26cdae7ce7d33693c096dda040b864dbdc0df09e71cf72dbc56faa735f",
+  "protocolVersion": "bear-put-forward-v1",
+  "simulation": true,
+  "marginValidated": false,
+  "lastMs": 1794753203669,
+  "startedMs": 1794723447767,
+  "processed": {
+    "f02b9a088c93c55ebc65080f744607ad38331b8bcf2b25b25e7c90d2e3253c0d": {
+      "path": "/Users/nicholaswang/Desktop/code/bybit/research/2026-11-15-options-forward/snapshots/quote-34zriidt/public.json",
+      "ms": 1794723447767
+    },
+    "ab3ce773e3ba0b6c135c8b2cb8b1c08a695c777ea67222d4b62c14ad3048e740": {
+      "path": "/Users/nicholaswang/Desktop/code/bybit/research/2026-11-15-options-forward/snapshots/quote-g9ck68tz/public.json",
+      "ms": 1794723457990
+    },
+    "f92e7595f2db6eaeb8f566f5386ed343b683e377648c10230f7588f9e2c9adb8": {
+      "path": "/Users/nicholaswang/Desktop/code/bybit/research/2026-11-15-options-forward/snapshots/quote-53ppdkio/public.json",
+      "ms": 1794723466433
+    },
+    "74d81e05ebfd7f2b1a3a2f1de2b79568e64116ed2c8d3c3b65764f24ad0a968b": {
+      "path": "/Users/nicholaswang/Desktop/code/bybit/research/2026-11-15-options-forward/snapshots/quote-2csjga9a/public.json",
+      "ms": 1794723475920
+    },
+    "3ca5df4e4c6b6aaf6879df4970b07adb1dbd7798a3a0b5828995d8a05349e42d": {
+      "path": "/Users/nicholaswang/Desktop/code/bybit/research/2026-11-15-options-forward/snapshots/quote-m_elxbb9/public.json",
+      "ms": 1794723564325
+    },
+    "933b8f0fd2916c050f66c05ef1900a54327b7c2d0e103ba1c4230d11bf8b8e19": {
+      "path": "/Users/nicholaswang/Desktop/code/bybit/research/2026-11-15-options-forward/snapshots/quote-d8_m0hhg/public.json",
+      "ms": 1794724470366
+    },
+    "b1577a4ec38c14add349300abaafc5961d16ec75809da3e79a53a9a3938111bd": {
+      "path": "/Users/nicholaswang/Desktop/code/bybit/research/2026-11-15-options-forward/snapshots/quote-kju84t8l/public.json",
+      "ms": 1794725375318
+    },
+    "9cf76c5fa42d7b5527d8ff8869a376d4493996ae042fe87a77c53ea7de00264a": {
+      "path": "/Users/nicholaswang/Desktop/code/bybit/research/2026-11-15-options-forward/snapshots/quote-ltzwg56w/public.json",
+      "ms": 1794726279436
+    },
+    "0a9c6d5978ad4b70717da59cfa6d81f790117ca27f2540b24a97cac29b52ab26": {
+      "path": "/Users/nicholaswang/Desktop/code/bybit/research/2026-11-15-options-forward/snapshots/quote-df7ip__d/public.json",
+      "ms": 1794727185364
+    },
+    "8ec181df32f37e5561aab5f82784ca6850b2f030aa6aa1e9a466b924c0783e4e": {
+      "path": "/Users/nicholaswang/Desktop/code/bybit/research/2026-11-15-options-forward/snapshots/quote-xxjn3q9h/public.json",
+      "ms": 1794728090237
+    },
+    "f0fda50831f17f715f650febec071415f09d6b5e2a6212db11004cdea3812857": {
+      "path": "/Users/nicholaswang/Desktop/code/bybit/research/2026-11-15-options-forward/snapshots/quote-nraf99dp/public.json",
+      "ms": 1794728996164
+    },
+    "a7fe7fcd6cdf567eb62b97aaee382999acd3ad96e03f051b9b54ed9266cf31cb": {
+      "path": "/Users/nicholaswang/Desktop/code/bybit/research/2026-11-15-options-forward/snapshots/quote-una_5vz2/public.json",
+      "ms": 1794729901250
+    },
+    "7e52f43a71fd76574c0fbdbf73b82135d32166c76550e939ff1beb7d42295d3c": {
+      "path": "/Users/nicholaswang/Desktop/code/bybit/research/2026-11-15-options-forward/snapshots/quote-99wwg6zc/public.json",
+      "ms": 1794730807275
+    },
+    "6f159a4103470a10b70e63aa028470c016cd0340e24414e4da1f2fe496dc88e3": {
+      "path": "/Users/nicholaswang/Desktop/code/bybit/research/2026-11-15-options-forward/snapshots/quote-n_l_b6o0/public.json",
+      "ms": 1794731713085
+    },
+    "3628c41bb0b4fcd3c580ecf73ea76a7818e60cc6ebbf3bb1ccbb3cd65127bc46": {
+      "path": "/Users/nicholaswang/Desktop/code/bybit/research/2026-11-15-options-forward/snapshots/quote-ex83zcf9/public.json",
+      "ms": 1794732618827
+    },
+    "82f3d8c152a55d822aff3c1700f7e74a37b24f2473d0d9f7bfb437b4bcb1341d": {
+      "path": "/Users/nicholaswang/Desktop/code/bybit/research/2026-11-15-options-forward/snapshots/quote-1cxs4p9x/public.json",
+      "ms": 1794733523191
+    },
+    "66ebfd95c93418b14c7090871fdf2fedfa9de27e3d19ff83be84214a10d43c0c": {
+      "path": "/Users/nicholaswang/Desktop/code/bybit/research/2026-11-15-options-forward/snapshots/quote-l0bvvejz/public.json",
+      "ms": 1794734429803
+    },
+    "736484595ad2119cc74ba15167c08c5e1004434979eaf7885e4e761933a52abe": {
+      "path": "/Users/nicholaswang/Desktop/code/bybit/research/2026-11-15-options-forward/snapshots/quote-naxgmtyt/public.json",
+      "ms": 1794735336173
+    },
+    "c3856c159c7bfaabe029e06d3858e8fe105bdbcb06898431e9a1a7426ce9c4c7": {
+      "path": "/Users/nicholaswang/Desktop/code/bybit/research/2026-11-15-options-forward/snapshots/quote-n9mqrzg8/public.json",
+      "ms": 1794736242174
+    },
+    "54fed06a8fe9169c2082e5978bf5f991b7b440dfbddf10f2aa481e2ca1c6dfea": {
+      "path": "/Users/nicholaswang/Desktop/code/bybit/research/2026-11-15-options-forward/snapshots/quote-wf5eclo3/public.json",
+      "ms": 1794737148570
+    },
+    "a3f5967325781af818950adb724c5263d249e6294fb9a35030a8caaa36e93689": {
+      "path": "/Users/nicholaswang/Desktop/code/bybit/research/2026-11-15-options-forward/snapshots/quote-pqnfa04w/public.json",
+      "ms": 1794738055028
+    },
+    "75801ce4f8c836fd6ffc24f0d7c3297bdd8038b289007478ce2ac3d377028ec3": {
+      "path": "/Users/nicholaswang/Desktop/code/bybit/research/2026-11-15-options-forward/snapshots/quote-563r8bgp/public.json",
+      "ms": 1794738961731
+    },
+    "09bd10154d1de85a1e2294a1fd088f326898c2be31e3b88abda68fbb7998e707": {
+      "path": "/Users/nicholaswang/Desktop/code/bybit/research/2026-11-15-options-forward/snapshots/quote-hj6tykdq/public.json",
+      "ms": 1794739868720
+    },
+    "1193c48d240368d2231affa32e1921150fe021ff257199852a70caac774bb6c4": {
+      "path": "/Users/nicholaswang/Desktop/code/bybit/research/2026-11-15-options-forward/snapshots/quote-7zgq228x/public.json",
+      "ms": 1794740775526
+    },
+    "f245b7bf481ff7b4538430b64d8fdee9b53d1c5c0d9b43bb9dcd4688cddd5bec": {
+      "path": "/Users/nicholaswang/Desktop/code/bybit/research/2026-11-15-options-forward/snapshots/quote-zsjg5hfr/public.json",
+      "ms": 1794748664809
+    },
+    "e6b7c16e9aba754c50cc7bbd1b4b29a9ec3fc6a3804ec7370827f10b6b3df103": {
+      "path": "/Users/nicholaswang/Desktop/code/bybit/research/2026-11-15-options-forward/snapshots/quote-zjif0okz/public.json",
+      "ms": 1794749571703
+    },
+    "93a11c459f63b8fbb170b6d3d3f9bae3de37e9f965a93409886386650d4bf8cb": {
+      "path": "/Users/nicholaswang/Desktop/code/bybit/research/2026-11-15-options-forward/snapshots/quote-6vx7oaab/public.json",
+      "ms": 1794750481736
+    },
+    "99d1dcd64e85defc0218d8eaffa090f476c9f5e981bc715d46d5c10e77bfdd08": {
+      "path": "/Users/nicholaswang/Desktop/code/bybit/research/2026-11-15-options-forward/snapshots/quote-hjh8p2i9/public.json",
+      "ms": 1794751388049
+    },
+    "a926e44a907a8f6949d1269fb1667cd43800a966781a54cdf6e189c9516e9592": {
+      "path": "/Users/nicholaswang/Desktop/code/bybit/research/2026-11-15-options-forward/snapshots/quote-iym0cn3b/public.json",
+      "ms": 1794752295421
+    },
+    "3bc1a243710bb49ccfe8077eb5ebb7a047639c0d8a95fe708f9a27589458ac9d": {
+      "path": "/Users/nicholaswang/Desktop/code/bybit/research/2026-11-15-options-forward/snapshots/quote-fqhiy5oc/public.json",
+      "ms": 1794753203669
+    }
+  },
+  "events": [
+    {
+      "utc": "2026-11-15T06:17:27.767000+00:00",
+      "ms": 1794723447767,
+      "kind": "study_started",
+      "simulation": true,
+      "marginValidated": false
+    },
+    {
+      "utc": "2026-11-15T06:17:27.767000+00:00",
+      "ms": 1794723447767,
+      "kind": "intent",
+      "base": "BTC",
+      "purpose": "open_long",
+      "symbol": "BTC-27NOV26-65000-P-USDT",
+      "side": "Buy",
+      "createdMs": 1794723447767,
+      "decisionSourceMs": 1794723444469,
+      "deadlineMs": 1794725247767,
+      "limit": "2410"
+    },
+    {
+      "utc": "2026-11-15T06:17:27.767000+00:00",
+      "ms": 1794723447767,
+      "kind": "intent",
+      "base": "ETH",
+      "purpose": "open_long",
+      "symbol": "ETH-27NOV26-1800-P-USDT",
+      "side": "Buy",
+      "createdMs": 1794723447767,
+      "decisionSourceMs": 1794723446189,
+      "deadlineMs": 1794725247767,
+      "limit": "79.2"
+    },
+    {
+      "utc": "2026-11-15T06:17:37.990000+00:00",
+      "ms": 1794723457990,
+      "kind": "simulated_fill",
+      "base": "BTC",
+      "purpose": "open_long",
+      "symbol": "BTC-27NOV26-65000-P-USDT",
+      "side": "Buy",
+      "quantity": "0.01",
+      "price": "2360",
+      "fee": "0.19341342768249",
+      "cashFlow": "-23.79341342768249",
+      "quoteSourceMs": 1794723454114
+    },
+    {
+      "utc": "2026-11-15T06:17:37.990000+00:00",
+      "ms": 1794723457990,
+      "kind": "intent",
+      "base": "BTC",
+      "purpose": "open_short",
+      "symbol": "BTC-27NOV26-60000-P-USDT",
+      "side": "Sell",
+      "createdMs": 1794723457990,
+      "decisionSourceMs": 1794723454114,
+      "deadlineMs": 1794725257990,
+      "limit": "830"
+    },
+    {
+      "utc": "2026-11-15T06:17:37.990000+00:00",
+      "ms": 1794723457990,
+      "kind": "simulated_fill",
+      "base": "ETH",
+      "purpose": "open_long",
+      "symbol": "ETH-27NOV26-1800-P-USDT",
+      "side": "Buy",
+      "quantity": "0.1",
+      "price": "77.5",
+      "fee": "0.0538365258729",
+      "cashFlow": "-7.8038365258729",
+      "quoteSourceMs": 1794723456093
+    },
+    {
+      "utc": "2026-11-15T06:17:37.990000+00:00",
+      "ms": 1794723457990,
+      "kind": "intent",
+      "base": "ETH",
+      "purpose": "open_short",
+      "symbol": "ETH-27NOV26-1700-P-USDT",
+      "side": "Sell",
+      "createdMs": 1794723457990,
+      "decisionSourceMs": 1794723456093,
+      "deadlineMs": 1794725257990,
+      "limit": "40.0"
+    },
+    {
+      "utc": "2026-11-15T06:17:46.433000+00:00",
+      "ms": 1794723466433,
+      "kind": "simulated_fill",
+      "base": "BTC",
+      "purpose": "open_short",
+      "symbol": "BTC-27NOV26-60000-P-USDT",
+      "side": "Sell",
+      "quantity": "0.01",
+      "price": "840",
+      "fee": "0.19342609394184",
+      "cashFlow": "8.20657390605816",
+      "quoteSourceMs": 1794723464302
+    },
+    {
+      "utc": "2026-11-15T06:17:46.433000+00:00",
+      "ms": 1794723466433,
+      "kind": "spread_opened",
+      "base": "BTC",
+      "entryDebit": "15.58683952162433"
+    },
+    {
+      "utc": "2026-11-15T06:17:46.433000+00:00",
+      "ms": 1794723466433,
+      "kind": "simulated_fill",
+      "base": "ETH",
+      "purpose": "open_short",
+      "symbol": "ETH-27NOV26-1700-P-USDT",
+      "side": "Sell",
+      "quantity": "0.1",
+      "price": "40.7",
+      "fee": "0.0538428227505",
+      "cashFlow": "4.0161571772495",
+      "quoteSourceMs": 1794723465036
+    },
+    {
+      "utc": "2026-11-15T06:17:46.433000+00:00",
+      "ms": 1794723466433,
+      "kind": "spread_opened",
+      "base": "ETH",
+      "entryDebit": "3.7876793486234"
+    },
+    {
+      "utc": "2026-11-15T13:17:44.809000+00:00",
+      "ms": 1794748664809,
+      "kind": "observation_gap",
+      "previousMs": 1794740775526,
+      "gapSeconds": 7889.283
+    }
+  ],
+  "samples": [
+    {
+      "utc": "2026-11-15T06:17:27.767000+00:00",
+      "ms": 1794723447767,
+      "snapshotHash": "f02b9a088c93c55ebc65080f744607ad38331b8bcf2b25b25e7c90d2e3253c0d",
+      "signals": {
+        "BTC": {
+          "eligible": true,
+          "hourClose": "64512.7",
+          "sma20": "75904.38",
+          "sma50": "80221.406",
+          "return24h": "-0.0404993180706083226619191888",
+          "dailyBoundary": "exchange UTC day candles, unfinished day excluded"
+        },
+        "ETH": {
+          "eligible": true,
+          "hourClose": "1800.7",
+          "sma20": "2191.2345",
+          "sma50": "2397.643",
+          "return24h": "-0.0551771903497633614221401362",
+          "dailyBoundary": "exchange UTC day candles, unfinished day excluded"
+        }
+      },
+      "valuations": {
+        "BTC": {
+          "cash": "0",
+          "liquidationValue": "0",
+          "netPnl": "0"
+        },
+        "ETH": {
+          "cash": "0",
+          "liquidationValue": "0",
+          "netPnl": "0"
+        }
+      },
+      "phases": {
+        "BTC": "opening_long",
+        "ETH": "opening_long"
+      }
+    },
+    {
+      "utc": "2026-11-15T06:17:37.990000+00:00",
+      "ms": 1794723457990,
+      "snapshotHash": "ab3ce773e3ba0b6c135c8b2cb8b1c08a695c777ea67222d4b62c14ad3048e740",
+      "signals": {
+        "BTC": {
+          "eligible": true,
+          "hourClose": "64512.7",
+          "sma20": "75904.38",
+          "sma50": "80221.406",
+          "return24h": "-0.0404993180706083226619191888",
+          "dailyBoundary": "exchange UTC day candles, unfinished day excluded"
+        },
+        "ETH": {
+          "eligible": true,
+          "hourClose": "1800.7",
+          "sma20": "2191.2345",
+          "sma50": "2397.643",
+          "return24h": "-0.0551771903497633614221401362",
+          "dailyBoundary": "exchange UTC day candles, unfinished day excluded"
+        }
+      },
+      "valuations": {
+        "BTC": {
+          "cash": "-23.79341342768249",
+          "liquidationValue": "23.05658657231751",
+          "netPnl": "-0.73682685536498"
+        },
+        "ETH": {
+          "cash": "-7.8038365258729",
+          "liquidationValue": "7.5561634741271",
+          "netPnl": "-0.2476730517458"
+        }
+      },
+      "phases": {
+        "BTC": "opening_short",
+        "ETH": "opening_short"
+      }
+    },
+    {
+      "utc": "2026-11-15T06:17:46.433000+00:00",
+      "ms": 1794723466433,
+      "snapshotHash": "f92e7595f2db6eaeb8f566f5386ed343b683e377648c10230f7588f9e2c9adb8",
+      "signals": {
+        "BTC": {
+          "eligible": true,
+          "hourClose": "64512.7",
+          "sma20": "75904.38",
+          "sma50": "80221.406",
+          "return24h": "-0.0404993180706083226619191888",
+          "dailyBoundary": "exchange UTC day candles, unfinished day excluded"
+        },
+        "ETH": {
+          "eligible": true,
+          "hourClose": "1800.7",
+          "sma20": "2191.2345",
+          "sma50": "2397.643",
+          "return24h": "-0.0551771903497633614221401362",
+          "dailyBoundary": "exchange UTC day candles, unfinished day excluded"
+        }
+      },
+      "valuations": {
+        "BTC": {
+          "cash": "-15.58683952162433",
+          "liquidationValue": "14.21314781211632",
+          "netPnl": "-1.37369170950801"
+        },
+        "ETH": {
+          "cash": "-3.7876793486234",
+          "liquidationValue": "3.3423143544990",
+          "netPnl": "-0.4453649941244"
+        }
+      },
+      "phases": {
+        "BTC": "open",
+        "ETH": "open"
+      }
+    },
+    {
+      "utc": "2026-11-15T06:17:55.920000+00:00",
+      "ms": 1794723475920,
+      "snapshotHash": "74d81e05ebfd7f2b1a3a2f1de2b79568e64116ed2c8d3c3b65764f24ad0a968b",
+      "signals": {
+        "BTC": {
+          "eligible": true,
+          "hourClose": "64512.7",
+          "sma20": "75904.38",
+          "sma50": "80221.406",
+          "return24h": "-0.0404993180706083226619191888",
+          "dailyBoundary": "exchange UTC day candles, unfinished day excluded"
+        },
+        "ETH": {
+          "eligible": true,
+          "hourClose": "1800.7",
+          "sma20": "2191.2345",
+          "sma50": "2397.643",
+          "return24h": "-0.0551771903497633614221401362",
+          "dailyBoundary": "exchange UTC day candles, unfinished day excluded"
+        }
+      },
+      "valuations": {
+        "BTC": {
+          "cash": "-15.58683952162433",
+          "liquidationValue": "14.2131120925550",
+          "netPnl": "-1.37372742906933"
+        },
+        "ETH": {
+          "cash": "-3.7876793486234",
+          "liquidationValue": "3.3422980742622",
+          "netPnl": "-0.4453812743612"
+        }
+      },
+      "phases": {
+        "BTC": "open",
+        "ETH": "open"
+      }
+    },
+    {
+      "utc": "2026-11-15T06:19:24.325000+00:00",
+      "ms": 1794723564325,
+      "snapshotHash": "3ca5df4e4c6b6aaf6879df4970b07adb1dbd7798a3a0b5828995d8a05349e42d",
+      "signals": {
+        "BTC": {
+          "eligible": true,
+          "hourClose": "64512.7",
+          "sma20": "75904.38",
+          "sma50": "80221.406",
+          "return24h": "-0.0404993180706083226619191888",
+          "dailyBoundary": "exchange UTC day candles, unfinished day excluded"
+        },
+        "ETH": {
+          "eligible": true,
+          "hourClose": "1800.7",
+          "sma20": "2191.2345",
+          "sma50": "2397.643",
+          "return24h": "-0.0551771903497633614221401362",
+          "dailyBoundary": "exchange UTC day candles, unfinished day excluded"
+        }
+      },
+      "valuations": {
+        "BTC": {
+          "cash": "-15.58683952162433",
+          "liquidationValue": "14.11281647400688",
+          "netPnl": "-1.47402304761745"
+        },
+        "ETH": {
+          "cash": "-3.7876793486234",
+          "liquidationValue": "3.2922125228350",
+          "netPnl": "-0.4954668257884"
+        }
+      },
+      "phases": {
+        "BTC": "open",
+        "ETH": "open"
+      }
+    },
+    {
+      "utc": "2026-11-15T06:34:30.366000+00:00",
+      "ms": 1794724470366,
+      "snapshotHash": "933b8f0fd2916c050f66c05ef1900a54327b7c2d0e103ba1c4230d11bf8b8e19",
+      "signals": {
+        "BTC": {
+          "eligible": true,
+          "hourClose": "64512.7",
+          "sma20": "75904.38",
+          "sma50": "80221.406",
+          "return24h": "-0.0404993180706083226619191888",
+          "dailyBoundary": "exchange UTC day candles, unfinished day excluded"
+        },
+        "ETH": {
+          "eligible": true,
+          "hourClose": "1800.7",
+          "sma20": "2191.2345",
+          "sma50": "2397.643",
+          "return24h": "-0.0551771903497633614221401362",
+          "dailyBoundary": "exchange UTC day candles, unfinished day excluded"
+        }
+      },
+      "valuations": {
+        "BTC": {
+          "cash": "-15.58683952162433",
+          "liquidationValue": "14.41342938249310",
+          "netPnl": "-1.17341013913123"
+        },
+        "ETH": {
+          "cash": "-3.7876793486234",
+          "liquidationValue": "3.3923409563852",
+          "netPnl": "-0.3953383922382"
+        }
+      },
+      "phases": {
+        "BTC": "open",
+        "ETH": "open"
+      }
+    },
+    {
+      "utc": "2026-11-15T06:49:35.318000+00:00",
+      "ms": 1794725375318,
+      "snapshotHash": "b1577a4ec38c14add349300abaafc5961d16ec75809da3e79a53a9a3938111bd",
+      "signals": {
+        "BTC": {
+          "eligible": true,
+          "hourClose": "64512.7",
+          "sma20": "75904.38",
+          "sma50": "80221.406",
+          "return24h": "-0.0404993180706083226619191888",
+          "dailyBoundary": "exchange UTC day candles, unfinished day excluded"
+        },
+        "ETH": {
+          "eligible": true,
+          "hourClose": "1800.7",
+          "sma20": "2191.2345",
+          "sma50": "2397.643",
+          "return24h": "-0.0551771903497633614221401362",
+          "dailyBoundary": "exchange UTC day candles, unfinished day excluded"
+        }
+      },
+      "valuations": {
+        "BTC": {
+          "cash": "-15.58683952162433",
+          "liquidationValue": "14.21312166436952",
+          "netPnl": "-1.37371785725481"
+        },
+        "ETH": {
+          "cash": "-3.7876793486234",
+          "liquidationValue": "3.3523174867594",
+          "netPnl": "-0.4353618618640"
+        }
+      },
+      "phases": {
+        "BTC": "open",
+        "ETH": "open"
+      }
+    },
+    {
+      "utc": "2026-11-15T07:04:39.436000+00:00",
+      "ms": 1794726279436,
+      "snapshotHash": "9cf76c5fa42d7b5527d8ff8869a376d4493996ae042fe87a77c53ea7de00264a",
+      "signals": {
+        "BTC": {
+          "eligible": true,
+          "hourClose": "64462",
+          "sma20": "75904.38",
+          "sma50": "80221.406",
+          "return24h": "-0.0432839010721536872350783040",
+          "dailyBoundary": "exchange UTC day candles, unfinished day excluded"
+        },
+        "ETH": {
+          "eligible": true,
+          "hourClose": "1792.7",
+          "sma20": "2191.2345",
+          "sma50": "2397.643",
+          "return24h": "-0.0591674363926442186581576959",
+          "dailyBoundary": "exchange UTC day candles, unfinished day excluded"
+        }
+      },
+      "valuations": {
+        "BTC": {
+          "cash": "-15.58683952162433",
+          "liquidationValue": "14.66411147864168",
+          "netPnl": "-0.92272804298265"
+        },
+        "ETH": {
+          "cash": "-3.7876793486234",
+          "liquidationValue": "3.47272045162",
+          "netPnl": "-0.3149588970034"
+        }
+      },
+      "phases": {
+        "BTC": "open",
+        "ETH": "open"
+      }
+    },
+    {
+      "utc": "2026-11-15T07:19:45.364000+00:00",
+      "ms": 1794727185364,
+      "snapshotHash": "0a9c6d5978ad4b70717da59cfa6d81f790117ca27f2540b24a97cac29b52ab26",
+      "signals": {
+        "BTC": {
+          "eligible": true,
+          "hourClose": "64462",
+          "sma20": "75904.38",
+          "sma50": "80221.406",
+          "return24h": "-0.0432839010721536872350783040",
+          "dailyBoundary": "exchange UTC day candles, unfinished day excluded"
+        },
+        "ETH": {
+          "eligible": true,
+          "hourClose": "1792.7",
+          "sma20": "2191.2345",
+          "sma50": "2397.643",
+          "return24h": "-0.0591674363926442186581576959",
+          "dailyBoundary": "exchange UTC day candles, unfinished day excluded"
+        }
+      },
+      "valuations": {
+        "BTC": {
+          "cash": "-15.58683952162433",
+          "liquidationValue": "14.21317305455252",
+          "netPnl": "-1.37366646707181"
+        },
+        "ETH": {
+          "cash": "-3.7876793486234",
+          "liquidationValue": "3.3122781536514",
+          "netPnl": "-0.4754011949720"
+        }
+      },
+      "phases": {
+        "BTC": "open",
+        "ETH": "open"
+      }
+    },
+    {
+      "utc": "2026-11-15T07:34:50.237000+00:00",
+      "ms": 1794728090237,
+      "snapshotHash": "8ec181df32f37e5561aab5f82784ca6850b2f030aa6aa1e9a466b924c0783e4e",
+      "signals": {
+        "BTC": {
+          "eligible": true,
+          "hourClose": "64462",
+          "sma20": "75904.38",
+          "sma50": "80221.406",
+          "return24h": "-0.0432839010721536872350783040",
+          "dailyBoundary": "exchange UTC day candles, unfinished day excluded"
+        },
+        "ETH": {
+          "eligible": true,
+          "hourClose": "1792.7",
+          "sma20": "2191.2345",
+          "sma50": "2397.643",
+          "return24h": "-0.0591674363926442186581576959",
+          "dailyBoundary": "exchange UTC day candles, unfinished day excluded"
+        }
+      },
+      "valuations": {
+        "BTC": {
+          "cash": "-15.58683952162433",
+          "liquidationValue": "14.96456050711694",
+          "netPnl": "-0.62227901450739"
+        },
+        "ETH": {
+          "cash": "-3.7876793486234",
+          "liquidationValue": "3.5027766511552",
+          "netPnl": "-0.2849026974682"
+        }
+      },
+      "phases": {
+        "BTC": "open",
+        "ETH": "open"
+      }
+    },
+    {
+      "utc": "2026-11-15T07:49:56.164000+00:00",
+      "ms": 1794728996164,
+      "snapshotHash": "f0fda50831f17f715f650febec071415f09d6b5e2a6212db11004cdea3812857",
+      "signals": {
+        "BTC": {
+          "eligible": true,
+          "hourClose": "64462",
+          "sma20": "75904.38",
+          "sma50": "80221.406",
+          "return24h": "-0.0432839010721536872350783040",
+          "dailyBoundary": "exchange UTC day candles, unfinished day excluded"
+        },
+        "ETH": {
+          "eligible": true,
+          "hourClose": "1792.7",
+          "sma20": "2191.2345",
+          "sma50": "2397.643",
+          "return24h": "-0.0591674363926442186581576959",
+          "dailyBoundary": "exchange UTC day candles, unfinished day excluded"
+        }
+      },
+      "valuations": {
+        "BTC": {
+          "cash": "-15.58683952162433",
+          "liquidationValue": "16.11690953569062",
+          "netPnl": "0.53007001406629"
+        },
+        "ETH": {
+          "cash": "-3.7876793486234",
+          "liquidationValue": "3.6633835727012",
+          "netPnl": "-0.1242957759222"
+        }
+      },
+      "phases": {
+        "BTC": "open",
+        "ETH": "open"
+      }
+    },
+    {
+      "utc": "2026-11-15T08:05:01.250000+00:00",
+      "ms": 1794729901250,
+      "snapshotHash": "a7fe7fcd6cdf567eb62b97aaee382999acd3ad96e03f051b9b54ed9266cf31cb",
+      "signals": {
+        "BTC": {
+          "eligible": true,
+          "hourClose": "64012.1",
+          "sma20": "75904.38",
+          "sma50": "80221.406",
+          "return24h": "-0.0468943562988374309129026110",
+          "dailyBoundary": "exchange UTC day candles, unfinished day excluded"
+        },
+        "ETH": {
+          "eligible": true,
+          "hourClose": "1782.38",
+          "sma20": "2191.2345",
+          "sma50": "2397.643",
+          "return24h": "-0.0611096771474775994395250712",
+          "dailyBoundary": "exchange UTC day candles, unfinished day excluded"
+        }
+      },
+      "valuations": {
+        "BTC": {
+          "cash": "-15.58683952162433",
+          "liquidationValue": "15.41565868763672",
+          "netPnl": "-0.17118083398761"
+        },
+        "ETH": {
+          "cash": "-3.7876793486234",
+          "liquidationValue": "3.5829772276974",
+          "netPnl": "-0.2047021209260"
+        }
+      },
+      "phases": {
+        "BTC": "open",
+        "ETH": "open"
+      }
+    },
+    {
+      "utc": "2026-11-15T08:20:07.275000+00:00",
+      "ms": 1794730807275,
+      "snapshotHash": "7e52f43a71fd76574c0fbdbf73b82135d32166c76550e939ff1beb7d42295d3c",
+      "signals": {
+        "BTC": {
+          "eligible": true,
+          "hourClose": "64012.1",
+          "sma20": "75904.38",
+          "sma50": "80221.406",
+          "return24h": "-0.0468943562988374309129026110",
+          "dailyBoundary": "exchange UTC day candles, unfinished day excluded"
+        },
+        "ETH": {
+          "eligible": true,
+          "hourClose": "1782.38",
+          "sma20": "2191.2345",
+          "sma50": "2397.643",
+          "return24h": "-0.0611096771474775994395250712",
+          "dailyBoundary": "exchange UTC day candles, unfinished day excluded"
+        }
+      },
+      "valuations": {
+        "BTC": {
+          "cash": "-15.58683952162433",
+          "liquidationValue": "15.86652864033476",
+          "netPnl": "0.27968911871043"
+        },
+        "ETH": {
+          "cash": "-3.7876793486234",
+          "liquidationValue": "3.6232539423976",
+          "netPnl": "-0.1644254062258"
+        }
+      },
+      "phases": {
+        "BTC": "open",
+        "ETH": "open"
+      }
+    },
+    {
+      "utc": "2026-11-15T08:35:13.085000+00:00",
+      "ms": 1794731713085,
+      "snapshotHash": "6f159a4103470a10b70e63aa028470c016cd0340e24414e4da1f2fe496dc88e3",
+      "signals": {
+        "BTC": {
+          "eligible": true,
+          "hourClose": "64012.1",
+          "sma20": "75904.38",
+          "sma50": "80221.406",
+          "return24h": "-0.0468943562988374309129026110",
+          "dailyBoundary": "exchange UTC day candles, unfinished day excluded"
+        },
+        "ETH": {
+          "eligible": true,
+          "hourClose": "1782.38",
+          "sma20": "2191.2345",
+          "sma50": "2397.643",
+          "return24h": "-0.0611096771474775994395250712",
+          "dailyBoundary": "exchange UTC day candles, unfinished day excluded"
+        }
+      },
+      "valuations": {
+        "BTC": {
+          "cash": "-15.58683952162433",
+          "liquidationValue": "13.36175302013368",
+          "netPnl": "-2.22508650149065"
+        },
+        "ETH": {
+          "cash": "-3.7876793486234",
+          "liquidationValue": "3.2119494842402",
+          "netPnl": "-0.5757298643832"
+        }
+      },
+      "phases": {
+        "BTC": "open",
+        "ETH": "open"
+      }
+    },
+    {
+      "utc": "2026-11-15T08:50:18.827000+00:00",
+      "ms": 1794732618827,
+      "snapshotHash": "3628c41bb0b4fcd3c580ecf73ea76a7818e60cc6ebbf3bb1ccbb3cd65127bc46",
+      "signals": {
+        "BTC": {
+          "eligible": true,
+          "hourClose": "64012.1",
+          "sma20": "75904.38",
+          "sma50": "80221.406",
+          "return24h": "-0.0468943562988374309129026110",
+          "dailyBoundary": "exchange UTC day candles, unfinished day excluded"
+        },
+        "ETH": {
+          "eligible": true,
+          "hourClose": "1782.38",
+          "sma20": "2191.2345",
+          "sma50": "2397.643",
+          "return24h": "-0.0611096771474775994395250712",
+          "dailyBoundary": "exchange UTC day candles, unfinished day excluded"
+        }
+      },
+      "valuations": {
+        "BTC": {
+          "cash": "-15.58683952162433",
+          "liquidationValue": "13.16171316586568",
+          "netPnl": "-2.42512635575865"
+        },
+        "ETH": {
+          "cash": "-3.7876793486234",
+          "liquidationValue": "3.2320567072630",
+          "netPnl": "-0.5556226413604"
+        }
+      },
+      "phases": {
+        "BTC": "open",
+        "ETH": "open"
+      }
+    },
+    {
+      "utc": "2026-11-15T09:05:23.191000+00:00",
+      "ms": 1794733523191,
+      "snapshotHash": "82f3d8c152a55d822aff3c1700f7e74a37b24f2473d0d9f7bfb437b4bcb1341d",
+      "signals": {
+        "BTC": {
+          "eligible": true,
+          "hourClose": "65214.9",
+          "sma20": "75904.38",
+          "sma50": "80221.406",
+          "return24h": "-0.0266563583474251838408140786",
+          "dailyBoundary": "exchange UTC day candles, unfinished day excluded"
+        },
+        "ETH": {
+          "eligible": true,
+          "hourClose": "1811.41",
+          "sma20": "2191.2345",
+          "sma50": "2397.643",
+          "return24h": "-0.0441663016922500540865701727",
+          "dailyBoundary": "exchange UTC day candles, unfinished day excluded"
+        }
+      },
+      "valuations": {
+        "BTC": {
+          "cash": "-15.58683952162433",
+          "liquidationValue": "10.65616151923834",
+          "netPnl": "-4.93067800238599"
+        },
+        "ETH": {
+          "cash": "-3.7876793486234",
+          "liquidationValue": "2.8206094972118",
+          "netPnl": "-0.9670698514116"
+        }
+      },
+      "phases": {
+        "BTC": "open",
+        "ETH": "open"
+      }
+    },
+    {
+      "utc": "2026-11-15T09:20:29.803000+00:00",
+      "ms": 1794734429803,
+      "snapshotHash": "66ebfd95c93418b14c7090871fdf2fedfa9de27e3d19ff83be84214a10d43c0c",
+      "signals": {
+        "BTC": {
+          "eligible": true,
+          "hourClose": "65214.9",
+          "sma20": "75904.38",
+          "sma50": "80221.406",
+          "return24h": "-0.0266563583474251838408140786",
+          "dailyBoundary": "exchange UTC day candles, unfinished day excluded"
+        },
+        "ETH": {
+          "eligible": true,
+          "hourClose": "1811.41",
+          "sma20": "2191.2345",
+          "sma50": "2397.643",
+          "return24h": "-0.0441663016922500540865701727",
+          "dailyBoundary": "exchange UTC day candles, unfinished day excluded"
+        }
+      },
+      "valuations": {
+        "BTC": {
+          "cash": "-15.58683952162433",
+          "liquidationValue": "10.70541370174872",
+          "netPnl": "-4.88142581987561"
+        },
+        "ETH": {
+          "cash": "-3.7876793486234",
+          "liquidationValue": "2.6398721734592",
+          "netPnl": "-1.1478071751642"
+        }
+      },
+      "phases": {
+        "BTC": "open",
+        "ETH": "open"
+      }
+    },
+    {
+      "utc": "2026-11-15T09:35:36.173000+00:00",
+      "ms": 1794735336173,
+      "snapshotHash": "736484595ad2119cc74ba15167c08c5e1004434979eaf7885e4e761933a52abe",
+      "signals": {
+        "BTC": {
+          "eligible": true,
+          "hourClose": "65214.9",
+          "sma20": "75904.38",
+          "sma50": "80221.406",
+          "return24h": "-0.0266563583474251838408140786",
+          "dailyBoundary": "exchange UTC day candles, unfinished day excluded"
+        },
+        "ETH": {
+          "eligible": true,
+          "hourClose": "1811.41",
+          "sma20": "2191.2345",
+          "sma50": "2397.643",
+          "return24h": "-0.0441663016922500540865701727",
+          "dailyBoundary": "exchange UTC day candles, unfinished day excluded"
+        }
+      },
+      "valuations": {
+        "BTC": {
+          "cash": "-15.58683952162433",
+          "liquidationValue": "11.20714517896970",
+          "netPnl": "-4.37969434265463"
+        },
+        "ETH": {
+          "cash": "-3.7876793486234",
+          "liquidationValue": "2.7303552300998",
+          "netPnl": "-1.0573241185236"
+        }
+      },
+      "phases": {
+        "BTC": "open",
+        "ETH": "open"
+      }
+    },
+    {
+      "utc": "2026-11-15T09:50:42.174000+00:00",
+      "ms": 1794736242174,
+      "snapshotHash": "c3856c159c7bfaabe029e06d3858e8fe105bdbcb06898431e9a1a7426ce9c4c7",
+      "signals": {
+        "BTC": {
+          "eligible": true,
+          "hourClose": "65214.9",
+          "sma20": "75904.38",
+          "sma50": "80221.406",
+          "return24h": "-0.0266563583474251838408140786",
+          "dailyBoundary": "exchange UTC day candles, unfinished day excluded"
+        },
+        "ETH": {
+          "eligible": true,
+          "hourClose": "1811.41",
+          "sma20": "2191.2345",
+          "sma50": "2397.643",
+          "return24h": "-0.0441663016922500540865701727",
+          "dailyBoundary": "exchange UTC day candles, unfinished day excluded"
+        }
+      },
+      "valuations": {
+        "BTC": {
+          "cash": "-15.58683952162433",
+          "liquidationValue": "11.40770279667826",
+          "netPnl": "-4.17913672494607"
+        },
+        "ETH": {
+          "cash": "-3.7876793486234",
+          "liquidationValue": "2.7403653087702",
+          "netPnl": "-1.0473140398532"
+        }
+      },
+      "phases": {
+        "BTC": "open",
+        "ETH": "open"
+      }
+    },
+    {
+      "utc": "2026-11-15T10:05:48.570000+00:00",
+      "ms": 1794737148570,
+      "snapshotHash": "54fed06a8fe9169c2082e5978bf5f991b7b440dfbddf10f2aa481e2ca1c6dfea",
+      "signals": {
+        "BTC": {
+          "eligible": true,
+          "hourClose": "65352.3",
+          "sma20": "75904.38",
+          "sma50": "80221.406",
+          "return24h": "-0.0304963802516021837170662236",
+          "dailyBoundary": "exchange UTC day candles, unfinished day excluded"
+        },
+        "ETH": {
+          "eligible": true,
+          "hourClose": "1822.52",
+          "sma20": "2191.2345",
+          "sma50": "2397.643",
+          "return24h": "-0.0475065589363547992599638344",
+          "dailyBoundary": "exchange UTC day candles, unfinished day excluded"
+        }
+      },
+      "valuations": {
+        "BTC": {
+          "cash": "-15.58683952162433",
+          "liquidationValue": "11.25726107050204",
+          "netPnl": "-4.32957845112229"
+        },
+        "ETH": {
+          "cash": "-3.7876793486234",
+          "liquidationValue": "2.7003295215206",
+          "netPnl": "-1.0873498271028"
+        }
+      },
+      "phases": {
+        "BTC": "open",
+        "ETH": "open"
+      }
+    },
+    {
+      "utc": "2026-11-15T10:20:55.028000+00:00",
+      "ms": 1794738055028,
+      "snapshotHash": "a3f5967325781af818950adb724c5263d249e6294fb9a35030a8caaa36e93689",
+      "signals": {
+        "BTC": {
+          "eligible": true,
+          "hourClose": "65352.3",
+          "sma20": "75904.38",
+          "sma50": "80221.406",
+          "return24h": "-0.0304963802516021837170662236",
+          "dailyBoundary": "exchange UTC day candles, unfinished day excluded"
+        },
+        "ETH": {
+          "eligible": true,
+          "hourClose": "1822.52",
+          "sma20": "2191.2345",
+          "sma50": "2397.643",
+          "return24h": "-0.0475065589363547992599638344",
+          "dailyBoundary": "exchange UTC day candles, unfinished day excluded"
+        }
+      },
+      "valuations": {
+        "BTC": {
+          "cash": "-15.58683952162433",
+          "liquidationValue": "11.15718927355092",
+          "netPnl": "-4.42965024807341"
+        },
+        "ETH": {
+          "cash": "-3.7876793486234",
+          "liquidationValue": "2.7203320630144",
+          "netPnl": "-1.0673472856090"
+        }
+      },
+      "phases": {
+        "BTC": "open",
+        "ETH": "open"
+      }
+    },
+    {
+      "utc": "2026-11-15T10:36:01.731000+00:00",
+      "ms": 1794738961731,
+      "snapshotHash": "75801ce4f8c836fd6ffc24f0d7c3297bdd8038b289007478ce2ac3d377028ec3",
+      "signals": {
+        "BTC": {
+          "eligible": true,
+          "hourClose": "65352.3",
+          "sma20": "75904.38",
+          "sma50": "80221.406",
+          "return24h": "-0.0304963802516021837170662236",
+          "dailyBoundary": "exchange UTC day candles, unfinished day excluded"
+        },
+        "ETH": {
+          "eligible": true,
+          "hourClose": "1822.52",
+          "sma20": "2191.2345",
+          "sma50": "2397.643",
+          "return24h": "-0.0475065589363547992599638344",
+          "dailyBoundary": "exchange UTC day candles, unfinished day excluded"
+        }
+      },
+      "valuations": {
+        "BTC": {
+          "cash": "-15.58683952162433",
+          "liquidationValue": "11.15731557475572",
+          "netPnl": "-4.42952394686861"
+        },
+        "ETH": {
+          "cash": "-3.7876793486234",
+          "liquidationValue": "2.7704352918486",
+          "netPnl": "-1.0172440567748"
+        }
+      },
+      "phases": {
+        "BTC": "open",
+        "ETH": "open"
+      }
+    },
+    {
+      "utc": "2026-11-15T10:51:08.720000+00:00",
+      "ms": 1794739868720,
+      "snapshotHash": "09bd10154d1de85a1e2294a1fd088f326898c2be31e3b88abda68fbb7998e707",
+      "signals": {
+        "BTC": {
+          "eligible": true,
+          "hourClose": "65352.3",
+          "sma20": "75904.38",
+          "sma50": "80221.406",
+          "return24h": "-0.0304963802516021837170662236",
+          "dailyBoundary": "exchange UTC day candles, unfinished day excluded"
+        },
+        "ETH": {
+          "eligible": true,
+          "hourClose": "1822.52",
+          "sma20": "2191.2345",
+          "sma50": "2397.643",
+          "return24h": "-0.0475065589363547992599638344",
+          "dailyBoundary": "exchange UTC day candles, unfinished day excluded"
+        }
+      },
+      "valuations": {
+        "BTC": {
+          "cash": "-15.58683952162433",
+          "liquidationValue": "10.80672575461018",
+          "netPnl": "-4.78011376701415"
+        },
+        "ETH": {
+          "cash": "-3.7876793486234",
+          "liquidationValue": "2.6602174080694",
+          "netPnl": "-1.1274619405540"
+        }
+      },
+      "phases": {
+        "BTC": "open",
+        "ETH": "open"
+      }
+    },
+    {
+      "utc": "2026-11-15T11:06:15.526000+00:00",
+      "ms": 1794740775526,
+      "snapshotHash": "1193c48d240368d2231affa32e1921150fe021ff257199852a70caac774bb6c4",
+      "signals": {
+        "BTC": {
+          "eligible": true,
+          "hourClose": "65588.5",
+          "sma20": "75904.38",
+          "sma50": "80221.406",
+          "return24h": "-0.0253990472199685576645893328",
+          "dailyBoundary": "exchange UTC day candles, unfinished day excluded"
+        },
+        "ETH": {
+          "eligible": true,
+          "hourClose": "1831.51",
+          "sma20": "2191.2345",
+          "sma50": "2397.643",
+          "return24h": "-0.0407075103575787097416235865",
+          "dailyBoundary": "exchange UTC day candles, unfinished day excluded"
+        }
+      },
+      "valuations": {
+        "BTC": {
+          "cash": "-15.58683952162433",
+          "liquidationValue": "11.15712034608654",
+          "netPnl": "-4.42971917553779"
+        },
+        "ETH": {
+          "cash": "-3.7876793486234",
+          "liquidationValue": "2.7102757675782",
+          "netPnl": "-1.0774035810452"
+        }
+      },
+      "phases": {
+        "BTC": "open",
+        "ETH": "open"
+      }
+    },
+    {
+      "utc": "2026-11-15T13:17:44.809000+00:00",
+      "ms": 1794748664809,
+      "snapshotHash": "f245b7bf481ff7b4538430b64d8fdee9b53d1c5c0d9b43bb9dcd4688cddd5bec",
+      "signals": {
+        "BTC": {
+          "eligible": true,
+          "hourClose": "65507.6",
+          "sma20": "75904.38",
+          "sma50": "80221.406",
+          "return24h": "-0.0222965157496473959538219294",
+          "dailyBoundary": "exchange UTC day candles, unfinished day excluded"
+        },
+        "ETH": {
+          "eligible": true,
+          "hourClose": "1835.95",
+          "sma20": "2191.2345",
+          "sma50": "2397.643",
+          "return24h": "-0.0337969760600367335554187257",
+          "dailyBoundary": "exchange UTC day candles, unfinished day excluded"
+        }
+      },
+      "valuations": {
+        "BTC": {
+          "cash": "-15.58683952162433",
+          "liquidationValue": "10.85660729707314",
+          "netPnl": "-4.73023222455119"
+        },
+        "ETH": {
+          "cash": "-3.7876793486234",
+          "liquidationValue": "2.5999381649110",
+          "netPnl": "-1.1877411837124"
+        }
+      },
+      "phases": {
+        "BTC": "open",
+        "ETH": "open"
+      }
+    },
+    {
+      "utc": "2026-11-15T13:32:51.703000+00:00",
+      "ms": 1794749571703,
+      "snapshotHash": "e6b7c16e9aba754c50cc7bbd1b4b29a9ec3fc6a3804ec7370827f10b6b3df103",
+      "signals": {
+        "BTC": {
+          "eligible": true,
+          "hourClose": "65507.6",
+          "sma20": "75904.38",
+          "sma50": "80221.406",
+          "return24h": "-0.0222965157496473959538219294",
+          "dailyBoundary": "exchange UTC day candles, unfinished day excluded"
+        },
+        "ETH": {
+          "eligible": true,
+          "hourClose": "1835.95",
+          "sma20": "2191.2345",
+          "sma50": "2397.643",
+          "return24h": "-0.0337969760600367335554187257",
+          "dailyBoundary": "exchange UTC day candles, unfinished day excluded"
+        }
+      },
+      "valuations": {
+        "BTC": {
+          "cash": "-15.58683952162433",
+          "liquidationValue": "11.15730784442376",
+          "netPnl": "-4.42953167720057"
+        },
+        "ETH": {
+          "cash": "-3.7876793486234",
+          "liquidationValue": "2.6600924763616",
+          "netPnl": "-1.1275868722618"
+        }
+      },
+      "phases": {
+        "BTC": "open",
+        "ETH": "open"
+      }
+    },
+    {
+      "utc": "2026-11-15T13:48:01.736000+00:00",
+      "ms": 1794750481736,
+      "snapshotHash": "93a11c459f63b8fbb170b6d3d3f9bae3de37e9f965a93409886386650d4bf8cb",
+      "signals": {
+        "BTC": {
+          "eligible": true,
+          "hourClose": "65507.6",
+          "sma20": "75904.38",
+          "sma50": "80221.406",
+          "return24h": "-0.0222965157496473959538219294",
+          "dailyBoundary": "exchange UTC day candles, unfinished day excluded"
+        },
+        "ETH": {
+          "eligible": true,
+          "hourClose": "1835.95",
+          "sma20": "2191.2345",
+          "sma50": "2397.643",
+          "return24h": "-0.0337969760600367335554187257",
+          "dailyBoundary": "exchange UTC day candles, unfinished day excluded"
+        }
+      },
+      "valuations": {
+        "BTC": {
+          "cash": "-15.58683952162433",
+          "liquidationValue": "11.20730583226052",
+          "netPnl": "-4.37953368936381"
+        },
+        "ETH": {
+          "cash": "-3.7876793486234",
+          "liquidationValue": "2.6701434961718",
+          "netPnl": "-1.1175358524516"
+        }
+      },
+      "phases": {
+        "BTC": "open",
+        "ETH": "open"
+      }
+    },
+    {
+      "utc": "2026-11-15T14:03:08.049000+00:00",
+      "ms": 1794751388049,
+      "snapshotHash": "99d1dcd64e85defc0218d8eaffa090f476c9f5e981bc715d46d5c10e77bfdd08",
+      "signals": {
+        "BTC": {
+          "eligible": true,
+          "hourClose": "65434.1",
+          "sma20": "75904.38",
+          "sma50": "80221.406",
+          "return24h": "-0.0210074478367161293990562283",
+          "dailyBoundary": "exchange UTC day candles, unfinished day excluded"
+        },
+        "ETH": {
+          "eligible": true,
+          "hourClose": "1830.8",
+          "sma20": "2191.2345",
+          "sma50": "2397.643",
+          "return24h": "-0.0332817623545936013264126136",
+          "dailyBoundary": "exchange UTC day candles, unfinished day excluded"
+        }
+      },
+      "valuations": {
+        "BTC": {
+          "cash": "-15.58683952162433",
+          "liquidationValue": "11.65818081667676",
+          "netPnl": "-3.92865870494757"
+        },
+        "ETH": {
+          "cash": "-3.7876793486234",
+          "liquidationValue": "2.7304320749852",
+          "netPnl": "-1.0572472736382"
+        }
+      },
+      "phases": {
+        "BTC": "open",
+        "ETH": "open"
+      }
+    },
+    {
+      "utc": "2026-11-15T14:18:15.421000+00:00",
+      "ms": 1794752295421,
+      "snapshotHash": "a926e44a907a8f6949d1269fb1667cd43800a966781a54cdf6e189c9516e9592",
+      "signals": {
+        "BTC": {
+          "eligible": true,
+          "hourClose": "65434.1",
+          "sma20": "75904.38",
+          "sma50": "80221.406",
+          "return24h": "-0.0210074478367161293990562283",
+          "dailyBoundary": "exchange UTC day candles, unfinished day excluded"
+        },
+        "ETH": {
+          "eligible": true,
+          "hourClose": "1830.8",
+          "sma20": "2191.2345",
+          "sma50": "2397.643",
+          "return24h": "-0.0332817623545936013264126136",
+          "dailyBoundary": "exchange UTC day candles, unfinished day excluded"
+        }
+      },
+      "valuations": {
+        "BTC": {
+          "cash": "-15.58683952162433",
+          "liquidationValue": "11.45799689006292",
+          "netPnl": "-4.12884263156141"
+        },
+        "ETH": {
+          "cash": "-3.7876793486234",
+          "liquidationValue": "2.7805638686248",
+          "netPnl": "-1.0071154799986"
+        }
+      },
+      "phases": {
+        "BTC": "open",
+        "ETH": "open"
+      }
+    },
+    {
+      "utc": "2026-11-15T14:33:23.669000+00:00",
+      "ms": 1794753203669,
+      "snapshotHash": "3bc1a243710bb49ccfe8077eb5ebb7a047639c0d8a95fe708f9a27589458ac9d",
+      "signals": {
+        "BTC": {
+          "eligible": true,
+          "hourClose": "65434.1",
+          "sma20": "75904.38",
+          "sma50": "80221.406",
+          "return24h": "-0.0210074478367161293990562283",
+          "dailyBoundary": "exchange UTC day candles, unfinished day excluded"
+        },
+        "ETH": {
+          "eligible": true,
+          "hourClose": "1830.8",
+          "sma20": "2191.2345",
+          "sma50": "2397.643",
+          "return24h": "-0.0332817623545936013264126136",
+          "dailyBoundary": "exchange UTC day candles, unfinished day excluded"
+        }
+      },
+      "valuations": {
+        "BTC": {
+          "cash": "-15.58683952162433",
+          "liquidationValue": "12.71073735448112",
+          "netPnl": "-2.87610216714321"
+        },
+        "ETH": {
+          "cash": "-3.7876793486234",
+          "liquidationValue": "3.0413711999052",
+          "netPnl": "-0.7463081487182"
+        }
+      },
+      "phases": {
+        "BTC": "open",
+        "ETH": "open"
+      }
+    }
+  ],
+  "positions": {
+    "BTC": {
+      "base": "BTC",
+      "long_symbol": "BTC-27NOV26-65000-P-USDT",
+      "short_symbol": "BTC-27NOV26-60000-P-USDT",
+      "quantity": "0.01",
+      "phase": "open",
+      "cash": "-15.58683952162433",
+      "fees": "0.38683952162433",
+      "longHeld": true,
+      "shortHeld": true,
+      "pending": null,
+      "expiryMs": 1795766400000,
+      "widthValue": "50.00",
+      "signal": {
+        "eligible": true,
+        "hourClose": "64512.7",
+        "sma20": "75904.38",
+        "sma50": "80221.406",
+        "return24h": "-0.0404993180706083226619191888",
+        "dailyBoundary": "exchange UTC day candles, unfinished day excluded"
+      },
+      "decisionMs": 1794723447767,
+      "longLimit": "2410",
+      "shortLimit": "830",
+      "openedMs": 1794723466433,
+      "entryDebit": "15.58683952162433"
+    },
+    "ETH": {
+      "base": "ETH",
+      "long_symbol": "ETH-27NOV26-1800-P-USDT",
+      "short_symbol": "ETH-27NOV26-1700-P-USDT",
+      "quantity": "0.1",
+      "phase": "open",
+      "cash": "-3.7876793486234",
+      "fees": "0.1076793486234",
+      "longHeld": true,
+      "shortHeld": true,
+      "pending": null,
+      "expiryMs": 1795766400000,
+      "widthValue": "10.0",
+      "signal": {
+        "eligible": true,
+        "hourClose": "1800.7",
+        "sma20": "2191.2345",
+        "sma50": "2397.643",
+        "return24h": "-0.0551771903497633614221401362",
+        "dailyBoundary": "exchange UTC day candles, unfinished day excluded"
+      },
+      "decisionMs": 1794723447767,
+      "longLimit": "79.2",
+      "shortLimit": "40.0",
+      "openedMs": 1794723466433,
+      "entryDebit": "3.7876793486234"
+    }
+  },
+  "checkpointHash": "6386b915d3a37d8853a169c0fd331ff88debf4870f93b2b7d3758d69c3648e34"
+}

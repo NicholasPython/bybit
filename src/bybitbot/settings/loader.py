@@ -192,6 +192,8 @@ def _cross_validate(cfg: AppConfig) -> None:
     """跨段一致性检查 —— 单元校验看不到的关系在这里兜底。"""
     profile = cfg.profile
     account = cfg.account
+    if cfg.active_environment is not Environment.PAPER and cfg.paper.market_source == "synthetic":
+        raise ConfigError("合成行情只允许用于 paper 环境")
 
     if account.allowed_sites and profile.site not in account.allowed_sites:
         raise ConfigError(

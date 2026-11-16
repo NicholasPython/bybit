@@ -1,0 +1,837 @@
+{
+  "checkedUtc": "2026-11-15T04:48:39.473067+00:00",
+  "symbols": {
+    "BTCUSDT": {
+      "hourlyRows": 46988,
+      "firstUtc": "2021-07-05T12:00:00+00:00",
+      "lastUtc": "2026-11-14T07:00:00+00:00",
+      "lastBarEndUtc": "2026-11-14T08:00:00+00:00",
+      "cutoffUtc": "2026-11-14T08:00:00+00:00",
+      "checks": {
+        "hourAligned": true,
+        "strictlyIncreasing": true,
+        "noDuplicateTimestamps": true,
+        "contiguousNoGaps": true,
+        "distinctStepSizes": [
+          3600000
+        ],
+        "ohlcBoundsValid": true,
+        "positivePrices": true,
+        "openEqualsPrevCloseExactly": false,
+        "noPriceGapOver0_5Pct": true,
+        "csvMatchesRawPages": true,
+        "noBarEndsAfterCutoff": true,
+        "lastBarEndsExactlyAtCutoff": true,
+        "boundaryCandleStoredRaw": true,
+        "boundaryCandleOpenOnly": true,
+        "onlyBoundaryCandleOmitted": true,
+        "startsAtSourceFloor": true
+      },
+      "findings": [],
+      "interiorGaps": [],
+      "misalignedTimestamps": 0,
+      "duplicateTimestamps": 0,
+      "invalidOhlcRows": 0,
+      "zeroVolumeRows": 0,
+      "openPrevCloseBreaks": {
+        "count": 5,
+        "ofTransitions": 46987,
+        "maxAbsPct": 0.072191,
+        "sample": [
+          {
+            "utc": "2021-10-19T18:00:00+00:00",
+            "open": 63378.47,
+            "prevClose": 63344.41,
+            "pct": 0.05377
+          },
+          {
+            "utc": "2021-12-20T19:00:00+00:00",
+            "open": 46246.64,
+            "prevClose": 46280.05,
+            "pct": -0.072191
+          },
+          {
+            "utc": "2022-03-07T12:00:00+00:00",
+            "open": 38345.52,
+            "prevClose": 38349.31,
+            "pct": -0.009883
+          },
+          {
+            "utc": "2022-08-10T14:00:00+00:00",
+            "open": 24014.57,
+            "prevClose": 24013.92,
+            "pct": 0.002707
+          },
+          {
+            "utc": "2022-11-10T16:00:00+00:00",
+            "open": 17523.97,
+            "prevClose": 17520.37,
+            "pct": 0.020548
+          }
+        ]
+      },
+      "rawPages": 47,
+      "rawRowsUnique": 46989,
+      "rawDuplicateRows": 0,
+      "rawConflictingDuplicates": 0,
+      "pageCoverage": [
+        {
+          "page": 0,
+          "rows": 1000,
+          "newestUtc": "2026-11-14T08:00:00+00:00",
+          "oldestUtc": "2026-10-03T17:00:00+00:00"
+        },
+        {
+          "page": 1,
+          "rows": 1000,
+          "newestUtc": "2026-10-03T16:00:00+00:00",
+          "oldestUtc": "2026-08-23T01:00:00+00:00"
+        },
+        {
+          "page": 2,
+          "rows": 1000,
+          "newestUtc": "2026-08-23T00:00:00+00:00",
+          "oldestUtc": "2026-07-12T09:00:00+00:00"
+        },
+        {
+          "page": 3,
+          "rows": 1000,
+          "newestUtc": "2026-07-12T08:00:00+00:00",
+          "oldestUtc": "2026-05-31T17:00:00+00:00"
+        },
+        {
+          "page": 4,
+          "rows": 1000,
+          "newestUtc": "2026-05-31T16:00:00+00:00",
+          "oldestUtc": "2026-04-20T01:00:00+00:00"
+        },
+        {
+          "page": 5,
+          "rows": 1000,
+          "newestUtc": "2026-04-20T00:00:00+00:00",
+          "oldestUtc": "2026-03-09T09:00:00+00:00"
+        },
+        {
+          "page": 6,
+          "rows": 1000,
+          "newestUtc": "2026-03-09T08:00:00+00:00",
+          "oldestUtc": "2026-01-26T17:00:00+00:00"
+        },
+        {
+          "page": 7,
+          "rows": 1000,
+          "newestUtc": "2026-01-26T16:00:00+00:00",
+          "oldestUtc": "2025-12-16T01:00:00+00:00"
+        },
+        {
+          "page": 8,
+          "rows": 1000,
+          "newestUtc": "2025-12-16T00:00:00+00:00",
+          "oldestUtc": "2025-11-04T09:00:00+00:00"
+        },
+        {
+          "page": 9,
+          "rows": 1000,
+          "newestUtc": "2025-11-04T08:00:00+00:00",
+          "oldestUtc": "2025-09-23T17:00:00+00:00"
+        },
+        {
+          "page": 10,
+          "rows": 1000,
+          "newestUtc": "2025-09-23T16:00:00+00:00",
+          "oldestUtc": "2025-08-13T01:00:00+00:00"
+        },
+        {
+          "page": 11,
+          "rows": 1000,
+          "newestUtc": "2025-08-13T00:00:00+00:00",
+          "oldestUtc": "2025-07-02T09:00:00+00:00"
+        },
+        {
+          "page": 12,
+          "rows": 1000,
+          "newestUtc": "2025-07-02T08:00:00+00:00",
+          "oldestUtc": "2025-05-21T17:00:00+00:00"
+        },
+        {
+          "page": 13,
+          "rows": 1000,
+          "newestUtc": "2025-05-21T16:00:00+00:00",
+          "oldestUtc": "2025-04-10T01:00:00+00:00"
+        },
+        {
+          "page": 14,
+          "rows": 1000,
+          "newestUtc": "2025-04-10T00:00:00+00:00",
+          "oldestUtc": "2025-02-27T09:00:00+00:00"
+        },
+        {
+          "page": 15,
+          "rows": 1000,
+          "newestUtc": "2025-02-27T08:00:00+00:00",
+          "oldestUtc": "2025-01-16T17:00:00+00:00"
+        },
+        {
+          "page": 16,
+          "rows": 1000,
+          "newestUtc": "2025-01-16T16:00:00+00:00",
+          "oldestUtc": "2024-12-06T01:00:00+00:00"
+        },
+        {
+          "page": 17,
+          "rows": 1000,
+          "newestUtc": "2024-12-06T00:00:00+00:00",
+          "oldestUtc": "2024-10-25T09:00:00+00:00"
+        },
+        {
+          "page": 18,
+          "rows": 1000,
+          "newestUtc": "2024-10-25T08:00:00+00:00",
+          "oldestUtc": "2024-09-13T17:00:00+00:00"
+        },
+        {
+          "page": 19,
+          "rows": 1000,
+          "newestUtc": "2024-09-13T16:00:00+00:00",
+          "oldestUtc": "2024-08-03T01:00:00+00:00"
+        },
+        {
+          "page": 20,
+          "rows": 1000,
+          "newestUtc": "2024-08-03T00:00:00+00:00",
+          "oldestUtc": "2024-06-22T09:00:00+00:00"
+        },
+        {
+          "page": 21,
+          "rows": 1000,
+          "newestUtc": "2024-06-22T08:00:00+00:00",
+          "oldestUtc": "2024-05-11T17:00:00+00:00"
+        },
+        {
+          "page": 22,
+          "rows": 1000,
+          "newestUtc": "2024-05-11T16:00:00+00:00",
+          "oldestUtc": "2024-03-31T01:00:00+00:00"
+        },
+        {
+          "page": 23,
+          "rows": 1000,
+          "newestUtc": "2024-03-31T00:00:00+00:00",
+          "oldestUtc": "2024-02-18T09:00:00+00:00"
+        },
+        {
+          "page": 24,
+          "rows": 1000,
+          "newestUtc": "2024-02-18T08:00:00+00:00",
+          "oldestUtc": "2024-01-07T17:00:00+00:00"
+        },
+        {
+          "page": 25,
+          "rows": 1000,
+          "newestUtc": "2024-01-07T16:00:00+00:00",
+          "oldestUtc": "2023-11-27T01:00:00+00:00"
+        },
+        {
+          "page": 26,
+          "rows": 1000,
+          "newestUtc": "2023-11-27T00:00:00+00:00",
+          "oldestUtc": "2023-10-16T09:00:00+00:00"
+        },
+        {
+          "page": 27,
+          "rows": 1000,
+          "newestUtc": "2023-10-16T08:00:00+00:00",
+          "oldestUtc": "2023-09-04T17:00:00+00:00"
+        },
+        {
+          "page": 28,
+          "rows": 1000,
+          "newestUtc": "2023-09-04T16:00:00+00:00",
+          "oldestUtc": "2023-07-25T01:00:00+00:00"
+        },
+        {
+          "page": 29,
+          "rows": 1000,
+          "newestUtc": "2023-07-25T00:00:00+00:00",
+          "oldestUtc": "2023-06-13T09:00:00+00:00"
+        },
+        {
+          "page": 30,
+          "rows": 1000,
+          "newestUtc": "2023-06-13T08:00:00+00:00",
+          "oldestUtc": "2023-05-02T17:00:00+00:00"
+        },
+        {
+          "page": 31,
+          "rows": 1000,
+          "newestUtc": "2023-05-02T16:00:00+00:00",
+          "oldestUtc": "2023-03-22T01:00:00+00:00"
+        },
+        {
+          "page": 32,
+          "rows": 1000,
+          "newestUtc": "2023-03-22T00:00:00+00:00",
+          "oldestUtc": "2023-02-08T09:00:00+00:00"
+        },
+        {
+          "page": 33,
+          "rows": 1000,
+          "newestUtc": "2023-02-08T08:00:00+00:00",
+          "oldestUtc": "2022-12-28T17:00:00+00:00"
+        },
+        {
+          "page": 34,
+          "rows": 1000,
+          "newestUtc": "2022-12-28T16:00:00+00:00",
+          "oldestUtc": "2022-11-17T01:00:00+00:00"
+        },
+        {
+          "page": 35,
+          "rows": 1000,
+          "newestUtc": "2022-11-17T00:00:00+00:00",
+          "oldestUtc": "2022-10-06T09:00:00+00:00"
+        },
+        {
+          "page": 36,
+          "rows": 1000,
+          "newestUtc": "2022-10-06T08:00:00+00:00",
+          "oldestUtc": "2022-08-25T17:00:00+00:00"
+        },
+        {
+          "page": 37,
+          "rows": 1000,
+          "newestUtc": "2022-08-25T16:00:00+00:00",
+          "oldestUtc": "2022-07-15T01:00:00+00:00"
+        },
+        {
+          "page": 38,
+          "rows": 1000,
+          "newestUtc": "2022-07-15T00:00:00+00:00",
+          "oldestUtc": "2022-06-03T09:00:00+00:00"
+        },
+        {
+          "page": 39,
+          "rows": 1000,
+          "newestUtc": "2022-06-03T08:00:00+00:00",
+          "oldestUtc": "2022-04-22T17:00:00+00:00"
+        },
+        {
+          "page": 40,
+          "rows": 1000,
+          "newestUtc": "2022-04-22T16:00:00+00:00",
+          "oldestUtc": "2022-03-12T01:00:00+00:00"
+        },
+        {
+          "page": 41,
+          "rows": 1000,
+          "newestUtc": "2022-03-12T00:00:00+00:00",
+          "oldestUtc": "2022-01-29T09:00:00+00:00"
+        },
+        {
+          "page": 42,
+          "rows": 1000,
+          "newestUtc": "2022-01-29T08:00:00+00:00",
+          "oldestUtc": "2021-12-18T17:00:00+00:00"
+        },
+        {
+          "page": 43,
+          "rows": 1000,
+          "newestUtc": "2021-12-18T16:00:00+00:00",
+          "oldestUtc": "2021-11-07T01:00:00+00:00"
+        },
+        {
+          "page": 44,
+          "rows": 1000,
+          "newestUtc": "2021-11-07T00:00:00+00:00",
+          "oldestUtc": "2021-09-26T09:00:00+00:00"
+        },
+        {
+          "page": 45,
+          "rows": 1000,
+          "newestUtc": "2021-09-26T08:00:00+00:00",
+          "oldestUtc": "2021-08-15T17:00:00+00:00"
+        },
+        {
+          "page": 46,
+          "rows": 989,
+          "newestUtc": "2021-08-15T16:00:00+00:00",
+          "oldestUtc": "2021-07-05T12:00:00+00:00"
+        }
+      ],
+      "boundaryCandleFields": [
+        "1794643200000",
+        "67161.6",
+        "OMITTED_AFTER_CUTOFF",
+        "OMITTED_AFTER_CUTOFF",
+        "OMITTED_AFTER_CUTOFF",
+        "OMITTED_AFTER_CUTOFF",
+        "OMITTED_AFTER_CUTOFF"
+      ],
+      "omittedFieldTimestamps": [
+        "2026-11-14T08:00:00+00:00"
+      ],
+      "sourceAvailabilityFloorUtc": "2021-07-05T12:00:00+00:00",
+      "unavailableBeforeSourceFloorBars": 12,
+      "unavailableBeforeSourceFloorUtc": [
+        "2021-07-05T00:00:00+00:00",
+        "2021-07-05T11:00:00+00:00"
+      ],
+      "crossChecks": {
+        "oneHourDataset": {
+          "path": "research/data/1h/klines/BTCUSDT.csv",
+          "rows": 24857,
+          "firstUtc": "2024-01-01T00:00:00+00:00",
+          "lastUtc": "2026-11-01T16:00:00+00:00",
+          "commonBars": 24857,
+          "onlyInNew": 22131,
+          "onlyInOld": 0,
+          "valueMismatches": 1,
+          "valueMismatchSample": [
+            "2026-11-01T16:00:00+00:00"
+          ],
+          "oldDatasetGaps": [],
+          "oldDatasetContiguous": true
+        },
+        "dailyDataset": {
+          "path": "research/data/klines/BTCUSDT.csv",
+          "rows": 1946,
+          "fullDaysCompared": 1945,
+          "mismatches": 1,
+          "mismatchSample": [
+            {
+              "day": "2026-11-01T00:00:00+00:00",
+              "hourly": {
+                "open": "77529.7",
+                "high": 78408.6,
+                "low": 77475.8,
+                "close": "78337.7"
+              },
+              "daily": {
+                "open": "77529.7",
+                "high": "78227.1",
+                "low": "77475.8",
+                "close": "78036.4"
+              }
+            }
+          ]
+        }
+      }
+    },
+    "ETHUSDT": {
+      "hourlyRows": 46988,
+      "firstUtc": "2021-07-05T12:00:00+00:00",
+      "lastUtc": "2026-11-14T07:00:00+00:00",
+      "lastBarEndUtc": "2026-11-14T08:00:00+00:00",
+      "cutoffUtc": "2026-11-14T08:00:00+00:00",
+      "checks": {
+        "hourAligned": true,
+        "strictlyIncreasing": true,
+        "noDuplicateTimestamps": true,
+        "contiguousNoGaps": true,
+        "distinctStepSizes": [
+          3600000
+        ],
+        "ohlcBoundsValid": true,
+        "positivePrices": true,
+        "openEqualsPrevCloseExactly": false,
+        "noPriceGapOver0_5Pct": true,
+        "csvMatchesRawPages": true,
+        "noBarEndsAfterCutoff": true,
+        "lastBarEndsExactlyAtCutoff": true,
+        "boundaryCandleStoredRaw": true,
+        "boundaryCandleOpenOnly": true,
+        "onlyBoundaryCandleOmitted": true,
+        "startsAtSourceFloor": true
+      },
+      "findings": [],
+      "interiorGaps": [],
+      "misalignedTimestamps": 0,
+      "duplicateTimestamps": 0,
+      "invalidOhlcRows": 0,
+      "zeroVolumeRows": 0,
+      "openPrevCloseBreaks": {
+        "count": 8,
+        "ofTransitions": 46987,
+        "maxAbsPct": 0.035408,
+        "sample": [
+          {
+            "utc": "2021-08-18T17:00:00+00:00",
+            "open": 3120.75,
+            "prevClose": 3120.35,
+            "pct": 0.012819
+          },
+          {
+            "utc": "2021-12-27T23:00:00+00:00",
+            "open": 4063.05,
+            "prevClose": 4063.06,
+            "pct": -0.000246
+          },
+          {
+            "utc": "2022-04-12T14:00:00+00:00",
+            "open": 3051.21,
+            "prevClose": 3050.13,
+            "pct": 0.035408
+          },
+          {
+            "utc": "2022-05-12T22:00:00+00:00",
+            "open": 1913.77,
+            "prevClose": 1914.44,
+            "pct": -0.034997
+          },
+          {
+            "utc": "2022-05-14T04:00:00+00:00",
+            "open": 2054.0,
+            "prevClose": 2054.32,
+            "pct": -0.015577
+          }
+        ]
+      },
+      "rawPages": 47,
+      "rawRowsUnique": 46989,
+      "rawDuplicateRows": 0,
+      "rawConflictingDuplicates": 0,
+      "pageCoverage": [
+        {
+          "page": 0,
+          "rows": 1000,
+          "newestUtc": "2026-11-14T08:00:00+00:00",
+          "oldestUtc": "2026-10-03T17:00:00+00:00"
+        },
+        {
+          "page": 1,
+          "rows": 1000,
+          "newestUtc": "2026-10-03T16:00:00+00:00",
+          "oldestUtc": "2026-08-23T01:00:00+00:00"
+        },
+        {
+          "page": 2,
+          "rows": 1000,
+          "newestUtc": "2026-08-23T00:00:00+00:00",
+          "oldestUtc": "2026-07-12T09:00:00+00:00"
+        },
+        {
+          "page": 3,
+          "rows": 1000,
+          "newestUtc": "2026-07-12T08:00:00+00:00",
+          "oldestUtc": "2026-05-31T17:00:00+00:00"
+        },
+        {
+          "page": 4,
+          "rows": 1000,
+          "newestUtc": "2026-05-31T16:00:00+00:00",
+          "oldestUtc": "2026-04-20T01:00:00+00:00"
+        },
+        {
+          "page": 5,
+          "rows": 1000,
+          "newestUtc": "2026-04-20T00:00:00+00:00",
+          "oldestUtc": "2026-03-09T09:00:00+00:00"
+        },
+        {
+          "page": 6,
+          "rows": 1000,
+          "newestUtc": "2026-03-09T08:00:00+00:00",
+          "oldestUtc": "2026-01-26T17:00:00+00:00"
+        },
+        {
+          "page": 7,
+          "rows": 1000,
+          "newestUtc": "2026-01-26T16:00:00+00:00",
+          "oldestUtc": "2025-12-16T01:00:00+00:00"
+        },
+        {
+          "page": 8,
+          "rows": 1000,
+          "newestUtc": "2025-12-16T00:00:00+00:00",
+          "oldestUtc": "2025-11-04T09:00:00+00:00"
+        },
+        {
+          "page": 9,
+          "rows": 1000,
+          "newestUtc": "2025-11-04T08:00:00+00:00",
+          "oldestUtc": "2025-09-23T17:00:00+00:00"
+        },
+        {
+          "page": 10,
+          "rows": 1000,
+          "newestUtc": "2025-09-23T16:00:00+00:00",
+          "oldestUtc": "2025-08-13T01:00:00+00:00"
+        },
+        {
+          "page": 11,
+          "rows": 1000,
+          "newestUtc": "2025-08-13T00:00:00+00:00",
+          "oldestUtc": "2025-07-02T09:00:00+00:00"
+        },
+        {
+          "page": 12,
+          "rows": 1000,
+          "newestUtc": "2025-07-02T08:00:00+00:00",
+          "oldestUtc": "2025-05-21T17:00:00+00:00"
+        },
+        {
+          "page": 13,
+          "rows": 1000,
+          "newestUtc": "2025-05-21T16:00:00+00:00",
+          "oldestUtc": "2025-04-10T01:00:00+00:00"
+        },
+        {
+          "page": 14,
+          "rows": 1000,
+          "newestUtc": "2025-04-10T00:00:00+00:00",
+          "oldestUtc": "2025-02-27T09:00:00+00:00"
+        },
+        {
+          "page": 15,
+          "rows": 1000,
+          "newestUtc": "2025-02-27T08:00:00+00:00",
+          "oldestUtc": "2025-01-16T17:00:00+00:00"
+        },
+        {
+          "page": 16,
+          "rows": 1000,
+          "newestUtc": "2025-01-16T16:00:00+00:00",
+          "oldestUtc": "2024-12-06T01:00:00+00:00"
+        },
+        {
+          "page": 17,
+          "rows": 1000,
+          "newestUtc": "2024-12-06T00:00:00+00:00",
+          "oldestUtc": "2024-10-25T09:00:00+00:00"
+        },
+        {
+          "page": 18,
+          "rows": 1000,
+          "newestUtc": "2024-10-25T08:00:00+00:00",
+          "oldestUtc": "2024-09-13T17:00:00+00:00"
+        },
+        {
+          "page": 19,
+          "rows": 1000,
+          "newestUtc": "2024-09-13T16:00:00+00:00",
+          "oldestUtc": "2024-08-03T01:00:00+00:00"
+        },
+        {
+          "page": 20,
+          "rows": 1000,
+          "newestUtc": "2024-08-03T00:00:00+00:00",
+          "oldestUtc": "2024-06-22T09:00:00+00:00"
+        },
+        {
+          "page": 21,
+          "rows": 1000,
+          "newestUtc": "2024-06-22T08:00:00+00:00",
+          "oldestUtc": "2024-05-11T17:00:00+00:00"
+        },
+        {
+          "page": 22,
+          "rows": 1000,
+          "newestUtc": "2024-05-11T16:00:00+00:00",
+          "oldestUtc": "2024-03-31T01:00:00+00:00"
+        },
+        {
+          "page": 23,
+          "rows": 1000,
+          "newestUtc": "2024-03-31T00:00:00+00:00",
+          "oldestUtc": "2024-02-18T09:00:00+00:00"
+        },
+        {
+          "page": 24,
+          "rows": 1000,
+          "newestUtc": "2024-02-18T08:00:00+00:00",
+          "oldestUtc": "2024-01-07T17:00:00+00:00"
+        },
+        {
+          "page": 25,
+          "rows": 1000,
+          "newestUtc": "2024-01-07T16:00:00+00:00",
+          "oldestUtc": "2023-11-27T01:00:00+00:00"
+        },
+        {
+          "page": 26,
+          "rows": 1000,
+          "newestUtc": "2023-11-27T00:00:00+00:00",
+          "oldestUtc": "2023-10-16T09:00:00+00:00"
+        },
+        {
+          "page": 27,
+          "rows": 1000,
+          "newestUtc": "2023-10-16T08:00:00+00:00",
+          "oldestUtc": "2023-09-04T17:00:00+00:00"
+        },
+        {
+          "page": 28,
+          "rows": 1000,
+          "newestUtc": "2023-09-04T16:00:00+00:00",
+          "oldestUtc": "2023-07-25T01:00:00+00:00"
+        },
+        {
+          "page": 29,
+          "rows": 1000,
+          "newestUtc": "2023-07-25T00:00:00+00:00",
+          "oldestUtc": "2023-06-13T09:00:00+00:00"
+        },
+        {
+          "page": 30,
+          "rows": 1000,
+          "newestUtc": "2023-06-13T08:00:00+00:00",
+          "oldestUtc": "2023-05-02T17:00:00+00:00"
+        },
+        {
+          "page": 31,
+          "rows": 1000,
+          "newestUtc": "2023-05-02T16:00:00+00:00",
+          "oldestUtc": "2023-03-22T01:00:00+00:00"
+        },
+        {
+          "page": 32,
+          "rows": 1000,
+          "newestUtc": "2023-03-22T00:00:00+00:00",
+          "oldestUtc": "2023-02-08T09:00:00+00:00"
+        },
+        {
+          "page": 33,
+          "rows": 1000,
+          "newestUtc": "2023-02-08T08:00:00+00:00",
+          "oldestUtc": "2022-12-28T17:00:00+00:00"
+        },
+        {
+          "page": 34,
+          "rows": 1000,
+          "newestUtc": "2022-12-28T16:00:00+00:00",
+          "oldestUtc": "2022-11-17T01:00:00+00:00"
+        },
+        {
+          "page": 35,
+          "rows": 1000,
+          "newestUtc": "2022-11-17T00:00:00+00:00",
+          "oldestUtc": "2022-10-06T09:00:00+00:00"
+        },
+        {
+          "page": 36,
+          "rows": 1000,
+          "newestUtc": "2022-10-06T08:00:00+00:00",
+          "oldestUtc": "2022-08-25T17:00:00+00:00"
+        },
+        {
+          "page": 37,
+          "rows": 1000,
+          "newestUtc": "2022-08-25T16:00:00+00:00",
+          "oldestUtc": "2022-07-15T01:00:00+00:00"
+        },
+        {
+          "page": 38,
+          "rows": 1000,
+          "newestUtc": "2022-07-15T00:00:00+00:00",
+          "oldestUtc": "2022-06-03T09:00:00+00:00"
+        },
+        {
+          "page": 39,
+          "rows": 1000,
+          "newestUtc": "2022-06-03T08:00:00+00:00",
+          "oldestUtc": "2022-04-22T17:00:00+00:00"
+        },
+        {
+          "page": 40,
+          "rows": 1000,
+          "newestUtc": "2022-04-22T16:00:00+00:00",
+          "oldestUtc": "2022-03-12T01:00:00+00:00"
+        },
+        {
+          "page": 41,
+          "rows": 1000,
+          "newestUtc": "2022-03-12T00:00:00+00:00",
+          "oldestUtc": "2022-01-29T09:00:00+00:00"
+        },
+        {
+          "page": 42,
+          "rows": 1000,
+          "newestUtc": "2022-01-29T08:00:00+00:00",
+          "oldestUtc": "2021-12-18T17:00:00+00:00"
+        },
+        {
+          "page": 43,
+          "rows": 1000,
+          "newestUtc": "2021-12-18T16:00:00+00:00",
+          "oldestUtc": "2021-11-07T01:00:00+00:00"
+        },
+        {
+          "page": 44,
+          "rows": 1000,
+          "newestUtc": "2021-11-07T00:00:00+00:00",
+          "oldestUtc": "2021-09-26T09:00:00+00:00"
+        },
+        {
+          "page": 45,
+          "rows": 1000,
+          "newestUtc": "2021-09-26T08:00:00+00:00",
+          "oldestUtc": "2021-08-15T17:00:00+00:00"
+        },
+        {
+          "page": 46,
+          "rows": 989,
+          "newestUtc": "2021-08-15T16:00:00+00:00",
+          "oldestUtc": "2021-07-05T12:00:00+00:00"
+        }
+      ],
+      "boundaryCandleFields": [
+        "1794643200000",
+        "1898.39",
+        "OMITTED_AFTER_CUTOFF",
+        "OMITTED_AFTER_CUTOFF",
+        "OMITTED_AFTER_CUTOFF",
+        "OMITTED_AFTER_CUTOFF",
+        "OMITTED_AFTER_CUTOFF"
+      ],
+      "omittedFieldTimestamps": [
+        "2026-11-14T08:00:00+00:00"
+      ],
+      "sourceAvailabilityFloorUtc": "2021-07-05T12:00:00+00:00",
+      "unavailableBeforeSourceFloorBars": 12,
+      "unavailableBeforeSourceFloorUtc": [
+        "2021-07-05T00:00:00+00:00",
+        "2021-07-05T11:00:00+00:00"
+      ],
+      "crossChecks": {
+        "oneHourDataset": {
+          "path": "research/data/1h/klines/ETHUSDT.csv",
+          "rows": 24857,
+          "firstUtc": "2024-01-01T00:00:00+00:00",
+          "lastUtc": "2026-11-01T16:00:00+00:00",
+          "commonBars": 24857,
+          "onlyInNew": 22131,
+          "onlyInOld": 0,
+          "valueMismatches": 1,
+          "valueMismatchSample": [
+            "2026-11-01T16:00:00+00:00"
+          ],
+          "oldDatasetGaps": [],
+          "oldDatasetContiguous": true
+        },
+        "dailyDataset": {
+          "path": "research/data/klines/ETHUSDT.csv",
+          "rows": 1946,
+          "fullDaysCompared": 1945,
+          "mismatches": 1,
+          "mismatchSample": [
+            {
+              "day": "2026-11-01T00:00:00+00:00",
+              "hourly": {
+                "open": "2255.22",
+                "high": 2278.0,
+                "low": 2246.8,
+                "close": "2275.23"
+              },
+              "daily": {
+                "open": "2255.22",
+                "high": "2277.95",
+                "low": "2253.9",
+                "close": "2269.12"
+              }
+            }
+          ]
+        }
+      }
+    }
+  }
+}

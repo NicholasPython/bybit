@@ -1,0 +1,10 @@
+{
+  "version": "conditional-bull-call-forward-v1",
+  "frozenUtc": "2026-11-15T13:22:15.447000+00:00",
+  "files": {
+    "protocol.json": "72edcb96199c60b42c8b9c58bb1a8a76708db1b50693580768e78d641ac38406",
+    "PROTOCOL.md": "d23f7dc8c0022e209c57e6aa836d216873eb2645e4b3c7c2d15e3b533e98cb91",
+    "forward.py": "00ac4a303ffa433153f217a730fe4a73619aff20ac251afa7329f51168f99ed5",
+    "market.py": "e5e093a1c033c382a903672b689b3093929781c351b53284f044409a0239a3f0"
+  }
+}
