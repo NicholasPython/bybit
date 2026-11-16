@@ -242,6 +242,7 @@ class ReservationManager:
                 select(func.coalesce(func.sum(Inventory.qty), 0)).where(
                     Inventory.environment == self.environment,
                     Inventory.symbol == symbol,
+                    Inventory.position_side == "Buy",
                     Inventory.trusted.is_(True),
                 )
             )
@@ -257,6 +258,7 @@ class ReservationManager:
                 select(func.coalesce(func.sum(Inventory.qty), 0)).where(
                     Inventory.environment == self.environment,
                     Inventory.symbol == symbol,
+                    Inventory.position_side == "Buy",
                     Inventory.strategy_id == strategy_id,
                     Inventory.trusted.is_(True),
                 )

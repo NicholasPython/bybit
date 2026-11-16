@@ -107,13 +107,14 @@ def value_account(policy: ValuationPolicy, data: ValuationInput) -> Valuation:
             details["liabilities"][coin.upper()] = str(liability_value)
 
     option_total = Decimal("0")
+    liabilities = Decimal("0")
+    details["options"]["liabilities"] = str(liabilities)
     for position in data.option_positions:
         size = dec(position.size)
-        if size < 0 or (size > 0 and position.side == "Sell"):
-            missing_rate.append(f"{position.symbol}:不支持期权空头估值")
-            continue
         if size == 0:
             continue
+        # 空头是负债：按卖一（更保守）计价并作为权益扣减，不标记为估值缺失。
+        is_short = position.side == "Sell"
         price = getattr(position, policy.option_price_field, None)
         if price is None:
             price = position.mark_price
@@ -133,9 +134,14 @@ def value_account(policy: ValuationPolicy, data: ValuationInput) -> Valuation:
         except ValueError:
             missing_rate.append(f"{position.symbol}:无效价格、乘数或汇率")
             continue
-        option_total += value
-        details["options"][position.symbol] = str(value)
-    total += option_total
+        if is_short:
+            # 空头价值为正数，但作为负债从总权益中扣除。
+            liabilities += value
+            details["options"]["liabilities"] = str(liabilities)
+        else:
+            option_total += value
+            details["options"][position.symbol] = str(value)
+    total += option_total - liabilities
 
     if missing_rate:
         return Valuation(

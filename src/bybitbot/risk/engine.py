@@ -84,6 +84,26 @@ class OpenOrderExposure:
     order_link_id: str = ""
 
 
+@dataclass(frozen=True)
+class ValidationLimits:
+    """验证价差协议口径的限额。
+
+    两腿价差的风险口径由**协议自身**给出：首腿支出上限、入场点差比例与
+    cohort 风险预算（见 :mod:`bybitbot.validation.protocol`）。这些口径比
+    产品的单腿限额更贴合两腿结构——期权的单腿买卖点差本来就远大于产品
+    面向现货设定的点差上限，首腿支出也按协议上限而非单笔上限衡量。
+
+    带验证持仓的意图按协议口径判定；其余策略仍用产品限额。
+    """
+
+    #: 单腿支出上限（协议首腿支出上限，USDT）。
+    max_spend_per_trade: Decimal
+    #: 入场点差比例上限（协议口径，小数）。
+    max_spread_fraction: Decimal
+    #: 权利金集中度上限（协议首腿支出上限，USDT）。
+    premium_cap_per_underlying: Decimal
+
+
 @dataclass
 class RiskContext:
     """风控判定所需的全部输入。"""
@@ -122,6 +142,8 @@ class RiskContext:
     account_trusted: bool = True
     #: Greeks 单位映射。
     delta_units: DeltaUnits = field(default_factory=DeltaUnits)
+    #: 验证价差协议口径的限额；``None`` 表示按产品限额判定。
+    validation_limits: ValidationLimits | None = None
     #: 本次判定使用的配置版本标识。
     config_version: str = ""
     valuation_trusted: bool = False
@@ -153,7 +175,11 @@ class RiskEngine:
 
     async def evaluate(self, intent: TradeIntent, ctx: RiskContext) -> RiskEvaluation:
         """按开仓/减仓路径分别判定（RSK-04）。"""
-        if intent.action in (IntentAction.SPOT_SELL, IntentAction.OPTION_SELL_CLOSE):
+        if intent.action in (
+            IntentAction.SPOT_SELL,
+            IntentAction.OPTION_SELL_CLOSE,
+            IntentAction.OPTION_BUY_CLOSE,
+        ):
             return self._evaluate_reduce(intent, ctx)
         return self._evaluate_open(intent, ctx)
 
@@ -163,7 +189,7 @@ class RiskEngine:
 
     def _evaluate_open(self, intent: TradeIntent, ctx: RiskContext) -> RiskEvaluation:
         checks: list[RiskCheckResult] = []
-        is_option = intent.action == IntentAction.OPTION_BUY_OPEN
+        is_option = intent.action in {IntentAction.OPTION_BUY_OPEN, IntentAction.OPTION_SELL_OPEN}
 
         checks.append(self._check_account_pause(ctx))
         checks.extend(
@@ -197,7 +223,7 @@ class RiskEngine:
         )
         checks.append(self._check_signal_freshness(intent))
         checks.append(self._check_market_state(ctx))
-        checks.append(self._check_per_trade(intent))
+        checks.append(self._check_per_trade(intent, ctx))
         checks.append(self._check_price_deviation(intent, ctx))
         checks.append(self._check_spread(intent, ctx))
         checks.append(self._check_fee_buffer(intent))
@@ -339,8 +365,13 @@ class RiskEngine:
             )
         return RiskCheckResult(code="MARKET_STATE", approved=True)
 
-    def _check_per_trade(self, intent: TradeIntent) -> RiskCheckResult:
-        cap = self._budget.max_spend_per_trade.value
+    def _check_per_trade(self, intent: TradeIntent, ctx: RiskContext) -> RiskCheckResult:
+        limits = ctx.validation_limits
+        cap = (
+            limits.max_spend_per_trade
+            if limits is not None
+            else self._budget.max_spend_per_trade.value
+        )
         ok = intent.spend_limit <= cap
         return RiskCheckResult(
             code="PER_TRADE_LIMIT",
@@ -397,7 +428,22 @@ class RiskEngine:
             or ticker.ask_price <= ticker.bid_price
         ):
             return RiskCheckResult(code="SPREAD", approved=False, detail="无效或交叉双边报价")
-        spread_bps = (ticker.ask_price - ticker.bid_price) / ticker.bid_price * dec(10000)
+        fraction = (ticker.ask_price - ticker.bid_price) / ticker.bid_price
+        limits = ctx.validation_limits
+        if limits is not None:
+            # 验证价差按协议的点差比例口径判定：产品面向现货的点差上限
+            # 对期权两腿结构没有意义（期权点差天然更宽）。
+            ok = fraction <= limits.max_spread_fraction
+            return RiskCheckResult(
+                code="SPREAD",
+                approved=ok,
+                detail=(
+                    ""
+                    if ok
+                    else f"点差 {fraction:.4%} 超过协议上限 {limits.max_spread_fraction:.2%}"
+                ),
+            )
+        spread_bps = fraction * dec(10000)
         ok = spread_bps <= self._market.max_spread_bps
         return RiskCheckResult(
             code="SPREAD",
@@ -553,6 +599,27 @@ class RiskEngine:
     ) -> RiskCheckResult:
         """到期集中度：同一标的、同一 UTC 到期日的持仓成本加开仓预留（§5.2 末段）。"""
         underlying = self._underlying_of(intent)
+        limits = ctx.validation_limits
+        if limits is not None:
+            # 验证价差的权利金敞口按协议的首腿支出上限衡量：两腿共用一个
+            # 覆盖标的，协议的 cohort 预算已经约束了整段风险。
+            after = (
+                ctx.premium_used_per_underlying.get(underlying, Decimal("0"))
+                + intent.spend_limit
+            )
+            ok = after <= limits.premium_cap_per_underlying
+            return RiskCheckResult(
+                code="PREMIUM_CONCENTRATION_UNDERLYING",
+                approved=ok,
+                detail=(
+                    ""
+                    if ok
+                    else (
+                        f"{intent.symbol} 权利金成本将达到 {after}，"
+                        f"超过协议上限 {limits.premium_cap_per_underlying}"
+                    )
+                ),
+            )
         underlying_limit = self._limits.premium_cost_limit_per_underlying.get(underlying)
         if underlying_limit is not None:
             after = (

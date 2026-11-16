@@ -38,6 +38,26 @@ from bybitbot.db.models import (
 from bybitbot.money import dec
 
 
+def _inventory_side(action: str | None, side: str) -> tuple[str, bool]:
+    """把意图动作映射为 (库存方向, 是否开仓)。
+
+    没有动作语义的历史成交沿用多头口径：买入开仓、卖出平仓。
+    """
+    if action == "OPTION_BUY_OPEN":
+        return "Buy", True
+    if action == "OPTION_SELL_CLOSE":
+        return "Buy", False
+    if action == "OPTION_SELL_OPEN":
+        return "Sell", True
+    if action == "OPTION_BUY_CLOSE":
+        return "Sell", False
+    if action in {"BUY_OPEN", "SPOT_BUY"}:
+        return "Buy", True
+    if action == "SPOT_SELL":
+        return "Buy", False
+    return ("Buy", True) if side.lower() == "buy" else ("Buy", False)
+
+
 class LedgerWriter:
     """账本写入器。所有方法都要求调用方已经处于事务中。"""
 
@@ -148,6 +168,7 @@ class LedgerWriter:
         fee_value: Decimal | None = None,
         intent_id: int | None = None,
         exec_time: dt.datetime | None = None,
+        action: str | None = None,
     ) -> tuple[Decimal, Decimal]:
         """把一笔成交计入策略归属库存。
 
@@ -183,10 +204,11 @@ class LedgerWriter:
             fee if asset == currency else (dec(fee_value) if fee_value is not None else None)
         )
         unvalued_fee = fee != 0 and base_fee == 0 and quote_fee is None
+        position_side, opening = _inventory_side(action, side)
         # 串行化同策略库存的新建/更新，包括尚不存在的行。
         await session.execute(
             text("SELECT pg_advisory_xact_lock(hashtext(:key))"),
-            {"key": f"{self.environment}:cost:{strategy_id}:{symbol}"},
+            {"key": f"{self.environment}:cost:{strategy_id}:{symbol}:{position_side}"},
         )
         inventory = await session.scalar(
             select(Inventory)
@@ -194,6 +216,7 @@ class LedgerWriter:
                 Inventory.environment == self.environment,
                 Inventory.strategy_id == strategy_id,
                 Inventory.symbol == symbol,
+                Inventory.position_side == position_side,
             )
             .with_for_update()
         )
@@ -205,11 +228,16 @@ class LedgerWriter:
             "unvalued_fee",
             "overdrawn",
         }
-        if side.lower() == "buy":
+        if opening:
             net_qty = qty - base_fee
             if net_qty <= 0:
                 raise ValueError("基础币手续费不能耗尽全部买入数量")
-            cost_increment = price * qty + (quote_fee or Decimal("0"))
+            # 多头付权利金、空头收权利金：费用分别计入成本或扣减信用基准。
+            cost_increment = price * qty + (
+                (quote_fee or Decimal("0"))
+                if position_side == "Buy"
+                else -(quote_fee or Decimal("0"))
+            )
             new_qty = old_qty + net_qty
             new_avg = (old_cost * old_qty + cost_increment) / new_qty
             if inventory is None:
@@ -217,6 +245,7 @@ class LedgerWriter:
                     environment=self.environment,
                     strategy_id=strategy_id,
                     symbol=symbol,
+                    position_side=position_side,
                     currency=currency,
                     trusted=True,
                     cost_source="bot_fill",
@@ -239,7 +268,11 @@ class LedgerWriter:
         removed = qty + base_fee
         closed = min(removed, old_qty)
         proceeds = price * qty
-        realised = proceeds - old_cost * closed - (quote_fee or Decimal("0"))
+        if position_side == "Buy":
+            realised = proceeds - old_cost * closed - (quote_fee or Decimal("0"))
+        else:
+            # 平空：收到的信用基准减去买回成本。
+            realised = old_cost * closed - proceeds - (quote_fee or Decimal("0"))
         if inventory is not None:
             inventory.qty = old_qty - closed
             if inventory.qty == 0:

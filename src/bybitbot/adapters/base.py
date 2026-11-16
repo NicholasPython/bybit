@@ -345,6 +345,7 @@ class OrderRequest:
     reduce_only: bool = False
     position_idx: int | None = None
     close_on_trigger: bool = False
+    coverage_symbol: str | None = None
 
 
 @dataclass(frozen=True)

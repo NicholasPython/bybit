@@ -8,7 +8,7 @@
 |---|---|---|
 | 一 | 指标/信号、Call/Put 价差配对与排序、成本闸门、内存阶段账本、观察缺口判定 | 已实现，阶段二 worker 采样已复用信号与候选计算 |
 | 二 | 四张验证表、采样身份/游标、跨标的事务预留、worker tick 采样 | 已实现，只读采样在暂停时仍运行 |
-| 三 | 标准意图、开空/平空、逐腿编排、完整 paper 执行与重启恢复 | 待实施 |
+| 三 | 标准意图、开空/平空、逐腿编排、完整 paper 执行与重启恢复 | 已实现，四腿真实链路测试通过 |
 | 四 | 状态/账本/心跳/最终报告、冻结 manifest 与哈希链、互斥登记、操作台 | 待实施 |
 
 ## 阶段一接口与口径
@@ -34,12 +34,25 @@
 
 K 线从公开 unsigned GET `/v5/market/kline` 读取 BTCUSDT/ETHUSDT 现货 60/D，两个周期共用首次服务端时刻作为截止。完整性仍由公共 K 线校验器负责。合成行情提供独立离线 K 线。采样只产出证据和候选，订单接入由阶段三完成；开始/停止命令与报告入口由阶段四完成。
 
+## 阶段三意图与执行
+
+`ValidationOrchestrator.tick(now_ms, allows_open)` 把研究计划翻译成标准 `TradeIntent`，走 `_submit_draft` → `RiskDecision` → `Reservation` → `Executor.submit` → `Order` → `DurablePaperAdapter` → 执行对账 → `LedgerWriter` 的完整链路。腿序为 `waiting → opening_long → opening_short → open → closing_short → closing_long → closed/aborting`；长多成交后才允许开空，停止时先回补空头再平多头。
+
+- 动作映射：`open_long → OPTION_BUY_OPEN/Buy`、`open_short → OPTION_SELL_OPEN/Sell`、`close_short → OPTION_BUY_CLOSE/Buy`、`close_long → OPTION_SELL_CLOSE/Sell`。开空与平空纳入 `NEW_EXPOSURE_ACTIONS`，沿用开仓窗口、TTL 与撤单口径。
+- 预留路由：`OPTION_SELL_OPEN` 占用 `coverage_symbol` 的库存，其余买入与平空占现金，其余卖出占自身库存。
+- 协议口径风控：验证意图通过 `RiskContext.validation_limits` 使用 `SpreadProtocol` 的首腿支出上限、点差比例与单标的权利金上限，不复用产品单腿限额；产品单腿限额保持不变。协议不可读时验证意图一律拒绝。
+- 协议价格钳制：验证意图以 `protocol_price_limit` 为边界，超出边界直接拒绝追价；物理价与钳制后的 `price_limit` 一致。
+- 覆盖空头授权：paper 空头仅在 `covered_paper_account` 按规范事实（空头成交数量、唯一覆盖合约、`short_qty ≤ long_qty`、实际多头与库存可信）逐项对账后才被信任；对账与负债保护共用同一授权口径，授权空头估值计为负债。
+- 持久化事实：意图保留 `validation_position_id`、`coverage_symbol` 与编排器 signal 身份；撤单/过期沿 `_cancel_expired` 收口，暂停时新增敞口挂单会被撤销。
+
 ## 验证与边界
 
 新增测试覆盖冻结协议解析、信号阈值、坏输入、Call/Put 算术、共同数量步长、深度/预算限制、候选排列稳定性、原 bull-call 纯函数差分、逐腿拒绝原子性及未解决终态。全套项目回归结果记录在对应 PR 中。
 
 阶段二验证：项目 Python 回归 1456 项通过，操作台 Node 测试 6 项通过，Ruff 全部通过。新增迁移在新建的独立 schema 中完成 upgrade/check/downgrade/upgrade/check，未操作已有账本。Alembic 仍输出既有 `path_separator` 配置弃用提示。
 
-当前交付覆盖阶段一、二，九项缺口尚未全部闭合。测试使用离线数据、模拟凭据和隔离数据库 schema。
+阶段三验证：项目 Python 回归 1523 项通过，Ruff 全部通过。四腿真实链路用例驱动真实 `TradingService`、编排器、执行器、paper 适配器、对账与账本，行情取冻结 bull-call 快照 `market-4o2c_dfk` 的 ETH Call 报价（仅到期日平移）；覆盖买腿成交、开空成交、库存方向预留、回补空现金预留、平多库存预留、授权空头估值负债与暂停撤单。未发送任何真实交易请求。
+
+当前交付覆盖阶段一、二、三，阶段四尚未闭合。测试使用离线数据、模拟凭据和隔离数据库 schema。
 
 这些数据可用于模拟定价回测，但不能替代历史期权真实报价。

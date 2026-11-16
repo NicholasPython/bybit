@@ -24,8 +24,8 @@ from bybitbot.validation import (
     evaluate_signal,
     remaining_risk_budget,
 )
+from bybitbot.validation.journal import append_event
 from bybitbot.validation.models import (
-    ValidationLedger,
     ValidationObservation,
     ValidationPosition,
     ValidationStudy,
@@ -114,17 +114,54 @@ class ValidationStore:
             session.add(study)
             await session.flush()
             session.add_all(ValidationPosition(study_id=study.id, base=base) for base in bases)
-            session.add(
-                ValidationLedger(
-                    study_id=study.id,
-                    dedupe_key="started",
-                    kind="started",
-                    occurred_ms=started_ms,
-                    payload=values,
-                )
+            await append_event(
+                session,
+                study,
+                dedupe_key="started",
+                kind="started",
+                occurred_ms=started_ms,
+                payload=values,
             )
             await session.commit()
             return study
+
+    async def bind(self, study_id: int, *, strategy_id: int, version: int):
+        """Bind before any intent; restart cannot silently replace the strategy version."""
+        from bybitbot.db.models import Strategy, StrategyConfigVersion
+
+        async with self.sessionmaker() as session:
+            study = await self.locked(session, study_id)
+            strategy = await session.get(Strategy, strategy_id)
+            config = await session.scalar(
+                select(StrategyConfigVersion).where(
+                    StrategyConfigVersion.strategy_id == strategy_id,
+                    StrategyConfigVersion.version == version,
+                    StrategyConfigVersion.active.is_(True),
+                )
+            )
+            if (
+                study.status != "running"
+                or strategy is None
+                or not strategy.enabled
+                or strategy.environment != self.environment
+                or strategy.kind != "validation_spread"
+                or config is None
+            ):
+                raise ValueError("运行需要启用的 validation_spread 策略及生效版本")
+            binding = {"strategy_id": strategy_id, "version": version}
+            positions = list(
+                await session.scalars(
+                    select(ValidationPosition).where(ValidationPosition.study_id == study_id)
+                )
+            )
+            for position in positions:
+                current = position.state.get("binding")
+                if current and current != binding:
+                    raise ValueError("验证运行不能更换策略版本")
+                if not current and position.phase != "waiting":
+                    raise ValueError("已开始的验证不能补绑定策略")
+                position.state = position.state | {"binding": binding}
+            await session.commit()
 
     async def active(self):
         if self.environment != "paper":
@@ -208,14 +245,13 @@ class ValidationStore:
                         max_gap_seconds=protocol.max_observation_gap_seconds,
                     )
                     if gap:
-                        session.add(
-                            ValidationLedger(
-                                study_id=study_id,
-                                dedupe_key=f"gap:{slot_ms}:{base}",
-                                kind="observation_gap",
-                                occurred_ms=observed_ms,
-                                payload=json_value(asdict(gap)),
-                            )
+                        await append_event(
+                            session,
+                            study,
+                            dedupe_key=f"gap:{slot_ms}:{base}",
+                            kind="observation_gap",
+                            occurred_ms=observed_ms,
+                            payload=asdict(gap),
                         )
             if not error:
                 study.last_observed_ms = observed_ms
@@ -224,14 +260,13 @@ class ValidationStore:
             study.next_due_ms = (
                 study.started_ms + ((observed_ms - study.started_ms) // period + 1) * period
             )
-            session.add(
-                ValidationLedger(
-                    study_id=study_id,
-                    dedupe_key=f"sample:{slot_ms}",
-                    kind="sample_error" if error else "sample",
-                    occurred_ms=observed_ms,
-                    payload={"slot_ms": slot_ms, "snapshot_hash": snapshot_hash, "error": error},
-                )
+            await append_event(
+                session,
+                study,
+                dedupe_key=f"sample:{slot_ms}",
+                kind="sample_error" if error else "sample",
+                occurred_ms=observed_ms,
+                payload={"slot_ms": slot_ms, "snapshot_hash": snapshot_hash, "error": error},
             )
             await session.commit()
             return True

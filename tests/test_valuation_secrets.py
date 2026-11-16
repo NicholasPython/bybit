@@ -206,19 +206,20 @@ def test_contract_multiplier_and_settle_rate_scale_option_value():
     assert result.equity == Decimal("9")
 
 
-@pytest.mark.parametrize("size", [Decimal("-1"), Decimal("1")])
-def test_short_option_position_makes_valuation_incomplete(size):
+def test_short_option_position_is_valued_as_liability():
+    # 已授权的纸面卖空是合法负债：按卖一计价并从权益中扣减，估值仍完整（不标记缺失）。
     result = value_account(
         POLICY,
         ValuationInput(
             account=account(cash("USDT", "100")),
             cash_rates={"USDT": Decimal("1")},
+            contract_multiplier={"BTC-OPT": Decimal("1")},
             option_positions=[
                 PositionView(
                     category="option",
                     symbol="BTC-OPT",
-                    size=size,
-                    side="Sell" if size > 0 else None,
+                    size=Decimal("1"),
+                    side="Sell",
                     mark_price=Decimal("50"),
                     settle_coin="USDT",
                 )
@@ -226,8 +227,10 @@ def test_short_option_position_makes_valuation_incomplete(size):
             settle_rates={"USDT": Decimal("1")},
         ),
     )
-    assert not result.complete
-    assert "不支持期权空头" in result.incomplete_reason
+    assert result.complete
+    # 空头价值为正数，但作为负债从总权益中扣除：100 现金 − 50 负债 = 50。
+    assert result.details["options"]["liabilities"] == "50"
+    assert result.equity == Decimal("50")
 
 
 def test_accrued_interest_without_principal_makes_valuation_incomplete():

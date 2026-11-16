@@ -34,6 +34,7 @@ from bybitbot.execution.states import (
 from bybitbot.ledger import LedgerWriter
 from bybitbot.risk.reservation import ReservationManager
 from bybitbot.settings.models import ReservationStatus
+from bybitbot.validation.authority import covered_paper_account
 
 ZERO = Decimal("0")
 TOLERANCE = Decimal("1e-12")
@@ -532,13 +533,38 @@ class Reconciler:
                     ),
                 )
             for view in by_key.values():
+                # 方向感知匹配：账户视图的 side 决定只核对同方向的库存归属。
+                # 平头视图仍比对全部库存；卖空视图只比对 Sell 库存（覆盖多头是另一侧）。
                 owned = [item for item in inventory if item.symbol == view.symbol and item.qty > 0]
+                if view.side and view.side.lower() == "sell":
+                    owned = [item for item in owned if item.position_side == "Sell"]
                 expected = sum((item.qty for item in owned), ZERO)
                 matches = abs(expected - view.size) <= TOLERANCE
+                # 只有当账户视图本身可信时，不一致才把 bot 归属标为不可信。
+                # 已授权的纸面卖空是合法事实：只有它精确对上验证价差的规范
+                # 成交事实（覆盖多头充足、库存可信）才算可信，而不是因为
+                # 空头存在就一律判漂移。
+                authorized_short = False
+                if (
+                    self.environment == "paper"
+                    and view.side
+                    and view.side.lower() == "sell"
+                    and view.size > 0
+                    and matches
+                    and all(item.trusted for item in owned)
+                ):
+                    # covered_paper_account 需要全账户视图来找覆盖多头，
+                    # 不能只传当前空头。
+                    authorized_short = await covered_paper_account(
+                        session,
+                        environment=self.environment,
+                        account_uid=self.account_uid,
+                        positions=list(views),
+                    )
                 trusted = (
                     matches
                     and all(item.trusted for item in owned)
-                    and (view.size == 0 or (view.side or "").lower() == "buy")
+                    and (authorized_short or (view.size == 0 or (view.side or "").lower() == "buy"))
                 )
                 if not trusted:
                     result.differences.append(
@@ -568,6 +594,7 @@ class Reconciler:
                         unrealised_pnl=view.unrealised_pnl,
                         trusted=trusted,
                     )
+                    # 仅当账户视图不可信时才释放该合约下所有库存的可信标记。
                     if not trusted:
                         for item in await session.scalars(
                             select(Inventory)

@@ -86,6 +86,8 @@ class IntentAction(StrEnum):
     SPOT_SELL = "SPOT_SELL"
     OPTION_BUY_OPEN = "OPTION_BUY_OPEN"
     OPTION_SELL_CLOSE = "OPTION_SELL_CLOSE"
+    OPTION_SELL_OPEN = "OPTION_SELL_OPEN"
+    OPTION_BUY_CLOSE = "OPTION_BUY_CLOSE"
 
 
 class OrderStatus(StrEnum):
@@ -441,16 +443,16 @@ class StrategyConfig(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     name: str = Field(min_length=1, max_length=64)
-    kind: Literal["spot_fixed_budget_dca", "option_single_leg_buy"]
+    kind: Literal["spot_fixed_budget_dca", "option_single_leg_buy", "validation_spread"]
     enabled: bool = False
     symbols: tuple[str, ...] = Field(min_length=1)
     #: 计划运行的 UTC 时刻（HH:MM），每个时刻一个信号去重键。
-    schedule_utc: tuple[str, ...] = Field(min_length=1)
+    schedule_utc: tuple[str, ...]
     signal_ttl_seconds: Annotated[int, Field(ge=1)]
     cooldown_seconds: Annotated[int, Field(ge=0)]
     budget_per_run: DecimalAmount
     max_spend_per_trade: DecimalAmount
-    exit_rules: tuple[ExitRuleConfig, ...] = Field(min_length=1)
+    exit_rules: tuple[ExitRuleConfig, ...]
     params: dict[str, str] = Field(default_factory=dict)
 
     @field_validator("symbols")
@@ -471,6 +473,11 @@ class StrategyConfig(BaseModel):
 
     @model_validator(mode="after")
     def _consistent(self) -> StrategyConfig:
+        if self.kind == "validation_spread":
+            if self.schedule_utc or self.exit_rules or self.params:
+                raise ValueError("验证价差由持久化编排调度，不使用普通调度、退出或 params")
+        elif not self.schedule_utc or not self.exit_rules:
+            raise ValueError("普通策略必须配置调度与退出规则")
         if self.budget_per_run.currency != self.max_spend_per_trade.currency:
             raise ValueError("每轮预算与单笔上限必须是同一币种")
         if self.max_spend_per_trade.value > self.budget_per_run.value:

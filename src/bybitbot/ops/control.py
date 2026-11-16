@@ -208,7 +208,9 @@ class ControlCommandManager:
             statement = statement.where(Order.order_link_id.in_(payload.get("order_link_ids", [])))
         else:
             statement = statement.where(
-                TradeIntent.action.in_(["BUY_OPEN", "SPOT_BUY", "OPTION_BUY_OPEN"])
+                TradeIntent.action.in_(
+                    ["BUY_OPEN", "SPOT_BUY", "OPTION_BUY_OPEN", "OPTION_SELL_OPEN"]
+                )
             )
         if payload.get("symbol"):
             statement = statement.where(Order.symbol == payload["symbol"])

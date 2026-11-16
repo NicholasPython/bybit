@@ -11,6 +11,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
@@ -36,6 +37,12 @@ class ValidationStudy(Base):
     last_observed_ms: Mapped[int | None] = mapped_column(BigInteger)
     heartbeat_ms: Mapped[int | None] = mapped_column(BigInteger)
     last_error: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    evidence: Mapped[dict] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb")
+    )
+    chain_head: Mapped[str] = mapped_column(
+        String(64), nullable=False, default="0" * 64, server_default="0" * 64
+    )
 
     __table_args__ = (
         UniqueConstraint("environment", "account_uid", "run_id", name="uq_validation_run"),
@@ -92,4 +99,11 @@ class ValidationLedger(Base):
     occurred_ms: Mapped[int] = mapped_column(BigInteger, nullable=False)
     payload: Mapped[dict] = mapped_column(JSONB, nullable=False)
 
-    __table_args__ = (UniqueConstraint("study_id", "dedupe_key", name="uq_validation_event"),)
+    sequence: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    previous_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    event_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("study_id", "dedupe_key", name="uq_validation_event"),
+        UniqueConstraint("study_id", "sequence", name="uq_validation_sequence"),
+    )
