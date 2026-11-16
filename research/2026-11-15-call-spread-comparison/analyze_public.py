@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Deterministic exploratory call-spread screen; stdlib only; run with -I.
+"""Deterministic exploratory call-spread screen; installed bybitbot; run with -I.
 
 Inputs are saved public responses. No network, credentials, account or order API.
 Budget = synchronized terminal payoff loss including entry fees and adverse ticks,
@@ -19,6 +19,9 @@ from collections import Counter
 from decimal import ROUND_FLOOR, Decimal
 from pathlib import Path
 
+from bybitbot.terms import delivery_fee as shared_delivery_fee
+from bybitbot.terms import option_fee, option_spec
+
 D = Decimal
 HOUR = 3_600_000
 DAY = 24 * HOUR
@@ -36,11 +39,13 @@ def number(row, key):
 
 
 def fee(price, index, qty=D(1)):
-    return min(RATE * index, CAP * price) * qty
+    return option_fee(
+        premium=price, qty=qty, index_price=index, underlying_rate=RATE, premium_cap_rate=CAP
+    )
 
 
 def delivery_fee(price, strike, rate, qty):
-    return min(rate * price, D(".125") * max(price - strike, D(0))) * qty
+    return shared_delivery_fee(price=price, strike=strike, rate=rate, cap_rate=D(".125"), qty=qty)
 
 
 def read_records(manifest_path):
@@ -168,12 +173,13 @@ def quotes_for(records, base, now):
         dte = D(int(ins["deliveryTime"]) - now) / D(DAY)
         if not D(10) <= dte <= D(40):
             continue
+        spec = option_spec(ins, base=base)
         bid, ask = number(ticker, "bid1Price"), number(ticker, "ask1Price")
         q = {
             "symbol": ticker["symbol"],
-            "strike": D(ticker["symbol"].rsplit("-", 3)[1]),
-            "expiryMs": int(ins["deliveryTime"]),
-            "expiryUtc": utc(int(ins["deliveryTime"])),
+            "strike": spec.strike,
+            "expiryMs": spec.expiry_ms,
+            "expiryUtc": utc(spec.expiry_ms),
             "dte": dte,
             "bid": bid,
             "ask": ask,
@@ -182,12 +188,12 @@ def quotes_for(records, base, now):
             "delta": number(ticker, "delta"),
             "markIvPct": number(ticker, "markIv") * 100,
             "index": number(ticker, "indexPrice"),
-            "tick": number(ins["priceFilter"], "tickSize"),
-            "minQty": number(ins["lotSizeFilter"], "minOrderQty"),
-            "step": number(ins["lotSizeFilter"], "qtyStep"),
-            "maxQty": number(ins["lotSizeFilter"], "maxOrderQty"),
-            "minPrice": number(ins["priceFilter"], "minPrice"),
-            "maxPrice": number(ins["priceFilter"], "maxPrice"),
+            "tick": spec.tick,
+            "minQty": spec.min_qty,
+            "step": spec.step,
+            "maxQty": spec.max_qty,
+            "minPrice": spec.min_price,
+            "maxPrice": spec.max_price,
             "deliveryFeeRate": number(ins, "deliveryFeeRate"),
             "responseTimeUtc": utc(int(tr["payload"]["time"])),
             "volume24h": number(ticker, "volume24h"),

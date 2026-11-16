@@ -26,6 +26,8 @@ from dataclasses import dataclass
 from decimal import Decimal
 
 from bybitbot.money import dec
+from bybitbot.terms.fees import option_fee as _option_fee
+from bybitbot.terms.fees import spot_fee as _spot_fee
 
 #: Bybit 期权非 VIP taker：标的指数价的 0.03%。
 OPTION_UNDERLYING_RATE = Decimal("0.0003")
@@ -76,7 +78,7 @@ class FeeModel:
     # ------------------------------------------------------------------
     def spot_fee(self, *, price: Decimal, qty: Decimal) -> Decimal:
         """现货 taker 费用（按成交额计收）。"""
-        return dec(price) * dec(qty) * dec(self.spot_taker_rate)
+        return _spot_fee(price=dec(price), qty=dec(qty), rate=dec(self.spot_taker_rate))
 
     def spot_fee_ratio(self) -> Decimal:
         """现货费用占成交额的比例。"""
@@ -96,16 +98,14 @@ class FeeModel:
 
         ``index_price`` 是标的指数价；缺失时按封顶比例计费（保守上界）。
         """
-        price, size = dec(option_price), dec(qty)
-        if any(not value.is_finite() or value < 0 for value in (price, size)):
-            raise ValueError("期权价格与数量必须为非负有限数")
-        cap = price * dec(self.option_premium_cap_rate)
-        index = dec(index_price) if index_price is not None else None
-        if index is None or not index.is_finite() or index <= 0:
-            per_unit = cap
-        else:
-            per_unit = min(index * dec(self.option_underlying_rate), cap)
-        return size * (per_unit + dec(self.option_per_contract))
+        return _option_fee(
+            premium=dec(option_price),
+            qty=dec(qty),
+            index_price=dec(index_price) if index_price is not None else None,
+            underlying_rate=dec(self.option_underlying_rate),
+            premium_cap_rate=dec(self.option_premium_cap_rate),
+            per_contract=dec(self.option_per_contract),
+        )
 
     def option_fee_ratio(
         self,

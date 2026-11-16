@@ -675,6 +675,24 @@ class PaperConfig(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
     initial_balances: dict[str, Decimal] = Field(default_factory=lambda: {"USDT": Decimal("1000")})
     public_market_url: Literal["https://api.bybit.com"] = "https://api.bybit.com"
+    market_source: Literal["public", "synthetic"] = "public"
+    synthetic_expiry: dt.datetime | None = None
+
+    @model_validator(mode="after")
+    def _synthetic_terms(self) -> PaperConfig:
+        if self.market_source == "synthetic":
+            expiry = self.synthetic_expiry
+            if expiry is None or expiry.tzinfo is None or expiry.utcoffset() is None:
+                raise ValueError("合成行情必须配置带时区的固定到期日")
+            utc = expiry.astimezone(dt.UTC)
+            if not 2000 <= utc.year < 2100 or (
+                utc.hour,
+                utc.minute,
+                utc.second,
+                utc.microsecond,
+            ) != (8, 0, 0, 0):
+                raise ValueError("合成期权到期日必须是 2000—2099 年的 08:00 UTC")
+        return self
 
     @field_validator("initial_balances")
     @classmethod

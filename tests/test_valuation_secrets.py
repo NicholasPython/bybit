@@ -133,13 +133,31 @@ def test_missing_option_price_marks_valuation_incomplete():
         ValuationInput(
             account=account(cash("USDT", "100")),
             cash_rates={"USDT": Decimal("1")},
-            option_positions=[
-                PositionView(category="option", symbol="ETH-OPT", size=Decimal("1"))
-            ],
+            option_positions=[PositionView(category="option", symbol="ETH-OPT", size=Decimal("1"))],
         ),
     )
     assert not result.complete
     assert "ETH-OPT:price" in result.incomplete_reason
+
+
+@pytest.mark.parametrize("price", [Decimal("NaN"), Decimal("Infinity"), Decimal("-1")])
+def test_invalid_option_price_marks_valuation_incomplete(price):
+    result = value_account(
+        POLICY,
+        ValuationInput(
+            account=account(cash("USDT", "100")),
+            cash_rates={"USDT": Decimal("1")},
+            option_positions=[
+                PositionView(
+                    category="option", symbol="ETH-OPT", size=Decimal("1"), mark_price=price
+                )
+            ],
+            settle_rates={"USDT": Decimal("1")},
+        ),
+    )
+    assert not result.complete
+    assert result.equity == Decimal("100")
+    assert "ETH-OPT:无效价格、乘数或汇率" in result.incomplete_reason
 
 
 def test_missing_settle_rate_marks_valuation_incomplete():
@@ -284,9 +302,7 @@ def test_drawdown_is_peak_minus_current_and_never_negative():
 def test_day_key_and_day_start_follow_configured_timezone():
     moment = dt.datetime(2026, 10, 31, 20, 0, tzinfo=dt.UTC)  # 北京时间 11-01 04:00
     assert day_key(moment, "Asia/Shanghai") == "2026-11-01"
-    assert day_start(moment, "Asia/Shanghai") == dt.datetime(
-        2026, 10, 31, 16, 0, tzinfo=dt.UTC
-    )
+    assert day_start(moment, "Asia/Shanghai") == dt.datetime(2026, 10, 31, 16, 0, tzinfo=dt.UTC)
 
 
 # --------------------------------------------------------------------------

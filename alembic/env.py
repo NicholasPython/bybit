@@ -23,7 +23,7 @@ target_metadata = Base.metadata
 
 
 def _dsn() -> str:
-    dsn = os.environ.get("BYBITBOT_DB_DSN")
+    dsn = config.attributes.get("db_dsn") or os.environ.get("BYBITBOT_DB_DSN")
     if not dsn:
         raise RuntimeError(
             "请设置 BYBITBOT_DB_DSN 后再运行迁移，例如：\n"

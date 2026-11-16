@@ -52,3 +52,7 @@ research/2026-11-15-bull-call-forward/bull-transport-check-*/
 research/2026-11-15-bull-call-forward/run-v1/runner.lock
 # 每次采样复制一份对向实验账本证据，五天会累积数百份；起始证据入库，后续留在本地。
 research/2026-11-15-bull-call-forward/run-v1/evidence/opposite-*/
+
+# 新版研究独立运行；冻结账本与逐次原始采样保留在本地。
+research/2026-11-15-bull-call-forward-v2/snapshots/
+research/2026-11-15-bull-call-forward-v2/run-*/

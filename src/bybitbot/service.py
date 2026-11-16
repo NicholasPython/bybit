@@ -84,8 +84,19 @@ def json_value(value):
 
 
 def config_fingerprint(config: AppConfig) -> str:
-    safe = config.model_dump(mode="json", exclude={"environments"})
-    return hashlib.sha256(json.dumps(safe, sort_keys=True).encode()).hexdigest()[:20]
+    # 集合无业务顺序；必须在 JSON 转为列表前排序，否则不同进程可能产生不同版本。
+    safe = config.model_dump(mode="python", exclude={"environments"})
+
+    def encode(value):
+        if isinstance(value, (set, frozenset)):
+            return sorted(value)
+        if isinstance(value, dt.datetime):
+            return value.isoformat()
+        return str(value)
+
+    return hashlib.sha256(json.dumps(safe, sort_keys=True, default=encode).encode()).hexdigest()[
+        :20
+    ]
 
 
 class StateStore:
@@ -320,7 +331,11 @@ class TradingService:
                 await self.adapter.__aenter__()
                 self._owned_adapters.append(self.adapter)
         if self.market_adapter is None:
-            if self.environment == "paper":
+            if self.environment == "paper" and self.config.paper.market_source == "synthetic":
+                from bybitbot.adapters.synthetic import SyntheticMarket
+
+                self.market_adapter = SyntheticMarket(self.config.paper.synthetic_expiry)
+            elif self.environment == "paper":
                 self.market_adapter = BybitRestAdapter(
                     base_url=self.config.paper.public_market_url,
                     allow_trade_writes=False,
@@ -508,8 +523,9 @@ class TradingService:
                 updated.profile != self.config.profile
                 or updated.runtime.proxy != self.config.runtime.proxy
                 or updated.fees != self.config.fees
+                or updated.paper != self.config.paper
             ):
-                raise RuntimeError("环境、端点、凭据、代理或费用口径变更需重启")
+                raise RuntimeError("环境、端点、凭据、代理、模拟行情或费用口径变更需重启")
             if config_fingerprint(updated) != self._config_hash:
                 self.config = updated
                 await self._apply_config()
@@ -1835,12 +1851,7 @@ class TradingService:
                     and (spec.delivery_time - now_utc()).total_seconds()
                     <= self.config.option.exit_before_expiry_seconds
                 )
-                if (
-                    kind == "profit_threshold"
-                    and quote
-                    and quote.bid_price
-                    and item.avg_cost > 0
-                ):
+                if kind == "profit_threshold" and quote and quote.bid_price and item.avg_cost > 0:
                     rate = self._fee_ratio(category, item.symbol, quote.bid_price)
                     proceeds = quote.bid_price * (1 - rate)
                     due = (proceeds / item.avg_cost - 1) * 100 >= Decimal(
@@ -1856,9 +1867,7 @@ class TradingService:
                     # 权利金止损：按可成交的买一价（含费用）相对持仓成本亏损判定。
                     rate = self._fee_ratio(category, item.symbol, quote.bid_price)
                     proceeds = quote.bid_price * (1 - rate)
-                    due = (proceeds / item.avg_cost - 1) * 100 <= -Decimal(
-                        rule["stop_loss_pct"]
-                    )
+                    due = (proceeds / item.avg_cost - 1) * 100 <= -Decimal(rule["stop_loss_pct"])
                 if due and trigger is None:
                     trigger = (owner, rule)
             if trigger is None:
@@ -2093,7 +2102,11 @@ class TradingService:
                 "valuation_complete": bool(self.valuation and self.valuation.complete),
                 "baseline_available": self.baseline_ok,
                 "config_version": self._config_hash,
-                "source": "paper 模拟，保守可见深度模型"
+                "source": (
+                    "paper 模拟 · 离线合成行情 · 可见深度模型"
+                    if self.config.paper.market_source == "synthetic"
+                    else "paper 模拟 · Bybit 公共行情 · 可见深度模型"
+                )
                 if self.environment == "paper"
                 else self.environment,
                 "clock_checked": self._clock_at > 0,

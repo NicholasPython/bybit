@@ -52,6 +52,7 @@ from bybitbot.adapters.base import (
     TransientError,
 )
 from bybitbot.clock import backoff_delay, now_utc
+from bybitbot.terms import option_filters, parse_option_symbol
 
 # These codes are retryable for READS, never for writes. 10002 gets a fresh
 # signature timestamp on each attempt; clock skew still requires caller action.
@@ -1026,17 +1027,18 @@ def _validate_delivery_spec(spec: InstrumentSpec) -> None:
         or spec.strike_price is None
         or not spec.strike_price.is_finite()
         or spec.strike_price <= 0
-        or _strike_from_symbol(spec.symbol) != spec.strike_price
         or spec.delivery_time is None
         or spec.delivery_time.tzinfo is None
         or spec.delivery_time.utcoffset() is None
     ):
         raise InsufficientCapability("Unverified option delivery instrument or settlement currency")
-    try:
-        expiry_date = dt.datetime.strptime(parts[1], "%d%b%y").date()
-    except ValueError:
-        raise InsufficientCapability("Unverified option symbol expiry date") from None
-    if expiry_date != spec.delivery_time.astimezone(dt.UTC).date():
+    # 符号解释与研究侧同一份实现（bybitbot.terms）：行权价与到期日都必须对上。
+    terms = parse_option_symbol(spec.symbol)
+    if terms is None:
+        raise InsufficientCapability("Unverified option symbol expiry date")
+    if terms.strike != spec.strike_price:
+        raise InsufficientCapability("Unverified option delivery instrument or settlement currency")
+    if terms.expiry.date() != spec.delivery_time.astimezone(dt.UTC).date():
         raise InsufficientCapability("Option symbol expiry disagrees with instrument delivery time")
 
 
@@ -1191,19 +1193,20 @@ def _parse_instrument(category: str, item: dict[str, Any]) -> InstrumentSpec:
     lot_filter = item.get("lotSizeFilter") or {}
     if not isinstance(price_filter, dict) or not isinstance(lot_filter, dict):
         raise BybitRestError("Invalid instrument filters")
+    # 过滤条件由公共层提取，与研究侧同一份实现（bybitbot.terms）。
+    filters = option_filters(price_filter, lot_filter)
     return InstrumentSpec(
         category=category,
         symbol=symbol,
         base_coin=_text(item, "baseCoin").upper(),
         quote_coin=_text(item, "quoteCoin").upper(),
         status=_text(item, "status"),
-        tick_size=_opt_dec(price_filter.get("tickSize")),
-        qty_step=_opt_dec(lot_filter.get("qtyStep")) or _opt_dec(lot_filter.get("basePrecision")),
-        min_order_qty=_opt_dec(lot_filter.get("minOrderQty")),
-        max_order_qty=_opt_dec(lot_filter.get("maxLimitOrderQty"))
-        or _opt_dec(lot_filter.get("maxOrderQty")),
-        min_order_amt=_opt_dec(lot_filter.get("minOrderAmt")),
-        max_order_amt=_opt_dec(lot_filter.get("maxOrderAmt")),
+        tick_size=filters.tick,
+        qty_step=filters.step or _opt_dec(lot_filter.get("basePrecision")),
+        min_order_qty=filters.min_qty,
+        max_order_qty=filters.max_qty,
+        min_order_amt=filters.min_order_amt,
+        max_order_amt=filters.max_order_amt,
         settle_coin=str(item["settleCoin"]).upper() if item.get("settleCoin") else None,
         options_type=item.get("optionsType")
         if item.get("optionsType") in {"Call", "Put"}
@@ -1216,8 +1219,12 @@ def _parse_instrument(category: str, item: dict[str, Any]) -> InstrumentSpec:
 
 
 def _strike_from_symbol(symbol: str) -> Decimal | None:
-    parts = symbol.split("-")
-    return _opt_dec(parts[2]) if len(parts) in {4, 5} and parts[3] in {"C", "P"} else None
+    """从合约符号取行权价；符号不合规时返回 ``None``。
+
+    符号解释由公共层完成（bybitbot.terms），研究侧用的是同一份解析。
+    """
+    terms = parse_option_symbol(symbol)
+    return terms.strike if terms is not None else None
 
 
 def _parse_ticker(

@@ -1,1 +1,17 @@
-{"version":"0.0.1","configurations":[{"name":"management-local","runtimeExecutable":"uv","runtimeArgs":["run","bybitbot","--config","secrets/local/config.yaml","web","--auth","secrets/local/admin.json","--host","127.0.0.1","--port","18081","--insecure-local-cookie"],"port":18081}]}
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "management-local",
+      "runtimeExecutable": "uv",
+      "runtimeArgs": ["run", "bybitbot", "--config", "secrets/local/config.yaml", "web", "--auth", "secrets/local/admin.json", "--host", "127.0.0.1", "--port", "18081", "--insecure-local-cookie"],
+      "port": 18081
+    },
+    {
+      "name": "paper-system",
+      "runtimeExecutable": ".venv/bin/bybitbot",
+      "runtimeArgs": ["--config", "var/paper-system-v3/config.yaml", "web", "--auth", "var/paper-system-v3/admin.json", "--host", "127.0.0.1", "--port", "18082", "--insecure-local-cookie"],
+      "port": 18082
+    }
+  ]
+}

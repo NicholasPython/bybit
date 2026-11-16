@@ -81,12 +81,28 @@ def main():
     admin.add_argument("--path", type=Path, default=Path("secrets/admin.json"))
     admin.add_argument("--username", default="admin")
     admin.add_argument("--generate-password-file", type=Path)
+    sandbox = sub.add_parser("sandbox", help="建立或验收本地隔离 paper 系统，不访问交易所")
+    sandbox.add_argument("action", choices=("init", "verify"))
+    sandbox.add_argument("--directory", type=Path, default=Path("var/paper-system"))
+    sandbox.add_argument("--dsn", default=os.environ.get("BYBITBOT_SANDBOX_DSN"))
+    sandbox.add_argument("--template", type=Path, default=Path("config/config.example.yaml"))
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
     logging.getLogger("httpx").setLevel(logging.WARNING)
     logging.getLogger("httpcore").setLevel(logging.WARNING)
     if args.command == "init-admin":
         init_admin(args.path, password_file=args.generate_password_file, username=args.username)
+        return
+    if args.command == "sandbox":
+        from bybitbot.sandbox import initialize, verify
+
+        if args.action == "init":
+            if not args.dsn:
+                parser.error("sandbox init 需要 --dsn 或 BYBITBOT_SANDBOX_DSN（本机 PostgreSQL）")
+            result = asyncio.run(initialize(args.directory, dsn=args.dsn, template=args.template))
+        else:
+            result = asyncio.run(verify(args.directory))
+        print(json.dumps(result, ensure_ascii=False, indent=2))
         return
     config = load_config(args.config)
     if args.command == "check":

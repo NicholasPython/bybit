@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import math
 from decimal import ROUND_CEILING, ROUND_DOWN, ROUND_HALF_UP, Decimal
 from enum import StrEnum
 
@@ -111,6 +112,22 @@ def floor_to_increment(value: Decimal, increment: Decimal) -> Decimal:
     return (value // increment) * increment
 
 
+def common_step(a: Decimal, b: Decimal) -> Decimal:
+    """两个数量步长的**最小公倍数**步长。
+
+    组合两个腿时，两边的步长必须能同时满足：某个数量对两边都是整数倍。
+    步长取最小公倍数即可（例如 0.05 与 0.02 → 0.1；1 与 0.5 → 1）。
+
+    步长必须为正；步长本身已是最小公倍数时返回它本身。
+    """
+    for name, value in (("a", a), ("b", b)):
+        if not value.is_finite() or value <= 0:
+            raise ValueError(f"步长 {name} 必须为正数")
+    places = max(0, -a.as_tuple().exponent, -b.as_tuple().exponent)
+    scale = 10**places
+    return dec(math.lcm(int(a * scale), int(b * scale))) / scale
+
+
 def dec_str(value: Decimal) -> str:
     """去掉尾随零的字符串表示，用于导出与日志。"""
     normalized = value.normalize()
@@ -147,6 +164,7 @@ def min_decimal(*values: Decimal) -> Decimal:
 __all__ = [
     "Rounding",
     "apply_spread",
+    "common_step",
     "dec",
     "dec_str",
     "floor_to_increment",

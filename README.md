@@ -7,6 +7,8 @@
 - 当前验收矩阵（逐条 AC-01～AC-28 的证据与缺口）：[docs/acceptance.md](docs/acceptance.md)
 - NAS 部署与运维手册：[docs/runbook-nas.md](docs/runbook-nas.md)
 - 2026-11-01 测试报告整改与发布证据：[docs/remediation-2026-11-01.md](docs/remediation-2026-11-01.md)
+- 2026-11-16 公共层与本地 paper 系统交付：[docs/paper-system-2026-11-16.md](docs/paper-system-2026-11-16.md)
+- 公共层边界与研究迁移：[docs/shared-domain.md](docs/shared-domain.md)
 
 ## 组成
 
@@ -16,6 +18,7 @@
 | `bybitbot web` | 只读管理页与控制命令入队（控制命令由 worker 领取执行，页面本身不发单） |
 | `bybitbot migrate` | 数据库版本迁移 |
 | `bybitbot init-admin` | 创建管理身份（PBKDF2，口令不写入日志） |
+| `bybitbot sandbox init / verify` | 新建本地独立 schema 与固定合成行情，验收策略到重启恢复的 paper 闭环 |
 
 内部模块（`src/bybitbot/`）：
 
@@ -60,7 +63,7 @@ uv run ruff check src tests deploy
 uv run pytest -q
 ```
 
-最新结果为 **358 项通过**。测试在 `BYBITBOT_TESTING=1` 下运行；`tests/conftest.py` 阻断 httpx 的默认同步和异步 HTTP transport，交易所 HTTP 响应使用 `httpx.MockTransport`，交易行为使用 `PaperAdapter` 合成。数据库用例各自使用独立 PostgreSQL schema，结束后只删除自己的 schema。这不是操作系统级网络隔离，也不构成真实 Bybit 能力验收。管理页命令提示另有 `node --test tests/console_ui.test.mjs`（4 项）覆盖。
+2026-11-16 最新结果为 **701 项通过**（一个 Alembic `path_separator` 弃用警告）。测试在 `BYBITBOT_TESTING=1` 下运行；`tests/conftest.py` 阻断 httpx 的默认同步和异步 HTTP transport，交易所 HTTP 响应使用 `httpx.MockTransport`，交易行为使用 `PaperAdapter` 合成。数据库用例各自使用独立 PostgreSQL schema，结束后只删除自己的 schema。这不是操作系统级网络隔离，也不构成真实 Bybit 能力验收。管理页命令提示另有 `node --test tests/console_ui.test.mjs`（6 项）覆盖。
 
 ## 配置
 
@@ -153,11 +156,25 @@ uv run bybitbot --config config/config.yaml web --auth secrets/admin.json --host
 
 策略默认禁用。启用任何一个策略前，先确认该策略的限额、退出规则与告警渠道都已就位。
 
+## 本地隔离 paper 系统
+
+不接触交易所凭据即可跑通完整链路：新建随机命名的独立 schema，固定合成行情与合约到期日，应用真实迁移，生成 paper-only 配置和本地管理员，然后走基线、接管、策略下单、费用入账、暂停拒单、减仓与重启恢复。
+
+```bash
+uv run bybitbot sandbox init --directory var/paper-system --dsn postgresql+psycopg://postgres:bybitbot@127.0.0.1:55432/bybitbot
+```
+
+```bash
+uv run bybitbot sandbox verify --directory var/paper-system
+```
+
+详情、限制与证据见 [docs/paper-system-2026-11-16.md](docs/paper-system-2026-11-16.md)。
+
 ## 目录
 
 ```
 src/bybitbot/     应用代码
-tests/            358 项 Python 隔离测试、5 项页面提示测试
+tests/            701 项 Python 隔离测试、6 项页面提示测试
 alembic/          数据库迁移（当前 head: 8a4d17c2f905）
 config/           配置示例（无密钥）
 deploy/           容器、Quadlet、备份、Mac 端监控与安装脚本
