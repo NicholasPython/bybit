@@ -50,6 +50,8 @@ from bybitbot.risk.reservation import ReservationManager
 
 logger = logging.getLogger(__name__)
 ZERO = Decimal("0")
+#: 必须绑定验证覆盖范围的动作。
+SHORT_ACTIONS = frozenset({"OPTION_SELL_OPEN", "OPTION_BUY_CLOSE"})
 
 
 class SubmitOutcome(StrEnum):
@@ -180,6 +182,7 @@ class Executor:
             if existing is not None:
                 return self._existing_result(existing)
             await self._validate_plan(session, intent, plan, rebuild_index, parent_order_id)
+            await self._authorize_scope(session, intent, plan)
             link_id = order_link_id_for(plan.intent_id, rebuild_index)
             order = Order(
                 environment=self.environment,
@@ -235,6 +238,7 @@ class Executor:
             order_link_id=link_id,
             reduce_only=plan.reduce_only,
             position_idx=plan.position_idx,
+            coverage_symbol=intent.coverage_symbol,
         )
         try:
             # 领取记录已提交；这里失权/断连同样按结果未知处理，绝不重发。
@@ -289,8 +293,17 @@ class Executor:
             raise ExecutionAuthorityError("计划与原意图不匹配")
         if now_utc() >= intent.expires_at:
             raise ExecutionAuthorityError("信号已过期")
-        if plan.category == "option" and plan.side.lower() == "sell" and not plan.reduce_only:
-            raise ExecutionAuthorityError("期权卖出必须 reduceOnly")
+        if plan.category == "option":
+            if intent.action == "OPTION_SELL_OPEN":
+                # 覆盖式空头开仓：不是减仓，但必须绑定覆盖标的。
+                if plan.reduce_only:
+                    raise ExecutionAuthorityError("空头开仓不能标记为 reduceOnly")
+                if not intent.coverage_symbol:
+                    raise ExecutionAuthorityError("空头开仓必须绑定覆盖标的")
+            elif plan.side.lower() == "sell" and not plan.reduce_only:
+                raise ExecutionAuthorityError("期权卖出必须 reduceOnly")
+            elif intent.action == "OPTION_BUY_CLOSE" and not plan.reduce_only:
+                raise ExecutionAuthorityError("平空买入必须 reduceOnly")
         if (
             intent.price_limit is None
             or (plan.side.lower() == "buy" and plan.price > intent.price_limit)
@@ -300,11 +313,18 @@ class Executor:
         if plan.reservation_id is None:
             raise ExecutionAuthorityError("订单必须关联持久化预留")
         reservation = await self.reservations._get(session, plan.reservation_id)
-        required = plan.qty * plan.price if plan.side.lower() == "buy" else plan.qty
-        kind = "CASH" if plan.side.lower() == "buy" else "INVENTORY"
+        if intent.action == "OPTION_SELL_OPEN":
+            # 空头开仓占用覆盖多头，防止多头在空头存续期间被释放。
+            kind, required = "INVENTORY", plan.qty
+            symbol = intent.coverage_symbol
+        elif plan.side.lower() == "buy":
+            kind, required, symbol = "CASH", plan.qty * plan.price, None
+        else:
+            kind, required, symbol = "INVENTORY", plan.qty, intent.symbol
         if (
             reservation.intent_id != intent.id
             or reservation.kind != kind
+            or (symbol is not None and reservation.symbol != symbol)
             or reservation.amount - reservation.consumed - reservation.released < required
         ):
             raise ExecutionAuthorityError("预留与意图/方向不匹配或额度不足")
@@ -336,6 +356,23 @@ class Executor:
             )
             if spent + plan.qty * plan.price > limit:
                 raise ExecutionAuthorityError("累计支出超过原意图")
+
+    async def _authorize_scope(
+        self, session: AsyncSession, intent: TradeIntent, plan: OrderPlan
+    ) -> None:
+        """物理下单前独立复核覆盖范围授权。
+
+        提交与成交之间存在时间窗：意图批准时的快照不能证明此刻仍然成立。
+        """
+        if intent.validation_position_id is None and intent.action not in SHORT_ACTIONS:
+            return
+        from bybitbot.risk.reservation import ReservationError
+        from bybitbot.validation.authority import authorize
+
+        try:
+            await authorize(session, intent, qty=plan.qty)
+        except ReservationError as exc:
+            raise ExecutionAuthorityError(f"覆盖范围授权失败：{exc.detail}") from exc
 
     @staticmethod
     def _existing_result(row: Order) -> SubmitResult:
@@ -623,6 +660,7 @@ class Executor:
             base_asset=spec.base_coin if spec else None,
             intent_id=intent.id,
             exec_time=execution.exec_time,
+            action=intent.action,
         )
         fee_asset = (execution.exec_fee_asset or intent.currency).upper()
         base_asset = (

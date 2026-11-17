@@ -423,6 +423,34 @@ class BybitRestAdapter:
                 tickers[ticker.symbol] = ticker
         return list(tickers.values())
 
+    async def get_klines(self, symbol: str, interval: str, *, end_ms: int, limit: int) -> list:
+        """Public spot candles; the caller validates completed contiguous history."""
+        if symbol not in {"BTCUSDT", "ETHUSDT"} or interval not in {"60", "D"}:
+            raise ValueError("unsupported validation candle source")
+        if (
+            type(end_ms) is not int
+            or end_ms < 0
+            or type(limit) is not int
+            or not 1 <= limit <= 1000
+        ):
+            raise ValueError("invalid candle cutoff/limit")
+        result = await self._get(
+            "/v5/market/kline",
+            {
+                "category": "spot",
+                "symbol": symbol,
+                "interval": interval,
+                "end": end_ms,
+                "limit": limit,
+            },
+        )
+        if result.get("symbol") != symbol or result.get("category") != "spot":
+            raise BybitRestError("Candle response symbol/category mismatch")
+        rows = result.get("list")
+        if not isinstance(rows, list):
+            raise BybitRestError("Candle response missing list")
+        return rows
+
     async def get_orderbook(self, category: str, symbol: str, limit: int = 50) -> OrderBook:
         _category(category)
         if limit < 1:

@@ -58,6 +58,25 @@ class SyntheticMarket(PaperAdapter):
             )
             self.prices[("option", symbol)] = (premium, premium + D("0.1"), index)
 
+    async def get_klines(self, symbol, interval, *, end_ms, limit):
+        if symbol not in {"BTCUSDT", "ETHUSDT"} or interval not in {"60", "D"}:
+            raise ValueError("unsupported synthetic candles")
+        width = 3_600_000 if interval == "60" else 86_400_000
+        boundary = end_ms // width * width
+        index = self.prices[("spot", symbol)][2]
+        return [
+            [
+                boundary - (limit - i) * width,
+                str(index * D("0.9")),
+                str(index),
+                str(index * D("0.8")),
+                str(index * (D("0.9") + D(i) / 10000)),
+                "1",
+                "1",
+            ]
+            for i in range(limit)
+        ]
+
     async def get_ticker(self, category, symbol):
         bid, ask, index = self.prices[(category, symbol)]
         moment = now_utc()

@@ -345,6 +345,7 @@ class OrderRequest:
     reduce_only: bool = False
     position_idx: int | None = None
     close_on_trigger: bool = False
+    coverage_symbol: str | None = None
 
 
 @dataclass(frozen=True)
@@ -435,6 +436,8 @@ class TradingAdapter(Protocol):
     async def get_instruments(self, category: str) -> list[InstrumentSpec]: ...
 
     async def get_ticker(self, category: str, symbol: str) -> Ticker: ...
+
+    async def get_klines(self, symbol: str, interval: str, *, end_ms: int, limit: int) -> list: ...
 
     async def get_orderbook(self, category: str, symbol: str, limit: int = 50) -> OrderBook: ...
 

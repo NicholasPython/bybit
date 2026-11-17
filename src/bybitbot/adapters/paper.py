@@ -388,6 +388,15 @@ class PaperAdapter:
                 self._account.balance(coin).available - held
             ):
                 raise OrderRejected("模拟自有现金不足")
+            if request.category == "option":
+                # 同合约已有空头时，买入只能平空，不能在同一合约上净额开多。
+                position = self._positions.get(("option", request.symbol, 0))
+                if (
+                    position is not None
+                    and position.side == "Sell"
+                    and request.qty > position.size
+                ):
+                    raise OrderRejected("模拟买入超过已有空头数量，禁止同合约净额")
         else:
             pending = sum(
                 (
@@ -398,14 +407,11 @@ class PaperAdapter:
                 Decimal("0"),
             )
             if request.category == "option":
-                position = self._positions.get(("option", request.symbol, 0))
-                available = position.size if position else Decimal("0")
-                if not request.reduce_only or request.position_idx != 0:
-                    raise OrderRejected("模拟期权仅允许 reduceOnly 多头减仓")
+                self._check_option_sell(request, pending)
             else:
                 available = self._account.balance(spec.base_coin).available
-            if request.qty > available - pending:
-                raise OrderRejected("模拟可平数量不足")
+                if request.qty > available - pending:
+                    raise OrderRejected("模拟可平数量不足")
         if self._consume_fault("network_error"):
             raise ConnectionError("注入的故障：网络异常")
         if self._consume_fault("unknown_result"):
@@ -473,7 +479,9 @@ class PaperAdapter:
                 self._account.debit(settle, notional + fee)
             else:
                 self._account.credit(settle, notional - fee)
-            self._apply_option_position(request.symbol, request.side.value, qty, price)
+            self._apply_option_position(
+                request.symbol, request.side.value, qty, price, request.coverage_symbol
+            )
 
         prev_notional = order.avg_price * order.qty_filled
         order.qty_filled += qty
@@ -519,27 +527,111 @@ class PaperAdapter:
             raw={"simulated": True},
         )
 
-    def _apply_option_position(self, symbol: str, side: str, qty: Decimal, price: Decimal) -> None:
+    def _check_option_sell(self, request: OrderRequest, pending: Decimal) -> None:
+        """期权卖出：平多头必须先解除空头义务；开空头必须有足量覆盖多头。"""
+        position = self._positions.get(("option", request.symbol, 0))
+        size = position.size if position else Decimal("0")
+        side = position.side if position else None
+        if request.reduce_only:
+            if side != "Buy":
+                raise OrderRejected("模拟卖出平仓缺少多头持仓")
+            if request.qty > size - pending:
+                raise OrderRejected("模拟可平数量不足")
+            if self._short_on_coverage(request.symbol):
+                raise OrderRejected("覆盖多头仍承担空头义务，不能单独平仓")
+            if self._pending_short_for(request.symbol):
+                raise OrderRejected("存在未成交空头开仓，不能释放覆盖多头")
+            return
+        if request.position_idx != 0:
+            raise OrderRejected("模拟期权空头仅允许单向持仓")
+        if side == "Buy":
+            raise OrderRejected("同合约已有多头，禁止隐式净额")
+        coverage = request.coverage_symbol
+        if not coverage or coverage == request.symbol:
+            raise OrderRejected("模拟期权空头必须绑定覆盖标的")
+        long_position = self._positions.get(("option", coverage, 0))
+        if (
+            long_position is None
+            or long_position.side != "Buy"
+            or long_position.size <= 0
+        ):
+            raise OrderRejected("覆盖标的缺少多头持仓")
+        existing = self._short_on_coverage(coverage)
+        if existing and existing[0] != request.symbol:
+            raise OrderRejected("同一覆盖标的已被另一空头占用")
+        reserved = sum(
+            (qty for symbol, qty in self._pending_short_for(coverage) if symbol == request.symbol),
+            Decimal("0"),
+        )
+        covered = existing[1] if existing else Decimal("0")
+        if covered + reserved + request.qty > long_position.size:
+            raise OrderRejected("覆盖多头数量不足以覆盖空头")
+
+    def _short_on_coverage(self, coverage_symbol: str) -> tuple[str, Decimal] | None:
+        """返回以该覆盖多头承担义务的空头：(合约、数量)。"""
+        for (category, symbol, _idx), position in self._positions.items():
+            if category != "option" or position.side != "Sell" or position.size <= 0:
+                continue
+            if (position.raw or {}).get("coverage_symbol") == coverage_symbol:
+                return symbol, position.size
+        return None
+
+    def _pending_short_for(self, coverage_symbol: str) -> list[tuple[str, Decimal]]:
+        """尚未成交的空头开仓：(空头合约、剩余数量)。"""
+        return [
+            (order.request.symbol, order.leaves_qty)
+            for order in self._orders.values()
+            if order.request.category == "option"
+            and order.request.side is OrderSide.SELL
+            and not order.request.reduce_only
+            and order.request.coverage_symbol == coverage_symbol
+            and order.status in ACTIVE_STATUSES
+        ]
+
+    def _apply_option_position(
+        self,
+        symbol: str,
+        side: str,
+        qty: Decimal,
+        price: Decimal,
+        coverage_symbol: str | None = None,
+    ) -> None:
+        """多头与空头分账：买入平空、卖出平多，同一合约不净额。"""
         key = ("option", symbol, 0)
         current = self._positions.get(key)
         size = current.size if current else Decimal("0")
         avg = current.avg_price if current and current.avg_price else Decimal("0")
+        raw = dict(current.raw or {}) if current else {"simulated": True}
         if side.lower() == "buy":
-            new_size = size + qty
-            new_avg = (avg * size + price * qty) / new_size if new_size > 0 else Decimal("0")
+            if current is not None and current.side == "Sell":
+                new_size = size - qty
+                new_avg = avg
+                new_side = "Sell" if new_size > 0 else None
+            else:
+                new_size = size + qty
+                new_avg = (avg * size + price * qty) / new_size if new_size > 0 else Decimal("0")
+                new_side = "Buy"
+                raw = {"simulated": True}
         else:
-            new_size = size - qty
-            new_avg = avg
+            if current is not None and current.side == "Buy":
+                new_size = size - qty
+                new_avg = avg
+                new_side = "Buy" if new_size > 0 else None
+            else:
+                new_size = size + qty
+                new_avg = (avg * size + price * qty) / new_size if new_size > 0 else Decimal("0")
+                new_side = "Sell"
+                raw = {"simulated": True, "coverage_symbol": coverage_symbol}
         self._positions[key] = PositionView(
             category="option",
             symbol=symbol,
             position_idx=0,
             size=new_size,
-            side="Buy" if new_size > 0 else None,
+            side=new_side,
             avg_price=new_avg,
             settle_coin=self._instrument_settle(symbol),
             delivery_time=self._instruments[symbol].delivery_time,
-            raw={"simulated": True},
+            raw=raw,
         )
 
     async def cancel_order(
@@ -753,6 +845,9 @@ class PaperAdapter:
             )
         ):
             raise ValueError("模拟交割缺少已到期多头或仍有活动订单")
+        if self._short_on_coverage(symbol) or self._pending_short_for(symbol):
+            # 覆盖多头仍承担空头义务时不能单独交割，否则空头义务失去对应物。
+            raise ValueError("模拟交割缺少已解除空头义务的覆盖多头")
         intrinsic = max(
             Decimal("0"),
             price - spec.strike_price if spec.options_type == "Call" else spec.strike_price - price,

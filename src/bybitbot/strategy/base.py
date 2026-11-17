@@ -63,6 +63,8 @@ class IntentDraft:
     ttl_seconds: int = 300
     #: 决策理由，写入风控决策与账本，供人工追溯（STR-01「可解释」）。
     rationale: dict[str, object] = field(default_factory=dict)
+    validation_position_id: int | None = None
+    coverage_symbol: str | None = None
 
 
 @runtime_checkable
@@ -149,6 +151,8 @@ def build_intent(
         delivery_time=draft.delivery_time,
         strike_price=dec(draft.strike_price) if draft.strike_price is not None else None,
         options_type=draft.options_type,
+        validation_position_id=draft.validation_position_id,
+        coverage_symbol=draft.coverage_symbol,
         exit_rules=list(draft.exit_rules),
         quote_snapshot_id=ctx.quote_snapshot_id,
         expires_at=expires_at,

@@ -304,6 +304,10 @@ class TradeIntent(Base):
         ForeignKey("strategy.id", ondelete="SET NULL")
     )
     strategy_version: Mapped[int | None] = mapped_column(Integer)
+    validation_position_id: Mapped[int | None] = mapped_column(
+        ForeignKey("validation_position.id")
+    )
+    coverage_symbol: Mapped[str | None] = mapped_column(String(64))
     signal_id: Mapped[str] = mapped_column(String(128), nullable=False)
     action: Mapped[str] = mapped_column(String(32), nullable=False)
     category: Mapped[str] = mapped_column(String(16), nullable=False)
@@ -526,6 +530,10 @@ class Inventory(Base):
 
     __tablename__ = "inventory"
 
+    position_side: Mapped[str] = mapped_column(
+        String(8), default="Buy", server_default="Buy", nullable=False
+    )
+
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     environment: Mapped[str] = mapped_column(String(32), nullable=False)
     strategy_id: Mapped[int] = mapped_column(
@@ -553,8 +561,11 @@ class Inventory(Base):
     )
 
     __table_args__ = (
-        UniqueConstraint("environment", "strategy_id", "symbol", name="uq_inventory"),
+        UniqueConstraint(
+            "environment", "strategy_id", "symbol", "position_side", name="uq_inventory"
+        ),
         CheckConstraint("qty >= 0", name="ck_inventory_qty"),
+        CheckConstraint("position_side IN ('Buy', 'Sell')", name="ck_inventory_side"),
     )
 
 

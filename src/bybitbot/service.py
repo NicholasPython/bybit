@@ -49,14 +49,19 @@ from bybitbot.execution.lease import ExecutorLease, LeaseState
 from bybitbot.execution.states import TERMINAL_STATES
 from bybitbot.ledger import LedgerWriter
 from bybitbot.market import InstrumentCatalog, QuoteCache
-from bybitbot.money import Rounding, round_to_step
+from bybitbot.money import Rounding, pct, round_to_step
 from bybitbot.ops.alerts import AlertManager
 from bybitbot.ops.control import CommandKind, CommandStatus, ControlCommandManager
 from bybitbot.ops.notifications import deliver_alerts
 from bybitbot.ops.pauses import PauseManager, PauseReason
 from bybitbot.ops.state import RunState, RunStateMachine
 from bybitbot.reconciliation import Reconciler
-from bybitbot.risk.engine import OpenOrderExposure, RiskContext, RiskEngine
+from bybitbot.risk.engine import (
+    OpenOrderExposure,
+    RiskContext,
+    RiskEngine,
+    ValidationLimits,
+)
 from bybitbot.risk.reservation import ReservationError, ReservationManager
 from bybitbot.scheduler import Scheduler
 from bybitbot.settings.loader import AppConfig, load_config
@@ -68,11 +73,27 @@ from bybitbot.strategy.templates import (
     ScheduledSpotBuyStrategy,
     SpotBuyParams,
 )
+from bybitbot.validation.authority import (
+    authorize as validate_authorization,
+)
+from bybitbot.validation.authority import (
+    covered_paper_account,
+)
+from bybitbot.validation.models import ValidationPosition, ValidationStudy
+from bybitbot.validation.orchestration import ValidationOrchestrator
+from bybitbot.validation.protocol import SpreadProtocol
+from bybitbot.validation.sampling import ValidationSampler, ValidationStore
 from bybitbot.valuation import ValuationInput, ValuationPolicy, value_account
 
 logger = logging.getLogger(__name__)
 ZERO = Decimal("0")
 OPEN_ACTIONS = ("BUY_OPEN", "SPOT_BUY", "OPTION_BUY_OPEN")
+REDUCE_ONLY_ACTIONS = ("OPTION_SELL_CLOSE", "OPTION_BUY_CLOSE")
+SHORT_OPEN_ACTIONS = ("OPTION_SELL_OPEN",)
+#: 验证价差里会**新增敞口**的两条腿：买腿与开空腿。
+VALIDATION_OPEN_ACTIONS = ("OPTION_BUY_OPEN", "OPTION_SELL_OPEN")
+#: 一切新增敞口的开仓动作（含覆盖式开空）。
+NEW_EXPOSURE_ACTIONS = (*OPEN_ACTIONS, *SHORT_OPEN_ACTIONS)
 
 
 def json_value(value):
@@ -81,6 +102,33 @@ def json_value(value):
             value, default=lambda obj: obj.isoformat() if isinstance(obj, dt.datetime) else str(obj)
         )
     )
+
+
+def clamp_price_limit(
+    *,
+    side: str,
+    ask: Decimal,
+    bid: Decimal,
+    boundary: Decimal,
+    cap_bps: int,
+    tick_size: Decimal,
+) -> tuple[Decimal, Decimal]:
+    """把协议限价压进产品容差带，同时不放松协议的买入边界。
+
+    纸面撮合按挂单价成交，限价只决定是否穿越；因此买入限价落在
+    [ask, ask·(1+cap)]、卖出落在 [bid·(1−cap), bid] 时仍会按 book 成交，
+    而限价始终保持在产品允许的价格偏差内。返回 (clamped_limit, protocol_boundary)。
+    """
+    cap = pct(cap_bps)
+    if side == "Buy":
+        upper = round_to_step(ask * (1 + cap), tick_size, Rounding.DOWN)
+        limit = max(ask, min(boundary, upper))
+    elif side == "Sell":
+        lower = round_to_step(bid * (1 - cap), tick_size, Rounding.UP)
+        limit = min(bid, max(boundary, lower))
+    else:
+        raise ValueError("不支持的方向")
+    return limit, boundary
 
 
 def config_fingerprint(config: AppConfig) -> str:
@@ -532,6 +580,11 @@ class TradingService:
         await self._clock_and_disk()
         await self._market()
         await self._account_sync()
+        # Read-only observations continue while new trading exposure is paused.
+        await ValidationSampler(
+            ValidationStore(self.database.sessionmaker, self.environment, self.uid),
+            self.market_adapter,
+        ).tick()
         await self._process_commands()
         paused = (
             bool(await self.pauses.active_pauses()) or self.lease.state is not LeaseState.ELIGIBLE
@@ -543,6 +596,9 @@ class TradingService:
             await self._cancel_expired(paused=paused)
             await self._exit_rules()
             await self._schedule()
+        # 验证价差编排器在接管且允许开仓时驱动：把待办计划提交为交易意图，失败落库为 REJECTED。
+        if self.lease.state is LeaseState.ELIGIBLE:
+            await self._validation_tick(paused)
         await self._notifications()
         self.last_error = ""
         await self._status()
@@ -787,7 +843,20 @@ class TradingService:
                 )
         if not self.identity_ok:
             await self._fault(PauseReason.ACCOUNT_UNTRUSTED, "账户身份、模式或权限校验未通过")
-        if self.account.has_debt or any(position.side == "Sell" for position in self.positions):
+        # 纸面期权空头：仅当它是验证价差已核对的规范事实（覆盖多头充足且库存可信）时，
+        # 才允许作为合法开空而非非预期负债。
+        authorized_shorts = True
+        if self.environment == "paper":
+            async with self.database.sessionmaker() as session:
+                authorized_shorts = await covered_paper_account(
+                    session,
+                    environment=self.environment,
+                    account_uid=self.uid,
+                    positions=self.positions,
+                )
+        if self.account.has_debt or (
+            not authorized_shorts and any(position.side == "Sell" for position in self.positions)
+        ):
             await self._fault(PauseReason.ACCOUNT_DEBT, "发现非预期负债或期权空头")
         async with self.database.sessionmaker() as session:
             session.add(
@@ -828,15 +897,18 @@ class TradingService:
             if not self.quotes.status("option", position.symbol).usable or not spec:
                 positions.append(replace(position, mark_price=None))
             else:
-                price = (
-                    ticker.mark_price
-                    if self.config.ops.valuation.option_valuation_source == "mark"
-                    else (ticker.bid_price)
+                # 多头用标记价/买一；空头是负债，按卖一（更保守）计价。
+                source = (
+                    ticker.ask_price
+                    if position.side == "Sell"
+                    else (ticker.mark_price
+                        if self.config.ops.valuation.option_valuation_source == "mark"
+                        else ticker.bid_price)
                 )
                 positions.append(
                     replace(
                         position,
-                        mark_price=price,
+                        mark_price=source,
                         settle_coin=spec.settle_coin,
                         delivery_time=spec.delivery_time,
                     )
@@ -1360,6 +1432,50 @@ class TradingService:
                 )
                 await self._fault("SERVICE_FAILURE", "调度执行失败，原任务不自动重放", locked=False)
 
+    def _clamp_validation_limit(self, draft, ticker, spec):
+        """把验证价差的开仓限价压进产品容差带。
+
+        协议的边界来自采样时刻的市场，是**追价上限**：买入腿的边界低于当前
+        卖一、卖出腿的边界高于当前买一，都说明行情已经超出协议容忍，
+        此时不能追价，只能拒绝。
+
+        能追得上时只把边界**收窄**到产品容差带内（不放松协议的边界），
+        这样意图里的限价、风控的价格偏离判定与执行器的边界校验看到的
+        始终是同一个价。
+        """
+        cap_bps = self.config.market.max_price_deviation_bps
+        ask = ticker.ask_price
+        bid = ticker.bid_price
+        if ask is None or bid is None or not ask.is_finite() or not bid.is_finite():
+            raise ValueError("缺少双边报价，无法把协议限价压进产品容差带")
+        if ask <= 0 or bid <= 0 or ask < bid:
+            raise ValueError("双边报价无效，无法把协议限价压进产品容差带")
+        boundary = draft.price_limit
+        if draft.side == "Buy":
+            if boundary < ask:
+                raise ValueError("协议限价低于当前卖一，行情已超出协议容忍，拒绝追价")
+        elif draft.side == "Sell":
+            if boundary > bid:
+                raise ValueError("协议限价高于当前买一，行情已超出协议容忍，拒绝追价")
+        else:
+            raise ValueError("不支持的方向")
+        clamped, protocol_boundary = clamp_price_limit(
+            side=draft.side,
+            ask=ask,
+            bid=bid,
+            boundary=boundary,
+            cap_bps=cap_bps,
+            tick_size=spec.tick_size,
+        )
+        return replace(
+            draft,
+            price_limit=clamped,
+            rationale={
+                **draft.rationale,
+                "protocol_price_limit": str(protocol_boundary),
+            },
+        )
+
     async def _submit_draft(
         self,
         strategy_id,
@@ -1380,6 +1496,18 @@ class TradingService:
             or draft.qty <= 0
         ):
             raise ValueError("订单必须包含有限正数的限价和数量")
+        is_validation = draft.validation_position_id is not None
+        # 每个授权重新取得账户与成交事实，避免上一笔成交后沿用旧余额。
+        await self._account_sync()
+        ticker = await self._quote(draft.category, draft.symbol, depth=True)
+        spec = self.specs.get((draft.category, draft.symbol))
+        if spec is None or not spec.qty_step or not spec.tick_size:
+            raise ValueError("缺少交易规格，拒绝订单")
+        # 验证价差的开仓腿用协议边界追价；先把边界压进产品容差带，
+        # 意图、风控与执行器看到的必须是同一个价。
+        if is_validation and draft.action in VALIDATION_OPEN_ACTIONS:
+            draft = self._clamp_validation_limit(draft, ticker, spec)
+        # 物理价格：人工下单使用操作员限价；验证价差走完整链路时用压进容差带的限价。
         physical_price = draft.price_limit if order_price is None else order_price
         if (
             not physical_price.is_finite()
@@ -1388,13 +1516,10 @@ class TradingService:
             or (draft.side == "Sell" and physical_price < draft.price_limit)
         ):
             raise ValueError("物理订单价格突破意图边界")
-        # 每个授权重新取得账户与成交事实，避免上一笔成交后沿用旧余额。
-        await self._account_sync()
-        ticker = await self._quote(draft.category, draft.symbol, depth=True)
-        spec = self.specs.get((draft.category, draft.symbol))
-        if spec is None or not spec.qty_step or not spec.tick_size:
-            raise ValueError("缺少交易规格，拒绝订单")
-        if (
+        # 验证价差开空/平空的预算由协议覆盖多头决定，跳过产品单笔上限检查。
+        if is_validation and draft.action in SHORT_OPEN_ACTIONS:
+            pass
+        elif (
             draft.category == "option"
             and self.environment != "paper"
             and not (
@@ -1422,7 +1547,9 @@ class TradingService:
         intent = build_intent(ctx, draft)
         if signal:
             intent.signal_id = signal
-        opening = draft.action in OPEN_ACTIONS
+        # 新增敞口的动作：买多、买现货与覆盖式开空。开空同样占用风险，
+        # 因此暂停新增风险、禁开仓窗口与预算口径都要覆盖它。
+        new_exposure = draft.action in NEW_EXPOSURE_ACTIONS
         async with self.database.sessionmaker() as session:
             await session.execute(
                 text("SELECT pg_advisory_xact_lock(hashtext(:key))"),
@@ -1451,7 +1578,10 @@ class TradingService:
                 product.value for product in self.config.account.allowed_products
             }:
                 extra.append("标的不在该策略或账户白名单")
-            if opening and (not spec.is_tradable or not self.machine.allows_new_exposure):
+            if is_validation and risk_context.validation_limits is None:
+                # 协议读不出来就没有口径可用：拒绝，而不是拿产品限额硬套。
+                extra.append("验证任务协议不可读，无法按协议口径判定限额")
+            if new_exposure and (not spec.is_tradable or not self.machine.allows_new_exposure):
                 extra.append("暂停新增风险或合约不可交易")
             if draft.price_limit is None or draft.qty <= 0 or draft.price_limit <= 0:
                 extra.append("数量与限价必须为正数")
@@ -1468,23 +1598,62 @@ class TradingService:
             if spec.min_order_amt and draft.qty * draft.price_limit < spec.min_order_amt:
                 extra.append("低于最小订单金额")
             fee_rate = self._fee_ratio(draft.category, draft.symbol, draft.price_limit)
-            if opening and draft.qty * draft.price_limit * (1 + fee_rate) > draft.spend_limit:
+            # 验证价差开空/平空的预算由协议覆盖多头决定，跳过产品单笔上限检查。
+            if (
+                new_exposure
+                and not is_validation
+                and draft.action not in SHORT_OPEN_ACTIONS
+                and draft.qty * draft.price_limit * (1 + fee_rate) > draft.spend_limit
+            ):
                 extra.append("预算不足以支付价格上限与费用")
             if not self.quotes.status(
                 draft.category, draft.symbol, require_greeks=draft.category == "option"
             ).usable:
                 extra.append("行情不完整或已过期")
+            # 验证价差开仓前校验授权能力（覆盖多头、绑定版本、方向一致性）。
+            if is_validation and draft.action in SHORT_OPEN_ACTIONS:
+                try:
+                    await validate_authorization(session, intent, qty=draft.qty)
+                except Exception as exc:  # noqa: BLE001 - 保留原始细节作为拒绝理由
+                    extra.append(f"验证授权不足：{exc}")
             reservation = None
             if evaluation.approved and not extra:
                 try:
                     async with session.begin_nested():
-                        if opening:
+                        # 预留按动作区分：现金类（现货买入、期权买多、回补多头）占现金；
+                        # 期权开空占用覆盖多头的库存；期权卖多占用目标合约库存。
+                        if draft.action in (
+                            "BUY_OPEN",
+                            "SPOT_BUY",
+                            "OPTION_BUY_OPEN",
+                            "OPTION_BUY_CLOSE",
+                        ):
                             reservation = await self.reservations.reserve_cash(
                                 session,
                                 intent_id=intent.id,
                                 amount=draft.spend_limit + (self.config.budget.fee_buffer.value),
                                 currency=draft.currency,
                                 account=self.account,
+                            )
+                        elif draft.action == "OPTION_SELL_OPEN":
+                            available = sum(
+                                (
+                                    p.size
+                                    for p in self.positions
+                                    if p.symbol == draft.coverage_symbol and p.side == "Buy"
+                                ),
+                                ZERO,
+                            )
+                            reservation = await self.reservations.reserve_inventory(
+                                session,
+                                intent_id=intent.id,
+                                symbol=draft.coverage_symbol,
+                                qty=draft.qty,
+                                account_qty=available,
+                                account_available=None,
+                                reflected_order_link_ids=(),
+                                account_trusted=self.identity_ok and self.reconcile_ok,
+                                strategy_id=strategy_id,
                             )
                         else:
                             free_qty = None
@@ -1556,9 +1725,12 @@ class TradingService:
                 else order_ttl_seconds
             )
         )
-        if not opening:
+        if not new_exposure:
             ttl = min(ttl, intent.expires_at)
-        if draft.category == "option" and opening:
+        # 验证价差意图的存活期限由协议待办窗口决定（编排器已传入），优先采用它。
+        if order_ttl_seconds is not None:
+            ttl = min(ttl, now_utc() + dt.timedelta(seconds=order_ttl_seconds))
+        if draft.category == "option" and new_exposure:
             start = self.config.option.no_open_window_start_hour_utc
             end = self.config.option.no_open_window_end_hour_utc
             if start != end:
@@ -1566,6 +1738,11 @@ class TradingService:
                 if boundary <= now_utc():
                     boundary += dt.timedelta(days=1)
                 ttl = min(ttl, boundary)
+        # 验证价差开空/回补是覆盖操作，不进入 reduceOnly；期权买多才是单向持仓。
+        reduce_only = (
+            draft.action in REDUCE_ONLY_ACTIONS
+            or (draft.category == "option" and not new_exposure)
+        )
         outcome = await self.executor.submit(
             OrderPlan(
                 intent_id=intent.id,
@@ -1574,7 +1751,7 @@ class TradingService:
                 side=intent.side,
                 qty=intent.qty,
                 price=physical_price,
-                reduce_only=draft.category == "option" and not opening,
+                reduce_only=reduce_only,
                 position_idx=0 if draft.category == "option" else None,
                 strategy_id=strategy_id,
                 spend_limit=intent.spend_limit,
@@ -1589,6 +1766,150 @@ class TradingService:
             "status": outcome.outcome.value,
             "order_link_id": outcome.order.order_link_id if outcome.order else None,
         }
+
+    async def _validation_tick(self, paused):
+        """驱动验证价差编排器：把待办计划提交为交易意图，失败落库为 REJECTED。"""
+        try:
+            orchestrator = ValidationOrchestrator(
+                ValidationStore(self.database.sessionmaker, self.environment, self.uid),
+                submit=self._validation_submit,
+                cancel=self._validation_cancel,
+            )
+            await orchestrator.tick(
+                now_ms=int(now_utc().timestamp() * 1000),
+                allows_open=self.machine.allows_new_exposure,
+            )
+        except Exception as exc:  # noqa: BLE001 - 编排失败不应中断 worker 主循环
+            logger.warning("验证价差编排失败：%s", exc)
+
+    async def _validation_submit(
+        self, position_id, binding, pending, draft, *, planned_at=None, rule_id="validation"
+    ):
+        """提交一条验证价差意图；失败时保证存在 REJECTED 意图供编排器停止重试。"""
+        if planned_at is None:
+            planned_at = dt.datetime.fromtimestamp(pending["created_ms"] / 1000, dt.UTC)
+        try:
+            return await self._submit_draft(
+                strategy_id=binding["strategy_id"],
+                version=binding["version"],
+                draft=draft,
+                planned_at=planned_at,
+                rule_id=rule_id,
+                # 编排器的信号编号是跨重启重试的主键：同一计划的重试
+                # 必须复用同一编号，投影按它找回意图与订单。
+                signal=pending["signal_id"],
+                order_ttl_seconds=(pending["deadline_ms"] - pending["created_ms"]) // 1000,
+            )
+        except Exception as exc:  # noqa: BLE001 - 任何提交前失败都要留痕
+            await self._reject_validation_intent(
+                pending["signal_id"], f"验证价差提交失败：{exc}", pending=pending
+            )
+            return {"intent_id": None, "status": "REJECTED", "reason": str(exc)}
+
+    async def _validation_cancel(self, order):
+        """撤销一条悬空的验证价差订单。"""
+        return await self.executor.cancel(order)
+
+    async def _reject_validation_intent(self, signal_id, reason, *, pending):
+        """当提交链路在创建意图前就失败时，写入 REJECTED 意图让编排器停止重试同一计划。"""
+        async with self.database.sessionmaker() as session:
+            existing = await session.scalar(
+                select(TradeIntent).where(
+                    TradeIntent.environment == self.environment,
+                    TradeIntent.signal_id == signal_id,
+                )
+            )
+            if existing:
+                return existing.id
+            action = pending["action"]
+            symbol = pending["leg"]["symbol"]
+            qty = Decimal(pending["qty"])
+            coverage_symbol = pending.get("coverage_symbol")
+            delivery_time = dt.datetime.fromtimestamp(pending["leg"]["expiry_ms"] / 1000, dt.UTC)
+            strike_price = Decimal(pending["leg"]["strike"])
+            options_type = pending["leg"]["option_type"]
+            underlying = pending["leg"]["base"]
+            intent = build_intent(
+                SignalContext(
+                    environment=self.environment,
+                    account_uid=self.uid,
+                    strategy_id=pending["binding"]["strategy_id"],
+                    strategy_version=pending["binding"]["version"],
+                    rule_id="validation",
+                    planned_at=dt.datetime.fromtimestamp(pending["created_ms"] / 1000, dt.UTC),
+                ),
+                IntentDraft(
+                    action=action,
+                    category="option",
+                    symbol=symbol,
+                    side=pending["side"],
+                    qty=qty,
+                    qty_unit="contract",
+                    currency="USDT",
+                    spend_limit=Decimal(pending["spend_limit"]),
+                    price_limit=Decimal(pending["boundary"]),
+                    reduce_qty=None if pending["purpose"].startswith("open_") else qty,
+                    underlying=underlying,
+                    delivery_time=delivery_time,
+                    strike_price=str(strike_price),
+                    options_type=options_type,
+                    ttl_seconds=max(1, (pending["deadline_ms"] - pending["created_ms"]) // 1000),
+                    rationale={
+                        "validation_position_id": pending.get("validation_position_id", None),
+                        "decision_source_ms": pending["decision_source_ms"],
+                        "protocol_price_limit": str(pending["boundary"]),
+                    },
+                    validation_position_id=pending.get("validation_position_id"),
+                    coverage_symbol=coverage_symbol,
+                ),
+            )
+            intent.signal_id = signal_id
+            session.add(intent)
+            await session.flush()
+            session.add(
+                RiskDecision(
+                    intent_id=intent.id,
+                    decision="REJECTED",
+                    reason_code="VALIDATION_REJECTED",
+                    reason_detail=reason,
+                    config_version=self._config_hash,
+                    checks=[],
+                )
+            )
+            await self.ledger.append_event(
+                session,
+                event_type="INTENT",
+                dedupe_key=f"intent:{signal_id}",
+                payload={"category": "option", "intent_id": intent.id, "status": "REJECTED"},
+                occurred_at=now_utc(),
+            )
+            await session.commit()
+            return intent.id
+
+    async def _validation_limits(self, session, intent):
+        """验证意图按其任务冻结的协议口径判定限额。
+
+        协议随任务冻结（不可变），两腿价差的单笔支出、点差与权利金集中度
+        都由协议给出，而不是产品面向单腿现货的限额。协议读不出来时返回
+        ``None``，此时退回产品限额（更严格），并由提交链路拒绝该意图。
+        """
+        if intent.validation_position_id is None:
+            return None
+        position = await session.get(ValidationPosition, intent.validation_position_id)
+        if position is None:
+            return None
+        study = await session.get(ValidationStudy, position.study_id)
+        if study is None:
+            return None
+        try:
+            protocol = SpreadProtocol.from_mapping(study.protocol)
+        except ValueError:
+            return None
+        return ValidationLimits(
+            max_spend_per_trade=protocol.max_first_leg_outlay_usdt,
+            max_spread_fraction=protocol.max_spread_fraction,
+            premium_cap_per_underlying=protocol.max_first_leg_outlay_usdt,
+        )
 
     async def _risk_context(self, session, intent):
         orders = list(
@@ -1698,6 +2019,7 @@ class TradingService:
             and (now_utc() - self.account_at).total_seconds()
             <= self.config.market.account_state_max_age_seconds
         )
+        validation_limits = await self._validation_limits(session, intent)
         return RiskContext(
             account=self.account,
             positions=self._valued_positions,
@@ -1706,6 +2028,7 @@ class TradingService:
             strategy_spot_exposure=strategy_spot,
             account_spot_exposure=account_spot,
             account_premium_used=premium,
+            validation_limits=validation_limits,
             risk_equity=(
                 self.valuation.equity
                 if self.valuation is not None and self.valuation.complete
@@ -1756,7 +2079,8 @@ class TradingService:
             (start <= hour < end) if start < end else (hour >= start or hour < end)
         )
         for order, intent, strategy in pairs:
-            opening = intent.action in OPEN_ACTIONS
+            # 开空同样是新增敞口：暂停、策略停用或进入禁开仓窗口都要撤掉挂单。
+            opening = intent.action in NEW_EXPOSURE_ACTIONS
             expired = order.local_ttl_expires_at and order.local_ttl_expires_at <= now_utc()
             if (
                 expired
