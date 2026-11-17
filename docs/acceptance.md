@@ -4,7 +4,7 @@
 
 2026-11-16 增量记录见 [本地 paper 系统交付](paper-system-2026-11-16.md) 与 [公共领域层](shared-domain.md)。本次新增了隔离沙盒的完整策略到重启恢复证据与公共层复用；下述 2026-11-01 的统计、状态和缺口按当时证据保留，未因本次交付改写。
 
-2026-11-17 增量：AC-22（容量/延迟/磁盘/保留）与 AC-26（时钟/调度）的证据已补齐，见 [P0 验收证据](p0-acceptance-evidence-2026-11-17.md) 与 `docs/evidence/` 下的两份可复算证据文件。矩阵中这两行按本次证据更新，其余行仍按 2026-11-01 证据保留。
+2026-11-17 增量：AC-22（容量/延迟/磁盘/保留）与 AC-26（时钟/调度）的证据已补齐，见 [P0 验收证据](p0-acceptance-evidence-2026-11-17.md) 与 `docs/evidence/` 下的两份可复算证据文件；同日后续增量补了故障恢复、风控组合与外部资金变化对账闭环（AC-07/09/12/14/16/27）。矩阵中相关行按本次证据更新，其余行仍按 2026-11-01 证据保留。
 
 当前交付是 M0～M3 范围内的 **paper 模拟实现和 NAS 部署**。M3 所需的真实 Demo/Testnet 联调尚未完成；本文不将模拟证据折算为真实账户能力，也不宣称全部 P0 验收通过。
 
@@ -21,6 +21,8 @@
 本地完整回归结果为 **358 passed in 29.83s**，其中交割接口契约 116 项、交割账本对账 9 项、费用 13 项、服务集成 22 项；页面命令提示另有 Node 测试 **5 项通过**。`ruff check src tests deploy alembic` 与 `alembic check` 通过。测试数据均为合成数据，无真实交易凭据；整改及实际页面操作证据见 [2026-11-01 整改记录](remediation-2026-11-01.md)。
 
 2026-11-17 的完整回归为 **1386 passed in 103.14s**（`pytest tests`），其中新增时钟韧性 19 项、容量与保留 12 项；`ruff check src/bybitbot tests` 通过。
+
+2026-11-17 后续增量再补 11 项（故障恢复 6、风控组合 4、对账闭环 1），完整回归 **1397 passed in 96.43s**（`pytest tests -q --maxfail=1 -vv`），Ruff 通过。一次不带 `-vv` 的 `pytest tests -q` 曾在本机卡在约 41% 且无失败输出；同轮 `-vv` 与分组回归均通过，判断为本地输出/进程调度问题而非产品缺陷，后续 CI 应确认。
 
 2026-11-01 已用一把**真实只读** Bybit key 做过一次读取链路核验（主账户 UID 587220933，`readOnly=1`）：身份、账户模式、钱包余额、持仓、挂单、合约规格、行情与费率字段均按真实响应核对，结论见整改记录第 5 节。该 key 无交易权限，**未产生任何订单**，因此写路径、成交、撤单与到期交割仍无真实账户证据。
 
@@ -50,16 +52,16 @@
 | AC-04 · STR-01/02 | 部分验证 | `test_schedule_100_duplicates_claim_once_and_skip_missed`、`test_enabled_template_schedule_fills_once_across_restart`、`test_global_physical_ids` | 时钟回拨与时区跨日去重、过期信号拒绝、意图所有必填字段正确填充缺专项断言 |
 | AC-05 · STR-03、OPT-03 | 部分验证 | `test_enabled_template_schedule_fills_once_across_restart[option]`、`test_closed_batch_does_not_trigger_exit_of_new_inventory`、`test_extra_buy_inside_episode_keeps_original_hold_start`、费用预算/止盈回归；模板实现固定候选排序并记录规则 | 相同输入两次选择一致、无候选跳过、到期前退出缺专项测试；当前退出按策略/合约聚合库存，未实现逐笔买入批次退出 |
 | AC-06 · STR-04、RSK-01 | 部分验证 | `test_all_commands_only_enqueue_once`、`test_commands_reject_invalid_scope_and_confirmation`、`test_csv_trace_joins_and_escapes_formulas` | 配置版本不可变、旧订单原版本、收紧限额重评挂单、策略停用撤单的完整链路未验；非法实盘配置缺专项测试 |
-| AC-07 · RSK-02、SPT-02 | 部分验证 | `test_cash_reservation_competition`、`test_cash_freeze_overlap_requires_order_evidence`、`test_inventory_close_competition_and_strategy_ownership`、`test_inventory_freeze_overlap_requires_snapshot_evidence`、`test_costs_follow_fee_units_and_strategy` | 现金竞争测试使用同一策略的两个不同意图；双策略账户预算与策略子额度同时约束未验；零碎余额标识未实现；新增负债暂停/告警未验 |
+| AC-07 · RSK-02、SPT-02 | 部分验证 | `test_cash_reservation_competition`、`test_cash_freeze_overlap_requires_order_evidence`、`test_inventory_close_competition_and_strategy_ownership`、`test_inventory_freeze_overlap_requires_snapshot_evidence`、`test_costs_follow_fee_units_and_strategy`；`tests/test_risk_combinations.py` 的账户级/策略级预算双约束、结算币现金不足拒绝 | 零碎余额标识未实现；新增负债的真实端到端告警送达链路未验 |
 | AC-08 · EXE-01/02 | 部分验证 | `test_unknown_never_retries_or_releases_missing_query`、`test_duplicate_id_is_not_rejection_evidence`、`test_ambiguous_writes_sent_once`、`test_explicit_write_rejection_is_not_unknown`、`test_ack_identity_mismatch_is_uncertain`、`test_recovery_orphan_reservation_proves_unsent_and_cannot_revive`、`test_prepared_unsent_recovery_releases_cash_units` | 查到同一活动订单后消除受理未知、合并最终成交的成功路径缺独立正例；人工 RESUME 不能释放预留缺组合断言 |
-| AC-09 · EXE-01/02、LED-02 | 部分验证 | PREPARED/孤立预留恢复测试；`test_reconciliation_retains_offline_fill_and_watermark`、`test_start_baseline_takeover_trade_restart` | 已构造未发送状态并验证恢复；四个要求的崩溃时点均未完成真实子进程终止演练，尤其发送后未保存响应和部分成交后 |
+| AC-09 · EXE-01/02、LED-02 | 部分验证 | PREPARED/孤立预留恢复测试；`test_reconciliation_retains_offline_fill_and_watermark`、`test_start_baseline_takeover_trade_restart`；`tests/test_fault_recovery.py` 用真实 SIGKILL 子进程覆盖四个崩溃点（意图未落库、响应未保存、回执未落库、成交未入账） | 子进程演练使用 paper 合成适配器与受控 hook；生产进程崩溃/断电组合仍需在联调环境重放 |
 | AC-10 · EXE-03、LED-01 | 部分验证 | `test_terminal_before_fill_preserves_reservation_and_no_double_count`、`test_late_fill_after_cancel_reclassifies_release_and_upgrades_full`、`test_terminal_and_fill_monotonic_state`、`test_private_events_dedupe_category_and_do_not_lose_other_category` | 成交先于撤单的独立排列、更正事件缺专项断言；SQL 成交去重键是全局 exec ID，与需求的账户/环境/产品分域仍有偏差 |
 | AC-11 · EXE-04 | 部分验证 | `test_read_retries_bounded_and_limit_headers_recorded`、`test_long_server_cooldown_fails_without_retry_storm`、`test_transport_read_failure_retries_only_configured_attempts`、`test_exit_rebuild_preserves_deadline_quantity_and_floor`、`test_cancel_ack_without_terminal_preserves_held` | 本地 TTL 到期、停机错过 TTL、撤单查询超时缺专项断言；重建测试固定数量/期限/底价，未完整断言意图累计支出上限 |
-| AC-12 · EXE-05、RSK-03 | 部分验证 | `test_lease_single_holder_and_no_auto_takeover`、`test_remote_adapter_cannot_use_paper_label_to_bypass_lease`；NAS 一把实际 advisory lock、当前持有者一条持续更新的审计行 | 测试为同进程两个 lease 对象及主动解锁；真实双进程竞争、数据库断连与失权在途请求尚未组合演练 |
+| AC-12 · EXE-05、RSK-03 | 部分验证 | `test_lease_single_holder_and_no_auto_takeover`、`test_remote_adapter_cannot_use_paper_label_to_bypass_lease`；NAS 一把实际 advisory lock、当前持有者一条持续更新的审计行；`tests/test_fault_recovery.py` 的双进程 SIGKILL 竞争、断连失权与人工接管前置条件 | 真实数据库断连与在途请求的联调环境组合尚未重放；当前为本地 Postgres 会话锁与子进程演练 |
 | AC-13 · OPT-01/02 | 部分验证 | `test_option_sale_requires_reduce_only_and_one_way_position`、`test_option_close_credits_cash_and_cannot_short`、`test_inventory_close_competition_and_strategy_ownership`、`test_external_fill_is_recorded_but_never_owned`、`test_missing_position_locks_inventory_and_keeps_cost` | 两路完整平仓授权竞争、部分成交+未知卖单+撤单组合、外部改仓后自动卖出被拒及跨策略分摊未验 |
-| AC-14 · RSK-05、OPT-03 | 部分验证 | `test_opposite_orders_cannot_offset`、`test_unquantified_delta_rejected`、`test_risk_uses_cash_and_two_sided_per_base_delta`、`test_missing_option_greeks_never_zero_delta` | 大负 Delta、已确认外部库存、仅一侧挂单成交、现货新单影响缺独立场景；权利金/集中度/价格边界拒绝与实际 Greeks 单位未验 |
+| AC-14 · RSK-05、OPT-03 | 部分验证 | `test_opposite_orders_cannot_offset`、`test_unquantified_delta_rejected`、`test_risk_uses_cash_and_two_sided_per_base_delta`、`test_missing_option_greeks_never_zero_delta`；`tests/test_risk_combinations.py` 的大负 Delta 与相反挂单不抵消、负债暂停仍允许可信减仓 | 已确认外部库存、仅一侧挂单成交、现货新单影响缺独立场景；权利金/集中度/价格边界拒绝与实际 Greeks 单位未验 |
 | AC-15 · OPT-04、LED-01 | 部分验证 | `test_paper_settlement_checkpoint_and_ledger_replay`（零支付与正支付）、`test_settlement_evidence_idempotency_and_cost_release`；`test_deliveries.py` 116 项接口契约与 `test_settlement_reconciliation.py` 9 项对账测试 | 禁开仓窗口前后 TTL、撤单、晚到成交、告警余量的完整场景未验；真实交割解析已接入，尚无 Demo/Testnet 实际交割证据，零支付接口语义仍须实测 |
-| AC-16 · LED-02/03、OPT-02 | 部分验证 | `test_external_fill_is_recorded_but_never_owned`、`test_external_cash_change_cannot_be_clean_recon`、`test_missing_position_locks_inventory_and_keeps_cost`、`test_reconciliation_retains_offline_fill_and_watermark` | 不撤销人工单缺出站断言；有审计的外部变化确认、库存导入及历史基线重建流程未实现完整闭环 |
+| AC-16 · LED-02/03、OPT-02 | 部分验证 | `test_external_fill_is_recorded_but_never_owned`、`test_external_cash_change_cannot_be_clean_recon`、`test_missing_position_locks_inventory_and_keeps_cost`、`test_reconciliation_retains_offline_fill_and_watermark`；`tests/test_reconciliation_closure.py` 的"未登记 → CRITICAL 不允许恢复；登记外部资金流并留审计 → 可解释"闭环 | 不撤销人工单缺出站断言；外部库存导入及历史基线重建流程未实现完整闭环 |
 | AC-17 · LED-04、RSK-03 | 部分验证 | `test_start_baseline_takeover_trade_restart`；`test_equity_is_own_cash_plus_option_value_without_double_counting`、`test_day_pnl_subtracts_external_flow`、`test_day_pnl_handles_outflow`、`test_adjusted_equity_removes_cumulative_flow`、`test_drawdown_is_peak_minus_current_and_never_negative`、`test_short_option_position_makes_valuation_incomplete` | 跨重启高点、换日锁定、旧/失效估值不能解暂停、首日不完整标记缺组合断言；风险资产精确日界线历史估值重建尚未实现 |
 | AC-18 · RSK-04、OPS-02/03 | 部分验证 | `test_loss_pause_does_not_block_trusted_reduce`、`test_all_commands_only_enqueue_once`、`test_completed_command_preserves_actual_results` | 亏损触发→暂停→撤 bot 买单、数据库不可写、跨重启/换日保持锁定、RESUME 对账前置条件缺完整断言 |
 | AC-19 · OPS-01/02 | 部分验证 | `test_status_is_environment_scoped_and_allowlisted`、`test_csv_trace_joins_and_escapes_formulas`、`test_console_requires_session_and_serves_local_assets`、`test_all_commands_only_enqueue_once`；实际浏览器管理页检查 | 未知订单、风控拒绝、所有金额币种与账户时效缺逐项展示断言；数据可追溯不等于所有页面内容已验收 |
@@ -70,7 +72,7 @@
 | AC-24 · ENV-02、OPT-01/03/04 | 待验证 | REST 契约测试覆盖目录、钱包、期权参数、完整历史枚举和深度限制 | 真实只读 key 已核对权限集合、账户模式、费率（期权 taker 0.0003、现货 taker 0.001，与 CR-02 模型一致）、合约规格与行情字段；reduceOnly、数量/报价/Greeks 单位、成交、撤单与交割仍需可写凭据实测 |
 | AC-25 · EXE-03、SPT-02、OPT-02、LED-04 | 部分验证 | `test_costs_follow_fee_units_and_strategy`、`test_inventory_close_competition_and_strategy_ownership`、`test_settlement_evidence_idempotency_and_cost_release`、`test_paper_settlement_checkpoint_and_ledger_replay`、重复权益防护单测 | 成本测试是单策略；同合约双策略多批买入/部分卖出未验；跨币费用组合及支付→估值→退出/结算全过程未串联验证 |
 | AC-26 · NFR-06、STR-02 | 已验证（2026-11-17） | `tests/test_clock_resilience.py` 19 项：前跳/回拨识别、偏差测量与超限暂停、锁定暂停跨重启与人工 RESUME、恢复前置条件逐条、`Deadline` 与退避不受墙钟影响、调度不重复不补做、限速延后不丢计划；证据文件 `docs/evidence/2026-11-17-ac26-clock.json` | 跳变由注入假时钟产生，生产主机实际跳变与 NTP 守护未实测 |
-| AC-27 · RSK-02、OPT-03、ENV-02 | 部分验证 | `test_wallet_debt_not_double_counted_or_spendable`、`test_portfolio_unknown_holds_have_zero_spendable_cash`、现金预留竞争及冻结重叠证据测试 | 结算币现金不足但抵押品充足、运行中新负债→暂停/告警、无自动借贷/划转缺专项端到端场景 |
+| AC-27 · RSK-02、OPT-03、ENV-02 | 部分验证 | `test_wallet_debt_not_double_counted_or_spendable`、`test_portfolio_unknown_holds_have_zero_spendable_cash`、现金预留竞争及冻结重叠证据测试；`tests/test_risk_combinations.py` 的结算币现金不足拒绝（抵押品/浮盈不能替代）、新增负债暂停但可信减仓继续 | 无自动借贷/划转在账户实盘配置上的端到端演练未验 |
 | AC-28 · STR-05 | 部分验证 | `test_next_book_depth_shared_cancel_and_checkpoint`、`test_invalid_book_and_non_touch_do_not_fill`、`test_unknown_registered_and_survives_json_restore`、`test_paper_guard_blocks_remote_writes` | 同一完整事件序列两次运行的确定性缺独立断言；故障实验/收益报告区分未实现；报告模型限制及费用版本缺完整断言 |
 
 ### 3.1 估值与凭据测试修正
@@ -142,7 +144,7 @@ NAS 使用已有本地 Python 基础层构建成功。标准 `Containerfile` 在
 |---|---|
 | 本地拒绝路径 | 非法配置、各风控限额、禁开仓窗口、过期信号、费用余量与权限失败的参数化拒绝证据 |
 | 服务层组合 | 配置版本、限额收紧、暂停/撤单/可信减仓、日界线/高点、失效估值与人工恢复的组合证据 |
-| 故障与互斥 | 四个崩溃点的子进程演练、双进程竞争、真实数据库断连与未知在途请求处理 |
+| 故障与互斥 | 四个崩溃点已在真实 SIGKILL 子进程中演练；生产环境断电/真实数据库断连与在途请求仍需联调重放 |
 | 交易与账本 | 多策略同合约成本、外部库存审计导入、真实账户交割口径核验及支付→估值→退出/结算完整核对 |
 | 时钟 | 前跳/回拨/偏差超限与单调截止时间已由 `tests/test_clock_resilience.py` 覆盖；仍缺生产主机实际跳变与 NTP 守护的实测 |
 | 非实盘能力 | 使用受限 Demo/Testnet 凭据核对身份、权限、模式、期权单位、reduceOnly、成交/撤单和结算能力；不支持项保持未通过 |
@@ -170,7 +172,10 @@ NAS 使用已有本地 Python 基础层构建成功。标准 `Containerfile` 在
 | `tests/test_ops.py` | 1 | 告警投递、重试、去重、恢复 |
 | `tests/test_clock_resilience.py` | 19 | 时钟跳变/偏差识别与锁定暂停、恢复前置条件、单调截止时间与退避、调度不重复不补做、限速延后 |
 | `tests/test_capacity.py` | 12 | 首期容量边界、容量负载延迟分布与资源占用、磁盘不足暂停、保留清理边界 |
+| `tests/test_fault_recovery.py` | 6 | 四个 SIGKILL 崩溃时点、双进程租约竞争、断连失权与人工接管门槛 |
+| `tests/test_risk_combinations.py` | 4 | 双策略预算、双侧 Delta、新增负债与结算币现金约束 |
+| `tests/test_reconciliation_closure.py` | 1 | 外部资金变化：未登记→CRITICAL，登记后→可解释且留审计 |
 | `tests/test_cli.py` | 1 | 管理身份生成、权限与拒绝覆盖 |
-| **合计** | **358** | 另有 Node 页面提示回归 5 项；2026-11-17 再增时钟韧性 19 项、容量与保留 12 项（当次全量回归 1386 项） |
+| **合计** | **358** | 另有 Node 页面提示回归 5 项；2026-11-17 再增时钟韧性 19 项、容量与保留 12 项（当次全量回归 1386 项）；随后再增故障/风控/对账 11 项（当次全量回归 1397 项） |
 
 本文未以 import 次数代替代码覆盖率，也未测得行/分支覆盖率百分比。各 AC 的剩余差距基于具体输入与断言是否存在；测试通过和真实部署正常均不自动赋予实盘发单资格。

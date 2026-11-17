@@ -180,6 +180,11 @@ class Executor:
                 )
             )
             if existing is not None:
+                if (
+                    existing.sync_state in {SYNC_PENDING, SYNC_UNCERTAIN}
+                    or existing.status in {UNKNOWN, SUBMITTING}
+                ):
+                    return await self._pause_existing_unknown(existing)
                 return self._existing_result(existing)
             await self._validate_plan(session, intent, plan, rebuild_index, parent_order_id)
             await self._authorize_scope(session, intent, plan)
@@ -215,7 +220,9 @@ class Executor:
         async with self.sessionmaker() as session:
             row = await self._get_order(session, order_id)
             if row.status != PREPARED or row.sync_state != SYNC_NONE:
-                return self._existing_result(row)
+                # 已有持久化的"已领取/结果未知"记录：不能重发，也不能把未知当
+                # 已被交易所解决。失败时保留暂停，避免恢复流程静默消除风险。
+                return await self._pause_existing_unknown(row)
             intent = await session.get(TradeIntent, row.intent_id)
             if now_utc() >= intent.expires_at:
                 row.status = CANCELED
@@ -382,6 +389,34 @@ class Executor:
         elif row.status in {REJECTED, PREPARED} or row.sync_state == SYNC_NONE:
             outcome = SubmitOutcome.REJECTED
         return SubmitResult(outcome, order=row, detail="已有持久化物理订单；没有再次发送")
+
+    async def _pause_existing_unknown(self, row: Order) -> SubmitResult:
+        """恢复时遇到"已领取但结果未知"的既有订单，保留暂停。
+
+        这不是一次新的发送失败，但 UNKNOWN 的事实不能因为重放 submit 而
+        被当成已解决：预留继续占用，账户暂停新增风险，等待订单/成交查询
+        给出可关联事实。EXE-02 明确人工确认或重复调用本身不是证据。
+        """
+        async with self.sessionmaker() as session:
+            persisted = await self._get_order(session, row.id)
+            if (
+                persisted.status in TERMINAL_STATES
+                or persisted.status == PREPARED
+                and persisted.sync_state == SYNC_NONE
+            ):
+                return self._existing_result(persisted)
+            if persisted.qty_filled == 0:
+                persisted.status = UNKNOWN
+            persisted.sync_state = SYNC_UNCERTAIN
+            await self._pause(
+                session, "UNKNOWN_ORDER", "已有持久化发送记录；结果待交易所事实核实"
+            )
+            await session.commit()
+            return SubmitResult(
+                SubmitOutcome.UNKNOWN,
+                order=persisted,
+                detail="已有持久化物理订单；没有再次发送，未知结果继续保留",
+            )
 
     async def _mark_unknown(self, order_id: int, detail: str) -> SubmitResult:
         async with self.sessionmaker() as session:
