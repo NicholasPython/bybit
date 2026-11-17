@@ -28,6 +28,9 @@ class CommandKind(StrEnum):
     INITIALIZE_BASELINE = "INITIALIZE_BASELINE"
     #: 登记外部充值/提现/划转（LED-03 / LED-04）。
     REGISTER_EXTERNAL_CASH_FLOW = "REGISTER_EXTERNAL_CASH_FLOW"
+    #: 验证运行生命周期（阶段四）。
+    VALIDATION_START = "VALIDATION_START"
+    VALIDATION_STOP = "VALIDATION_STOP"
 
 
 class CommandStatus(StrEnum):
@@ -106,6 +109,8 @@ class ControlCommandManager:
         takeover_handler=None,
         baseline_handler=None,
         cash_flow_handler=None,
+        validation_start_handler=None,
+        validation_stop_handler=None,
     ):
         async with self.sessionmaker() as session:
             claimed = await session.scalar(
@@ -132,6 +137,8 @@ class ControlCommandManager:
                 takeover_handler=takeover_handler,
                 baseline_handler=baseline_handler,
                 cash_flow_handler=cash_flow_handler,
+                validation_start_handler=validation_start_handler,
+                validation_stop_handler=validation_stop_handler,
             )
             status = CommandStatus.EXECUTED
         except (ValueError, RuntimeError) as exc:
@@ -158,6 +165,8 @@ class ControlCommandManager:
         takeover_handler,
         baseline_handler,
         cash_flow_handler,
+        validation_start_handler,
+        validation_stop_handler,
     ):
         payload = command.payload or {}
         if command.kind == CommandKind.PAUSE_NEW_RISK:
@@ -174,6 +183,8 @@ class ControlCommandManager:
             CommandKind.CONFIRM_TAKEOVER: takeover_handler,
             CommandKind.INITIALIZE_BASELINE: baseline_handler,
             CommandKind.REGISTER_EXTERNAL_CASH_FLOW: cash_flow_handler,
+            CommandKind.VALIDATION_START: validation_start_handler,
+            CommandKind.VALIDATION_STOP: validation_stop_handler,
         }
         if command.kind in handlers:
             handler = handlers[command.kind]

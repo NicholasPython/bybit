@@ -39,8 +39,8 @@ from bybitbot.service import TradingService
 from bybitbot.settings.loader import load_config
 from bybitbot.settings.models import DecimalAmount, StrategyConfig
 from bybitbot.validation import SpreadLeg, SpreadProtocol
-from bybitbot.validation.models import ValidationPosition
-from bybitbot.validation.sampling import ValidationStore
+from bybitbot.validation.models import ValidationPosition, ValidationStudy
+from bybitbot.validation.sampling import ValidationStore, json_value
 
 #: 冻结研究运行里的真实 ETH Call 行情（买一/卖一/Delta）。
 LONG_BID, LONG_ASK, LONG_DELTA = D("103.5"), D("104.4"), D("0.57535214")
@@ -241,7 +241,8 @@ async def command(service, kind, payload):
         command_id=str(uuid.uuid4()), kind=kind, payload=payload, requested_by="test-operator"
     )
     await service._process_commands()
-    return row
+    async with service.database.sessionmaker() as session:
+        return await session.get(type(row), row.id)
 
 
 async def start_service(database):
@@ -458,6 +459,71 @@ async def test_short_leg_cancels_on_pause(database):
     finally:
         await service.close()
 
+
+@pytest.mark.asyncio
+async def test_validation_lifecycle_commands(database):
+    """开始/停止验证运行命令冻结证据并写入终态，不改变已有研究记录。"""
+    service, _ = await start_service(database)
+    try:
+        start = await command(
+            service,
+            CommandKind.VALIDATION_START,
+            {
+                "run_id": "stage4",
+                "bases": ["ETH"],
+                "policy": "strong_up",
+                "direction": "Call",
+                "protocol": json_value(asdict(SpreadProtocol())),
+                "other_run_ids": [],
+            },
+        )
+        assert start.status == "EXECUTED", start.result
+        async with database.sessionmaker() as session:
+            study = await session.scalar(
+                select(ValidationStudy).where(ValidationStudy.run_id == "stage4")
+            )
+            assert study is not None
+            assert "sources" in study.evidence
+            assert "protocol_hash" in study.evidence
+            assert "checkpoint_hash" in study.evidence
+
+        stop = await command(
+            service, CommandKind.VALIDATION_STOP, {"run_id": "stage4"}
+        )
+        assert stop.status == "EXECUTED", stop.result
+        assert stop.result["status"] == "ended"
+        async with database.sessionmaker() as session:
+            study = await session.scalar(
+                select(ValidationStudy).where(ValidationStudy.run_id == "stage4")
+            )
+            assert study.status == "ended"
+        data = await service.validation.export(
+            database, "stage4", environment=service.environment, account_uid=service.uid
+        )
+        assert data.startswith(b"PK")
+    finally:
+        await service.close()
+
+
+
+@pytest.mark.asyncio
+async def test_validation_integrity_failure_fails_closed(database, monkeypatch):
+    """源码/账本完整性失败时，验证执行必须锁定暂停而不是继续下单。"""
+    service, _ = await start_service(database)
+    try:
+        await seed_study(service)
+
+        async def broken(*args, **kwargs):
+            raise ValueError("product source changed: src/bybitbot/service.py")
+
+        monkeypatch.setattr(service.validation, "check", broken)
+        await service.tick()
+        pauses = await service.pauses.active_pauses()
+        assert any(p.reason_code == "VALIDATION_INTEGRITY" for p in pauses)
+        async with database.sessionmaker() as session:
+            assert await session.scalar(select(TradeIntent)) is None
+    finally:
+        await service.close()
 
 def has_execution(database, symbol):
     async def check():

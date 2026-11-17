@@ -7,6 +7,7 @@ import csv
 import datetime as dt
 import hashlib
 import hmac
+import importlib
 import io
 import json
 import math
@@ -15,6 +16,7 @@ import re
 import secrets
 import stat
 import threading
+import zipfile
 from collections import OrderedDict, deque
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -134,6 +136,45 @@ class TakeoverPayload(_RequestModel):
     reason: Reason
 
 
+class ValidationStartPayload(_RequestModel):
+    """验证运行只接受 paper 只读研究参数，不含任何交易所请求字段。"""
+
+    run_id: Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")]
+    bases: list[Annotated[str, StringConstraints(pattern=r"^(BTC|ETH)$")]] = Field(
+        min_length=1, max_length=2
+    )
+    policy: Literal["strong_up", "weak_down"]
+    direction: Literal["Call", "Put"]
+    protocol: dict[str, Any] = Field(min_length=1, max_length=100)
+    other_run_ids: list[
+        Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")]
+    ] = Field(default_factory=list, max_length=10)
+
+    @model_validator(mode="after")
+    def validate_scope(self) -> ValidationStartPayload:
+        if len(set(self.bases)) != len(self.bases):
+            raise ValueError("duplicate bases")
+        if len(set(self.other_run_ids)) != len(self.other_run_ids):
+            raise ValueError("duplicate opposing runs")
+        if (self.policy, self.direction) not in {
+            ("strong_up", "Call"),
+            ("weak_down", "Put"),
+        }:
+            raise ValueError("policy and direction do not match")
+        for key, value in self.protocol.items():
+            if not isinstance(key, str) or len(key) > 64 or _SENSITIVE.search(key):
+                raise ValueError("invalid protocol field")
+            if value is None or isinstance(value, (dict, list)) or len(str(value)) > 200:
+                raise ValueError("invalid protocol value")
+            if isinstance(value, str) and _SENSITIVE.search(value):
+                raise ValueError("invalid protocol value")
+        return self
+
+
+class ValidationRunPayload(_RequestModel):
+    run_id: Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")]
+
+
 class CashFlowPayload(_RequestModel):
     """登记外部充值/提现/划转。金额填正数，方向由类型决定。"""
 
@@ -164,6 +205,8 @@ _PAYLOAD_MODELS = {
     "CONFIRM_TAKEOVER": TakeoverPayload,
     "INITIALIZE_BASELINE": PausePayload,
     "REGISTER_EXTERNAL_CASH_FLOW": CashFlowPayload,
+    "VALIDATION_START": ValidationStartPayload,
+    "VALIDATION_STOP": ValidationRunPayload,
 }
 
 
@@ -180,6 +223,8 @@ class CommandRequest(_RequestModel):
         "CONFIRM_TAKEOVER",
         "INITIALIZE_BASELINE",
         "REGISTER_EXTERNAL_CASH_FLOW",
+        "VALIDATION_START",
+        "VALIDATION_STOP",
     ]
     payload: dict[str, Any] = Field(max_length=8)
     confirmation: str | None = Field(default=None, max_length=8)
@@ -496,6 +541,10 @@ _RESULT_FIELDS = frozenset(
         "resolved_pause_id",
         "remaining_pauses",
         "reason",
+        "run_id",
+        "study_id",
+        "unresolved_bases",
+        "final_report_ready",
     ]
 )
 
@@ -518,7 +567,13 @@ def _command(row: Any) -> dict[str, Any]:
     public = _row(row, "id command_id kind status requested_by created_at executed_at")
     try:
         public["payload"] = {
-            key: ([_text(item) for item in value] if isinstance(value, list) else _value(value))
+            key: (
+                [_text(item) for item in value]
+                if isinstance(value, list)
+                else {str(name): _value(item) for name, item in value.items()}
+                if isinstance(value, dict)
+                else _value(value)
+            )
             for key, value in _PAYLOAD_MODELS[row.kind]
             .model_validate(row.payload or {})
             .model_dump(mode="json", exclude_none=True)
@@ -575,6 +630,126 @@ def _runtime(row: Any) -> dict[str, Any]:
     else:
         public["lease"] = _value(lease)
     return public
+
+
+def _validation_scope(config: AppConfig) -> tuple[str, str]:
+    """服务与验证层使用同一个环境/账户标识；不读取任何凭据。"""
+    return str(config.active_environment), config.account.expected_uid or "paper-account"
+
+
+def get_validation_lifecycle() -> Any:
+    """延迟导入，便于在验证模块缺席时仍可导入操作台（测试也可 monkeypatch）。"""
+    module = importlib.import_module("bybitbot.validation.lifecycle")
+    return module.ValidationLifecycle
+
+
+def _validation_millis(value: Any) -> str | None:
+    parsed = _number(value)
+    if parsed is None:
+        return None
+    try:
+        seconds = float(parsed) / 1000
+        formatted = dt.datetime.fromtimestamp(seconds, dt.UTC).isoformat(timespec="milliseconds")
+        return formatted.replace("+00:00", "Z")
+    except (OverflowError, OSError, ValueError):
+        return None
+
+
+def _validation_view(
+    study: Any, environment: str, account_uid: str, now: dt.datetime | None = None
+) -> dict[str, Any] | None:
+    """验证摘要白名单；协议正文、来源内容、凭据与堆栈一律不进入页面。"""
+    if not isinstance(study, dict) or study.get("environment") != environment:
+        return None
+    if study.get("account_uid") != account_uid:
+        return None
+    run_id = _text(study.get("run_id"))
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}", run_id):
+        return None
+    bases = study.get("bases")
+    positions = study.get("positions")
+    chain_head = _text(study.get("chain_head"))
+    return {
+        "run_id": run_id,
+        "status": _text(study.get("status")),
+        "policy": _text(study.get("policy")),
+        "direction": _text(study.get("direction")),
+        "bases": [_text(base) for base in bases[:10]] if isinstance(bases, list) else [],
+        "started_at": _validation_millis(study.get("started_ms")),
+        "end_at": _validation_millis(study.get("end_ms")),
+        "next_due_at": _validation_millis(study.get("next_due_ms")),
+        "last_observed_at": _validation_millis(study.get("last_observed_ms")),
+        "heartbeat_at": _validation_millis(study.get("heartbeat_ms")),
+        "heartbeat_age_seconds": (
+            round(max(0, (now - stamp).total_seconds()), 1)
+            if (stamp := _utc(_validation_millis(study.get("heartbeat_ms")))) and now
+            else None
+        ),
+        "gap_count": _value(study.get("gap_count")),
+        "error_count": _value(study.get("error_count")),
+        "observation_count": _value(study.get("observation_count")),
+        "chain_head": chain_head[:12],
+        "frozen": study.get("frozen") is True,
+        "final_report_ready": study.get("final_report_ready") is True,
+        "last_error": "验证服务报告异常；请查看服务器日志。" if study.get("last_error") else None,
+        "phases": [
+            {"base": _text(item.get("base")), "phase": _text(item.get("phase"))}
+            for item in positions[:10]
+            if isinstance(item, dict)
+        ]
+        if isinstance(positions, list)
+        else [],
+    }
+
+
+async def _validation_status(
+    database: Database, config: AppConfig, now: dt.datetime
+) -> dict[str, Any]:
+    environment, account_uid = _validation_scope(config)
+    lifecycle_cls = get_validation_lifecycle()
+    lifecycle = lifecycle_cls(database)
+    raw = await lifecycle.status(
+        database, environment=environment, account_uid=account_uid
+    )
+    studies = raw.get("studies", []) if isinstance(raw, dict) else []
+    views = [
+        view
+        for view in (
+            _validation_view(study, environment, account_uid, now)
+            for study in studies[:TABLE_LIMIT]
+        )
+        if view is not None
+    ]
+    return {"studies": views, "environment": environment, "account_uid": account_uid}
+
+
+def _validation_filename(run_id: str) -> str:
+    safe = re.sub(r"[^A-Za-z0-9_-]+", "-", run_id).strip("-") or "run"
+    return f'attachment; filename="bybitbot-validation-{safe[:64]}.zip"'
+
+
+async def _validation_export(database: Database, config: AppConfig, run_id: Any) -> bytes:
+    if not isinstance(run_id, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}", run_id):
+        raise HTTPException(422, "运行编号格式无效。")
+    environment, account_uid = _validation_scope(config)
+    lifecycle_cls = get_validation_lifecycle()
+    lifecycle = lifecycle_cls(database)
+    try:
+        data = await lifecycle.export(
+            database, run_id, environment=environment, account_uid=account_uid
+        )
+    except ValueError as error:
+        detail = str(error)
+        if "非法" in detail or "格式" in detail:
+            raise HTTPException(422, "运行编号格式无效。") from None
+        if "不存在" in detail or "不属于" in detail or "无权限" in detail:
+            raise HTTPException(404, "验证运行不存在或不属于当前账户。") from None
+        raise HTTPException(409, "验证账本暂不可导出；请先核对运行完整性与检查点。") from None
+    if not isinstance(data, (bytes, bytearray)):
+        raise HTTPException(409, "验证导出结果无效；请稍后重试。")
+    if not zipfile.is_zipfile(io.BytesIO(data)):
+        raise HTTPException(409, "验证导出内容不是完整的 ZIP 归档。")
+    return bytes(data)
 
 
 def _configuration(config: AppConfig) -> dict[str, Any]:
@@ -634,6 +809,7 @@ async def _status(database: Database, config: AppConfig, now: dt.datetime) -> di
             "runtime": _runtime(runtime),
             "heartbeat": _heartbeat(runtime, now),
             "configuration": _configuration(config),
+            "validation": await _validation_status(database, config, now),
             "table_limit": TABLE_LIMIT,
             "baseline": _row(
                 baseline, "day equity currency policy_version complete drawdown_peak established_at"
@@ -1171,6 +1347,21 @@ def create_app(
         except SQLAlchemyError:
             raise HTTPException(503, "暂时无法读取数据库；请检查服务与数据库连接。") from None
 
+    @app.get("/api/validation/{run_id}/export", dependencies=[Depends(authenticated)])
+    async def validation_export(run_id: str) -> Response:
+        try:
+            data = await _validation_export(database, config, run_id)
+        except SQLAlchemyError:
+            raise HTTPException(503, "暂时无法导出验证归档；请检查数据库后重试。") from None
+        return Response(
+            content=data,
+            media_type="application/zip",
+            headers={
+                "Content-Disposition": _validation_filename(run_id),
+                "X-Content-Type-Options": "nosniff",
+            },
+        )
+
     @app.post("/api/commands")
     async def command(
         request: Request, session: dict[str, Any] = Depends(write_session)
@@ -1205,4 +1396,4 @@ def create_app(
     return app
 
 
-__all__ = ["CommandRequest", "create_app"]
+__all__ = ["CommandRequest", "create_app", "get_validation_lifecycle"]

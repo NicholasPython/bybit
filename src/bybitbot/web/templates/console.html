@@ -10,6 +10,7 @@
       <button id="tab-audit" role="tab" aria-selected="false" aria-controls="panel-audit" data-tab="audit" tabindex="-1">审计与对账</button>
       <button id="tab-config" role="tab" aria-selected="false" aria-controls="panel-config" data-tab="config" tabindex="-1">策略与风控</button>
       <button id="tab-ops" role="tab" aria-selected="false" aria-controls="panel-ops" data-tab="ops" tabindex="-1">人工控制</button>
+      <button id="tab-validation" role="tab" aria-selected="false" aria-controls="panel-validation" data-tab="validation" tabindex="-1">验证运行</button>
     </nav>
     <div class="sidebar-foot"><p>UTC 时间<br>金额按币种标注</p><span id="operator">验证会话中</span><button id="logout" class="text-button" type="button">退出登录</button></div>
   </aside>
@@ -51,8 +52,18 @@
     </section>
 
     <section id="panel-ops" role="tabpanel" aria-labelledby="tab-ops" tabindex="0" hidden>
-      <section class="data-section"><div class="section-heading"><h2>人工控制</h2></div><p class="section-caption">控制命令先进入持久化队列，再由持有执行租约的交易服务校验。待处理不代表交易所已受理，也不代表已成交。</p><div class="control-list"><div><h3>受限减仓</h3><p>指定单一策略、可信 bot 库存、数量和最低价格；仍需经过风控、预留与可成交价格检查。</p><button class="button secondary" type="button" data-command="REDUCE" disabled>受限减仓</button></div><div><h3>恢复指定暂停</h3><p>每次只解除一条暂停。服务会先检查证据与对账；其他活动暂停仍然有效。</p><button class="button secondary" type="button" data-command="RESUME" disabled>恢复指定暂停</button></div><div><h3>确认执行者接管</h3><p>须明确记录旧进程已停止的依据。人工确认后仍需完成新一轮干净对账，才可能获得执行资格。</p><button class="button secondary" type="button" data-command="CONFIRM_TAKEOVER" disabled>确认执行者接管</button></div><div><h3>登记外部资金流</h3><p>登记账户外的充值、提现或划转。未登记的现金变化会被判为无法解释并触发严重暂停；登记后计入账户总风险但不归属任何策略。</p><button class="button secondary" type="button" data-command="REGISTER_EXTERNAL_CASH_FLOW" disabled>登记外部资金流</button></div></div></section>
+      <section class="data-section"><div class="section-heading"><h2>人工控制</h2></div><p class="section-caption">控制命令先进入持久化队列，再由持有执行租约的交易服务校验。待处理不代表交易所已受理，也不代表已成交。</p><div class="control-list"><div><h3>受限减仓</h3><p>指定单一策略、可信 bot 库存、数量和最低价格；仍需经过风控、预留与可成交价格检查。</p><button class="button secondary" type="button" data-command="REDUCE" disabled>受限减仓</button></div><div><h3>恢复指定暂停</h3><p>每次只解除一条暂停。服务会先检查证据与对账；其他活动暂停仍然有效。</p><button class="button secondary" type="button" data-command="RESUME" disabled>恢复指定暂停</button></div><div><h3>启动验证运行</h3><p>以冻结的只读研究协议启动 paper-only 验证；不加载交易凭据，也不直接发送交易所请求。</p><button class="button secondary" type="button" data-command="VALIDATION_START" disabled>启动验证运行</button></div><div><h3>停止验证运行</h3><p>在运行列表中按运行编号申请结束；服务会封存证据并保留未解决敞口。</p><button class="button secondary" type="button" data-command="VALIDATION_STOP" disabled>停止验证运行</button></div>
+      <div><h3>确认执行者接管</h3><p>须明确记录旧进程已停止的依据。人工确认后仍需完成新一轮干净对账，才可能获得执行资格。</p><button class="button secondary" type="button" data-command="CONFIRM_TAKEOVER" disabled>确认执行者接管</button></div><div><h3>登记外部资金流</h3><p>登记账户外的充值、提现或划转。未登记的现金变化会被判为无法解释并触发严重暂停；登记后计入账户总风险但不归属任何策略。</p><button class="button secondary" type="button" data-command="REGISTER_EXTERNAL_CASH_FLOW" disabled>登记外部资金流</button></div></div></section>
       <section class="data-section"><div class="section-heading"><h2>暂停记录</h2></div><div class="table-scroll" tabindex="0" aria-label="暂停记录"><table><thead><tr><th>编号 / 范围</th><th>原因</th><th>锁定</th><th>状态</th><th>创建时间 (UTC)</th><th>解除记录</th><th>操作</th></tr></thead><tbody id="pauses-body"></tbody></table></div></section>
+    </section>
+
+    <section id="panel-validation" role="tabpanel" aria-labelledby="tab-validation" tabindex="0" hidden>
+      <section class="data-section"><div class="section-heading"><h2>验证运行</h2><button class="button secondary" data-command="VALIDATION_START" type="button" disabled>启动验证运行</button></div>
+        <p class="section-caption">仅 paper-only 公开行情研究。协议正文与来源清单由服务冻结，页面只显示运行摘要；停止与导出须按具体运行记录操作，命令入队不等于服务已执行。</p>
+        <p id="validation-scope" class="muted">正在读取验证运行。</p>
+        <p id="validation-error" class="error-message" role="alert" hidden></p>
+        <div class="table-scroll" tabindex="0" aria-label="验证运行"><table><thead><tr><th>运行编号 / 口径</th><th>状态</th><th>相位</th><th class="numeric">心跳</th><th class="numeric">缺口数</th><th>账本锚点</th><th>操作</th></tr></thead><tbody id="validation-body"></tbody></table></div>
+      </section>
     </section>
 
     <section class="data-section command-log"><div class="section-heading"><h2>最近控制命令</h2><a href="#ops" id="open-ops">查看人工控制</a></div><p id="command-notice" class="command-notice" role="status">命令状态以服务写入的记录为准。</p><div class="table-scroll" tabindex="0" aria-label="最近控制命令"><table><thead><tr><th>命令编号</th><th>操作 / 范围</th><th>状态</th><th>操作者</th><th>登记时间 (UTC)</th><th>结果</th></tr></thead><tbody id="commands-body"></tbody></table></div></section>
