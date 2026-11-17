@@ -51,9 +51,13 @@ from bybitbot.ledger import LedgerWriter
 from bybitbot.market import InstrumentCatalog, QuoteCache
 from bybitbot.money import Rounding, pct, round_to_step
 from bybitbot.ops.alerts import AlertManager
+from bybitbot.ops.clockwatch import ClockWatch
 from bybitbot.ops.control import CommandKind, CommandStatus, ControlCommandManager
+from bybitbot.ops.metrics import LatencyRecorder
 from bybitbot.ops.notifications import deliver_alerts
 from bybitbot.ops.pauses import PauseManager, PauseReason
+from bybitbot.ops.ratelimit import SlidingWindowRateLimiter
+from bybitbot.ops.retention import RetentionCleaner
 from bybitbot.ops.state import RunState, RunStateMachine
 from bybitbot.reconciliation import Reconciler
 from bybitbot.risk.engine import (
@@ -279,10 +283,25 @@ class TradingService:
         self.stop_event = asyncio.Event()
         self.last_error = ""
         self._catalog_at = 0.0
-        self._clock_at = 0.0
-        self._last_wall = now_utc()
-        self._last_mono = time.monotonic()
         self._config_hash = ""
+        #: 时钟跳变与交易所偏差监控（NFR-06 / AC-26）。
+        self.clock_watch = ClockWatch(
+            max_skew_seconds=config.ops.max_clock_skew_seconds,
+            skew_interval_seconds=config.ops.clock_skew_check_interval_seconds,
+        )
+        #: 关键路径耗时分布（NFR-02 / AC-22）。
+        self.latency = LatencyRecorder()
+        #: 原始行情清理器（NFR-05 / AC-22）。
+        self.retention = RetentionCleaner(
+            database.sessionmaker,
+            self.environment,
+            raw_market_data_days=config.ops.raw_market_data_retention_days,
+            retention_days=config.ops.retention_days,
+        )
+        #: 策略合计的意图提交速率上限（NFR-01 / AC-22）。
+        self.intent_limiter = SlidingWindowRateLimiter(
+            config.runtime.max_intents_per_second, monotonic=time.monotonic
+        )
 
     async def start(self):
         if self.environment == "live":
@@ -565,6 +584,7 @@ class TradingService:
         )
 
     async def tick(self):
+        tick_started = time.perf_counter()
         await self.lease.heartbeat()
         if self.lease.state in {LeaseState.LOST, LeaseState.HELD_BY_OTHER, LeaseState.FREE}:
             raise RuntimeError("执行资格失效，需要重启并重新确认接管")
@@ -602,7 +622,10 @@ class TradingService:
             await self._validation_tick(paused)
         await self._notifications()
         self.last_error = ""
+        await self._retention_tick()
+        await self.store.put("latency", self.latency.as_dict())
         await self._status()
+        self.latency.record("tick", time.perf_counter() - tick_started)
 
     async def _fault(self, code, detail, *, locked=None):
         await self.pauses.pause(reason_code=code, reason_detail=detail, locked=locked)
@@ -618,22 +641,105 @@ class TradingService:
         await self.pauses.resolve_technical(reason_code=code)
         await self.alerts.resolve(code, detail="重新同步与校验通过")
 
+    async def _clock_skew(self):
+        """测量本机与交易所的时间偏差（NFR-06）。
+
+        偏差超限登记技术暂停；偏差回到阈值内后，只有对账与暂停解除条件
+        全部满足才解除 —— 时间恢复了不等于账户可信了。
+        """
+        pending = await self._clock_pause_active()
+        if not self.clock_watch.skew_due(recovery_pending=pending):
+            return
+        before = now_utc()
+        remote = await self.market_adapter.get_server_time()
+        after = now_utc()
+        skew = self.clock_watch.measure_skew(local_before=before, local_after=after, remote=remote)
+        self.clock_watch.mark_skew_checked()
+        if skew.exceeded:
+            await self._fault(
+                PauseReason.CLOCK_SKEW,
+                f"本机时间与交易所偏差 {skew.offset_seconds:.1f}s 超出允许范围",
+            )
+            return
+        if pending and not await self._clock_recovery_ready():
+            await self.alerts.raise_alert(
+                alert_key="CLOCK_RECOVERY_PENDING",
+                severity="WARNING",
+                title="时钟已恢复但暂停解除条件未满足",
+                detail="身份、对账、基线、估值、执行权、负债与未知订单条件尚未全部通过",
+            )
+            return
+        await self._clear_technical(PauseReason.CLOCK_SKEW)
+
+    async def _clock_pause_active(self) -> bool:
+        """是否还有未解除的交易所偏差暂停。"""
+        rows = await self.pauses.active_pauses()
+        return any(row.reason_code == PauseReason.CLOCK_SKEW for row in rows)
+
+    async def _retention_tick(self):
+        """每日清理过期原始行情（NFR-05 / AC-22）。
+
+        只回收可重建的原始行情快照；决策引用的快照与全部账务、审计记录
+        都不删除 —— 磁盘紧张时停止新增风险，而不是丢弃账务记录。
+        """
+        now = now_utc()
+        state = await self.store.get("retention")
+        last = None
+        if isinstance(state, dict) and state.get("ran_at"):
+            try:
+                last = dt.datetime.fromisoformat(state["ran_at"])
+            except (TypeError, ValueError):
+                last = None
+        if last is not None and last.tzinfo is None:
+            last = last.replace(tzinfo=dt.UTC)
+        if last is not None and (now - last) < dt.timedelta(days=1):
+            return None
+        report = await self.retention.clean(now=now)
+        await self.store.put("retention", report.as_dict())
+        return report
+
+    async def _clock_recovery_ready(self) -> bool:
+        """时钟恢复后必须仍然成立的暂停解除条件（NFR-06 / AC-26）。
+
+        与人工 ``RESUME`` 的前置条件一致：身份、对账、风险基线、估值完整性、
+        执行权都要成立，且没有负债与未核实的未知订单。任何一条不成立就
+        继续暂停开仓 —— 时钟恢复只是必要条件，不是充分条件。
+        """
+        if not (self.identity_ok and self.reconcile_ok and self.baseline_ok):
+            return False
+        if self.lease.state is not LeaseState.ELIGIBLE:
+            return False
+        if self.valuation is None or not self.valuation.complete:
+            return False
+        if self.account is None or self.account.has_debt:
+            return False
+        async with self.database.sessionmaker() as session:
+            unknown = await session.scalar(
+                select(func.count())
+                .select_from(Order)
+                .where(
+                    Order.environment == self.environment,
+                    Order.status.in_(["UNKNOWN", "SUBMITTING"]),
+                )
+            )
+        return not unknown
+
     async def _clock_and_disk(self):
-        wall, mono = now_utc(), time.monotonic()
-        jump = abs((wall - self._last_wall).total_seconds() - (mono - self._last_mono))
-        self._last_wall, self._last_mono = wall, mono
-        if jump > self.config.ops.max_clock_skew_seconds:
-            await self._fault("CLOCK_JUMP", "系统时钟发生跳变，需重新确认调度", locked=True)
-        if mono - self._clock_at > 60:
-            before = now_utc()
-            remote = await self.market_adapter.get_server_time()
-            after = now_utc()
-            offset = abs((remote - (before + (after - before) / 2)).total_seconds())
-            if offset > self.config.ops.max_clock_skew_seconds:
-                await self._fault(PauseReason.CLOCK_SKEW, "本机时间与交易所偏差超限")
-            else:
-                await self._clear_technical(PauseReason.CLOCK_SKEW)
-            self._clock_at = mono
+        """时钟与磁盘检查（NFR-06 / NFR-05 / AC-22 / AC-26）。
+
+        时钟跳变（前跳与回拨）一律登记**锁定**暂停：调度时刻失去可信度，
+        必须人工确认后才能继续，且重启或换日都不会自动解除。
+        交易所偏差超限登记技术暂停；偏差恢复后仍要满足对账与暂停解除条件
+        才解除 —— 时钟好了不等于账户可信了。
+        """
+        observation = self.clock_watch.observe()
+        if observation.jumped:
+            await self._fault(
+                PauseReason.CLOCK_JUMP,
+                f"系统时钟{observation.detail}，需重新确认调度",
+                locked=True,
+            )
+        await self._clock_skew()
         disk_path = Path("var") if await asyncio.to_thread(Path("var").exists) else Path.cwd()
         free = shutil.disk_usage(disk_path).free / 1024**3
         if free < self.config.ops.disk_pause_threshold_gb:
@@ -1382,6 +1488,8 @@ class TradingService:
         for run in await self.scheduler.claim_due():
             try:
                 result = {"skipped": True, "reason": "disabled, paused or version changed"}
+                deferred = False
+                forced_status: str | None = None
                 cfg, version = self.strategies.get(run.strategy_id, (None, None))
                 if (
                     cfg is not None
@@ -1409,6 +1517,7 @@ class TradingService:
                         planned_at=run.planned_at,
                     )
                     result = {"skipped": True, "reason": "no eligible candidate"}
+                    submitted: list[dict[str, object]] = []
                     for draft in strategy.evaluate(context, DecisionView(valid, self.quotes, now)):
                         draft = replace(
                             draft,
@@ -1416,6 +1525,44 @@ class TradingService:
                                 rule.model_dump(mode="json") for rule in cfg.exit_rules
                             ),
                         )
+                        if not self.intent_limiter.allow():
+                            # 撞上每秒意图上限（NFR-01）：**延后**而不是丢弃。
+                            # 多个策略的日历时刻可能落在同一秒，丢一个等于让那个
+                            # 策略当天静默不交易；延后既守住上限也保住计划。
+                            # 延后有界：下个周期若已错过宽限期，按"错过即跳过"
+                            # 处理，不集中补做（STR-02）。
+                            over_limit = {
+                                "reason": "超过每秒意图上限",
+                                "limit_per_second": self.intent_limiter.limit_per_second,
+                                "retry_after_seconds": round(
+                                    self.intent_limiter.seconds_until_next_slot(), 3
+                                ),
+                            }
+                            await self.alerts.raise_alert(
+                                alert_key="INTENT_RATE_LIMIT",
+                                severity="WARNING",
+                                title="策略意图提交超过每秒上限，已延后",
+                                detail=(
+                                    f"本次延后的计划时刻 {run.rule_id}；"
+                                    f"上限 {self.intent_limiter.limit_per_second} 次/秒"
+                                ),
+                            )
+                            if not submitted:
+                                await self.scheduler.defer(
+                                    run.id, result={**over_limit, "deferred": True}
+                                )
+                                deferred = True
+                                break
+                            # 本次已提交过意图：整体重放会造成重复下单，
+                            # 因此把剩余部分按"速率上限"记账，本计划就此结束。
+                            result = {
+                                **result,
+                                **over_limit,
+                                "submitted": len(submitted),
+                                "partial": True,
+                            }
+                            forced_status = "DONE"
+                            break
                         result = await self._submit_draft(
                             run.strategy_id,
                             version,
@@ -1423,7 +1570,10 @@ class TradingService:
                             planned_at=run.planned_at,
                             rule_id=run.rule_id,
                         )
-                status = (
+                        submitted.append(result)
+                if deferred:
+                    continue
+                status = forced_status or (
                     "SKIPPED"
                     if result.get("skipped")
                     else ("REJECTED" if result.get("status") == "REJECTED" else "DONE")
@@ -1553,6 +1703,9 @@ class TradingService:
         # 新增敞口的动作：买多、买现货与覆盖式开空。开空同样占用风险，
         # 因此暂停新增风险、禁开仓窗口与预算口径都要覆盖它。
         new_exposure = draft.action in NEW_EXPOSURE_ACTIONS
+        # 意图校验与持久化预留这一段的耗时单独计量（NFR-02 / AC-22）：
+        # 这一段只做本地校验与数据库事务，不含交易所网络等待。
+        validation_started = time.perf_counter()
         async with self.database.sessionmaker() as session:
             await session.execute(
                 text("SELECT pg_advisory_xact_lock(hashtext(:key))"),
@@ -1565,6 +1718,7 @@ class TradingService:
                 )
             )
             if existing:
+                self.latency.record("intent_validation", time.perf_counter() - validation_started)
                 return {"intent_id": existing.id, "status": existing.status, "duplicate": True}
             session.add(intent)
             await session.flush()
@@ -1715,6 +1869,7 @@ class TradingService:
                 occurred_at=now_utc(),
             )
             await session.commit()
+        self.latency.record("intent_validation", time.perf_counter() - validation_started)
         if not approved:
             return {
                 "intent_id": intent.id,
@@ -2495,7 +2650,7 @@ class TradingService:
                 )
                 if self.environment == "paper"
                 else self.environment,
-                "clock_checked": self._clock_at > 0,
+                "clock_checked": self.clock_watch.skew_checked,
                 "capabilities": {
                     "option_units": self.environment == "paper"
                     or (self.config.runtime.option_units_verified),

@@ -200,6 +200,28 @@ class Scheduler:
             )
             await session.commit()
 
+    async def defer(self, run_id: int, *, result: dict[str, object] | None = None) -> None:
+        """把已抢占的任务放回 ``PLANNED``，等下一个调度周期重试。
+
+        用于"限速"而不是"拒单"：本次没提交（例如撞上每秒意图上限），
+        任务本身仍然有效，下个周期重新抢占。放回 ``PLANNED`` 不改变
+        ``planned_at`` 与去重键，因此不会被当成新的计划时刻，也不会重复执行。
+
+        宽限期（``skip_grace_seconds``）仍然生效：拖到错过时刻的任务会在
+        下次抢占时被标记 ``SKIPPED``，不会集中补做（STR-02）。
+        """
+        async with self.sessionmaker() as session:
+            await session.execute(
+                update(ScheduleRun)
+                .where(
+                    ScheduleRun.id == run_id,
+                    ScheduleRun.environment == self.environment,
+                    ScheduleRun.status == ScheduleStatus.RUNNING,
+                )
+                .values(status=ScheduleStatus.PLANNED, result=result or {})
+            )
+            await session.commit()
+
     # ------------------------------------------------------------------
     # 冷却
     # ------------------------------------------------------------------

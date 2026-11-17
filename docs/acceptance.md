@@ -4,6 +4,8 @@
 
 2026-11-16 增量记录见 [本地 paper 系统交付](paper-system-2026-11-16.md) 与 [公共领域层](shared-domain.md)。本次新增了隔离沙盒的完整策略到重启恢复证据与公共层复用；下述 2026-11-01 的统计、状态和缺口按当时证据保留，未因本次交付改写。
 
+2026-11-17 增量：AC-22（容量/延迟/磁盘/保留）与 AC-26（时钟/调度）的证据已补齐，见 [P0 验收证据](p0-acceptance-evidence-2026-11-17.md) 与 `docs/evidence/` 下的两份可复算证据文件。矩阵中这两行按本次证据更新，其余行仍按 2026-11-01 证据保留。
+
 当前交付是 M0～M3 范围内的 **paper 模拟实现和 NAS 部署**。M3 所需的真实 Demo/Testnet 联调尚未完成；本文不将模拟证据折算为真实账户能力，也不宣称全部 P0 验收通过。
 
 ## 1. 证据口径
@@ -14,9 +16,11 @@
 | 部分验证 | 有实现及部分通过的自动化或运行证据，仍有明确未覆盖子场景 |
 | 待验证 | 核心验收场景尚无有效执行证据，或依赖未具备的外部条件 |
 
-当前统计：**已验证 0，部分验证 25，待验证 3**（AC-22、AC-24、AC-26）。每个 AC 都还有未覆盖的必要子场景，具体见矩阵；这不意味着每条 AC 都必须依赖真实交易才能测试。
+当前统计（2026-11-01）：**已验证 0，部分验证 25，待验证 3**（AC-22、AC-24、AC-26）。2026-11-17 增量后：**已验证 1，部分验证 26，待验证 1**（AC-24）。每个 AC 都还有未覆盖的必要子场景，具体见矩阵；这不意味着每条 AC 都必须依赖真实交易才能测试。
 
 本地完整回归结果为 **358 passed in 29.83s**，其中交割接口契约 116 项、交割账本对账 9 项、费用 13 项、服务集成 22 项；页面命令提示另有 Node 测试 **5 项通过**。`ruff check src tests deploy alembic` 与 `alembic check` 通过。测试数据均为合成数据，无真实交易凭据；整改及实际页面操作证据见 [2026-11-01 整改记录](remediation-2026-11-01.md)。
+
+2026-11-17 的完整回归为 **1386 passed in 103.14s**（`pytest tests`），其中新增时钟韧性 19 项、容量与保留 12 项；`ruff check src/bybitbot tests` 通过。
 
 2026-11-01 已用一把**真实只读** Bybit key 做过一次读取链路核验（主账户 UID 587220933，`readOnly=1`）：身份、账户模式、钱包余额、持仓、挂单、合约规格、行情与费率字段均按真实响应核对，结论见整改记录第 5 节。该 key 无交易权限，**未产生任何订单**，因此写路径、成交、撤单与到期交割仍无真实账户证据。
 
@@ -61,11 +65,11 @@
 | AC-19 · OPS-01/02 | 部分验证 | `test_status_is_environment_scoped_and_allowlisted`、`test_csv_trace_joins_and_escapes_formulas`、`test_console_requires_session_and_serves_local_assets`、`test_all_commands_only_enqueue_once`；实际浏览器管理页检查 | 未知订单、风控拒绝、所有金额币种与账户时效缺逐项展示断言；数据可追溯不等于所有页面内容已验收 |
 | AC-20 · OPS-04/05、NFR-03 | 部分验证 | `test_delivery_retry_dedupe_and_resolution`、`test_independent_monitor_three_misses_one_alert_and_recovery`、`test_offsite_backup_staleness_is_independent_of_health`；Mac 实际任务和备份复制已验 | 未配置真实业务通知渠道；通知持续失败暂停新风险、各类故障告警上下文与时限、整机失联通知实际展示尚未验证 |
 | AC-21 · SEC-01/02/03 | 部分验证 | `tests/test_web.py` 的认证/会话/CSRF/限流/脱敏用例；`tests/test_valuation_secrets.py` 的权限/属主/读取失败/脱敏用例；NAS 和本机数据库回环监听实测 | 缺代码/日志/镜像/导出的自动化全量泄漏扫描；实际固定出口与 API 权限未验；凭据轮换未做账户演练；API 凭据装载器未达到管理身份文件的同等软链接/描述符加固 |
-| AC-22 · NFR-01/02/05 | 待验证 | 有容量与磁盘阈值配置、磁盘检查实现 | 没有容量负载、P95 延迟、CPU/内存、磁盘增长或磁盘不足暂停证据；数据保留清理尚未实现 |
+| AC-22 · NFR-01/02/05 | 部分验证（2026-11-17） | `tests/test_capacity.py` 12 项：首期容量配置边界（5 策略/10 现货对/200 候选期权）被强制校验、容量负载下延迟分布 P95 ≤ 500ms、CPU/内存、订阅量分层、磁盘增长、磁盘不足暂停不丢账务、保留清理只删未引用原始行情；证据文件 `docs/evidence/2026-11-17-ac22-capacity.json` | 参考环境（4 vCPU/8GB）未实测，本轮为本机合成行情；1 年长期保留未做实跑验证；真实行情与交易所网络等待未纳入 P95 口径 |
 | AC-23 · OPS-05、NFR-04、LED-02 | 部分验证 | `deploy/backup.sh` 流式加密；异机复制及独立库恢复已实测；恢复命令已记录在手册 | 尚无自动化恢复演练、备份后成交回填、只读服务启动及 RTO/RPO 测量；当前备份脚本仅覆盖 paper 数据库 |
 | AC-24 · ENV-02、OPT-01/03/04 | 待验证 | REST 契约测试覆盖目录、钱包、期权参数、完整历史枚举和深度限制 | 真实只读 key 已核对权限集合、账户模式、费率（期权 taker 0.0003、现货 taker 0.001，与 CR-02 模型一致）、合约规格与行情字段；reduceOnly、数量/报价/Greeks 单位、成交、撤单与交割仍需可写凭据实测 |
 | AC-25 · EXE-03、SPT-02、OPT-02、LED-04 | 部分验证 | `test_costs_follow_fee_units_and_strategy`、`test_inventory_close_competition_and_strategy_ownership`、`test_settlement_evidence_idempotency_and_cost_release`、`test_paper_settlement_checkpoint_and_ledger_replay`、重复权益防护单测 | 成本测试是单策略；同合约双策略多批买入/部分卖出未验；跨币费用组合及支付→估值→退出/结算全过程未串联验证 |
-| AC-26 · NFR-06、STR-02 | 待验证 | `test_schedule_100_duplicates_claim_once_and_skip_missed`；`test_day_key_and_day_start_follow_configured_timezone` 验证了日界线转换 | 时钟前跳/回拨/偏差超限暂停未演练；`Deadline` 不受墙钟影响、退避稳定性、时间恢复后的资格检查缺专项断言 |
+| AC-26 · NFR-06、STR-02 | 已验证（2026-11-17） | `tests/test_clock_resilience.py` 19 项：前跳/回拨识别、偏差测量与超限暂停、锁定暂停跨重启与人工 RESUME、恢复前置条件逐条、`Deadline` 与退避不受墙钟影响、调度不重复不补做、限速延后不丢计划；证据文件 `docs/evidence/2026-11-17-ac26-clock.json` | 跳变由注入假时钟产生，生产主机实际跳变与 NTP 守护未实测 |
 | AC-27 · RSK-02、OPT-03、ENV-02 | 部分验证 | `test_wallet_debt_not_double_counted_or_spendable`、`test_portfolio_unknown_holds_have_zero_spendable_cash`、现金预留竞争及冻结重叠证据测试 | 结算币现金不足但抵押品充足、运行中新负债→暂停/告警、无自动借贷/划转缺专项端到端场景 |
 | AC-28 · STR-05 | 部分验证 | `test_next_book_depth_shared_cancel_and_checkpoint`、`test_invalid_book_and_non_touch_do_not_fill`、`test_unknown_registered_and_survives_json_restore`、`test_paper_guard_blocks_remote_writes` | 同一完整事件序列两次运行的确定性缺独立断言；故障实验/收益报告区分未实现；报告模型限制及费用版本缺完整断言 |
 
@@ -93,9 +97,9 @@
 - 自动退出按策略/合约的聚合库存管理。只有实际成交使库存从零变为正数时建立持有周期；追加买入保留原起点，完全平仓后的新买入重新计时。历史库存缺少周期字段时保持待核实，不猜测回填；重建共享原有效期、数量边界和底价。该实现不等价于逐笔购入批次管理。
 - paper 结算是显式、持久化的合成事实。真实 Bybit 交割通过 delivery-record、DELIVERY 资金流水或零支付的独立到期平仓证据接入，核对先前可信现金快照及完整持仓后独立写 SETTLEMENT 和现金流。证据缺失或冲突时保留成本；尚无真实账户验证记录。
 - 首次基线须显式建立。已有基线与历史高点需保留；缺失历史不能靠重新初始化消除差异。风险资产的精确日界线历史重建未实现，目前仅有保守的纯现金不变场景重建。
-- 原始行情和审计/交易数据的保留配置存在，但自动清理未实现。不能从配置值推断保留任务已经运行。
+- 原始行情保留清理已实现（`ops/retention.py`）：只删除**未被任何交易意图引用**的行情快照，决策证据、账务与审计记录一律不删；清理每日执行一次，结果写入运行状态。配置值本身仍不能替代"清理确实跑过"的运行证据。
 - 没有外部库存确认/导入和基线重建的完整审计操作闭环。
-- `clock.local_day` / `local_day_start_utc` 已由估值日界线测试间接断言；时钟跳变、超限偏差和单调截止时间语义仍未验。不能把“没有直接 import”写成“模块零覆盖”。
+- `clock.local_day` / `local_day_start_utc` 已由估值日界线测试间接断言；时钟跳变、超限偏差和单调截止时间语义已由 `tests/test_clock_resilience.py` 直接断言（注入假时钟，产物是可复算的证据文件）。生产主机实际跳变仍需在联调环境实测。
 
 ## 4. 已核验的部署事实
 
@@ -140,9 +144,9 @@ NAS 使用已有本地 Python 基础层构建成功。标准 `Containerfile` 在
 | 服务层组合 | 配置版本、限额收紧、暂停/撤单/可信减仓、日界线/高点、失效估值与人工恢复的组合证据 |
 | 故障与互斥 | 四个崩溃点的子进程演练、双进程竞争、真实数据库断连与未知在途请求处理 |
 | 交易与账本 | 多策略同合约成本、外部库存审计导入、真实账户交割口径核验及支付→估值→退出/结算完整核对 |
-| 时钟 | 前跳/回拨/偏差超限、调度不重复补做、Deadline 与退避不受墙钟影响 |
+| 时钟 | 前跳/回拨/偏差超限与单调截止时间已由 `tests/test_clock_resilience.py` 覆盖；仍缺生产主机实际跳变与 NTP 守护的实测 |
 | 非实盘能力 | 使用受限 Demo/Testnet 凭据核对身份、权限、模式、期权单位、reduceOnly、成交/撤单和结算能力；不支持项保持未通过 |
-| 运维 | 容量/P95/磁盘增长、保留清理、磁盘不足暂停、真实通知送达与失败、完整备份恢复和 RTO/RPO |
+| 运维 | 参考环境（4 vCPU/8GB）容量重跑、真实通知送达与失败、完整备份恢复和 RTO/RPO；保留清理已完成本地证据 |
 | 安全 | 自动化密钥泄漏扫描、API 凭据文件进一步加固、固定出口核对、保持在途可追踪的实际凭据轮换 |
 | 远端 CI | 仓库已创建并推送，工作流已触发；CI 通过不替代真实账户和阶段验收 |
 
@@ -164,7 +168,9 @@ NAS 使用已有本地 Python 基础层构建成功。标准 `Containerfile` 在
 | `tests/test_deploy_ops.py` | 4 | 失联计数、备份年龄、监控安装路径及私有权限 |
 | `tests/test_valuation_secrets.py` | 28 | 权益、损益、回撤、日界线、空头拒绝、凭据权限/属主/读取失败/脱敏 |
 | `tests/test_ops.py` | 1 | 告警投递、重试、去重、恢复 |
+| `tests/test_clock_resilience.py` | 19 | 时钟跳变/偏差识别与锁定暂停、恢复前置条件、单调截止时间与退避、调度不重复不补做、限速延后 |
+| `tests/test_capacity.py` | 12 | 首期容量边界、容量负载延迟分布与资源占用、磁盘不足暂停、保留清理边界 |
 | `tests/test_cli.py` | 1 | 管理身份生成、权限与拒绝覆盖 |
-| **合计** | **358** | 另有 Node 页面提示回归 5 项 |
+| **合计** | **358** | 另有 Node 页面提示回归 5 项；2026-11-17 再增时钟韧性 19 项、容量与保留 12 项（当次全量回归 1386 项） |
 
 本文未以 import 次数代替代码覆盖率，也未测得行/分支覆盖率百分比。各 AC 的剩余差距基于具体输入与断言是否存在；测试通过和真实部署正常均不自动赋予实盘发单资格。
