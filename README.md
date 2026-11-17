@@ -4,6 +4,7 @@
 
 - GitHub 私有仓库：[NicholasPython/bybit](https://github.com/NicholasPython/bybit)，默认分支 `main`；[自动检查](https://github.com/NicholasPython/bybit/actions)
 - 需求与验收口径：[docs/requirements.md](docs/requirements.md)、[docs/requirements-review.md](docs/requirements-review.md)
+- 架构决策记录（已落地决策的理由与取舍）：[docs/architecture-decisions.md](docs/architecture-decisions.md)
 - 当前验收矩阵（逐条 AC-01～AC-28 的证据与缺口）：[docs/acceptance.md](docs/acceptance.md)
 - NAS 部署与运维手册：[docs/runbook-nas.md](docs/runbook-nas.md)
 - 2026-11-01 测试报告整改与发布证据：[docs/remediation-2026-11-01.md](docs/remediation-2026-11-01.md)
