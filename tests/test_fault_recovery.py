@@ -17,6 +17,7 @@ import asyncio
 import datetime as dt
 import os
 import signal
+import subprocess
 import sys
 import textwrap
 import uuid
@@ -165,29 +166,34 @@ def child_script(crash_stage: str) -> str:
     )
 
 
-async def run_child(database, crash_stage: str, intent_id: int, reservation_id: int) -> None:
+def run_child(database, crash_stage: str, intent_id: int, reservation_id: int) -> None:
+    """在独立的同步子进程里跑到崩溃点。
+
+    用阻塞的 subprocess 而不是 asyncio 子进程：后者依赖事件循环的子进程
+    watcher 线程，跨多个事件循环/大量测试后有概率与线程池死锁，把整个
+    测试进程挂死（AC-22 之前 CI 曾因此在 verify 步骤超时）。
+    """
     script = child_script(crash_stage)
-    proc = await asyncio.create_subprocess_exec(
-        sys.executable,
-        "-P",
-        "-c",
-        script,
-        dsn_of(database),
-        str(intent_id),
-        str(reservation_id),
-        cwd=ROOT,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
     try:
-        out_b, err_b = await asyncio.wait_for(proc.communicate(), timeout=30)
-    except TimeoutError:
-        proc.kill()
-        await proc.communicate()
+        proc = subprocess.run(  # noqa: S603
+            [
+                sys.executable,
+                "-P",
+                "-c",
+                script,
+                dsn_of(database),
+                str(intent_id),
+                str(reservation_id),
+            ],
+            cwd=ROOT,
+            capture_output=True,
+            timeout=30,
+        )
+        out, err, returncode = proc.stdout.decode(), proc.stderr.decode(), proc.returncode
+    except subprocess.TimeoutExpired:
         raise AssertionError(f"崩溃子进程超时：{crash_stage}") from None
-    out, err = out_b.decode(), err_b.decode()
     assert f"HOOK {crash_stage}" in out, f"子进程未到达崩溃点：{out}\n{err}"
-    assert proc.returncode == -signal.SIGKILL, f"子进程退出码异常：{proc.returncode} {err}"
+    assert returncode == -signal.SIGKILL, f"子进程退出码异常：{returncode} {err}"
 
 
 async def test_CR1_intent_before_prepared_has_no_order_and_releases_reservation(database):
@@ -205,25 +211,19 @@ async def test_CR1_intent_before_prepared_has_no_order_and_releases_reservation(
         os.kill(os.getpid(), 9)
         '''
     )
-    proc = await asyncio.create_subprocess_exec(
-        sys.executable,
-        "-P",
-        "-c",
-        script,
-        dsn_of(database),
-        cwd=ROOT,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
     try:
-        out_b, err_b = await asyncio.wait_for(proc.communicate(), timeout=30)
-    except TimeoutError:
-        proc.kill()
-        await proc.communicate()
+        proc = await asyncio.to_thread(  # noqa: S603
+            subprocess.run,
+            [sys.executable, "-P", "-c", script, dsn_of(database)],
+            cwd=ROOT,
+            capture_output=True,
+            timeout=30,
+        )
+        out, err, returncode = proc.stdout.decode(), proc.stderr.decode(), proc.returncode
+    except subprocess.TimeoutExpired:
         raise AssertionError("子进程超时：before_prepare") from None
-    out, err = out_b.decode(), err_b.decode()
     assert "HOOK before_prepare" in out, f"子进程未到达崩溃点：{out}\n{err}"
-    assert proc.returncode == -signal.SIGKILL, f"子进程退出码异常：{proc.returncode} {err}"
+    assert returncode == -signal.SIGKILL, f"子进程退出码异常：{returncode} {err}"
     async with database.sessionmaker() as session:
         assert await session.scalar(select(func.count()).select_from(Order)) == 0
         reservation = await session.get(Reservation, reservation_id)
@@ -249,7 +249,9 @@ async def test_CR2_send_before_response_is_unknown_no_retry_and_reservation_held
     from tests.test_execution import ControlledPaper, make_executor, plan
 
     intent_id, reservation_id = await seed(database)
-    await run_child(database, "before_send", intent_id, reservation_id)
+    await asyncio.to_thread(
+        run_child, database, "before_send", intent_id, reservation_id
+    )
     async with database.sessionmaker() as session:
         order = await session.scalar(select(Order).where(Order.intent_id == intent_id))
         assert order.status == "SUBMITTING" and order.sync_state == SYNC_PENDING
@@ -286,7 +288,9 @@ async def test_CR3_exchange_ack_without_local_record_is_reconciled(database):
     from tests.test_execution import ControlledPaper, make_executor
 
     intent_id, reservation_id = await seed(database)
-    await run_child(database, "after_ack", intent_id, reservation_id)
+    await asyncio.to_thread(
+        run_child, database, "after_ack", intent_id, reservation_id
+    )
     async with database.sessionmaker() as session:
         order = await session.scalar(select(Order).where(Order.intent_id == intent_id))
         assert order is not None and order.status in {"SUBMITTING", "ACCEPTED"}
@@ -355,27 +359,28 @@ async def test_two_processes_compete_for_lease_and_manual_confirm_is_required(da
         asyncio.run(main())
         '''
     )
-    procs = []
+    # 两个同步子进程抢租约：一个拿到（打印后挂住等 SIGKILL），一个被拒。
+    # 子进程管理走阻塞 subprocess + to_thread：不创建 asyncio 子进程 watcher
+    # 线程，避免与 pytest-asyncio 的多轮事件循环交互时把测试进程挂死。
+    def spawn(index: int) -> subprocess.Popen[bytes]:
+        return subprocess.Popen(  # noqa: S603
+            [sys.executable, "-P", "-c", script, dsn_of(database), uid],
+            cwd=ROOT,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+
+    procs = [spawn(0), spawn(1)]
     try:
-        for _ in range(2):
-            procs.append(
-                await asyncio.create_subprocess_exec(  # noqa: S603
-                    sys.executable,
-                    "-P",
-                    "-c",
-                    script,
-                    dsn_of(database),
-                    uid,
-                    cwd=ROOT,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
-                )
-            )
-        states = []
-        for proc in procs:
-            line = (await proc.stdout.readline()).decode().strip()
+        def read_state(proc: subprocess.Popen[bytes]) -> str:
+            assert proc.stdout is not None
+            line = proc.stdout.readline().decode().strip()
             assert line in {"NEEDS_CONFIRMATION", "HELD_BY_OTHER", "LOST"}, line
-            states.append(line)
+            return line
+
+        states = list(await asyncio.gather(*(
+            asyncio.to_thread(read_state, proc) for proc in procs
+        )))
         assert sorted(states) == ["HELD_BY_OTHER", "NEEDS_CONFIRMATION"]
         async with database.sessionmaker() as session:
             held = list(await session.scalars(
@@ -386,12 +391,12 @@ async def test_two_processes_compete_for_lease_and_manual_confirm_is_required(da
             assert len(held) == 1
         winner = next(p for p, s in zip(procs, states, strict=True) if s == "NEEDS_CONFIRMATION")
         winner.kill()
-        await winner.communicate()
+        await asyncio.to_thread(winner.communicate)
     finally:
         for proc in procs:
-            if proc.returncode is None:
+            if proc.poll() is None:
                 proc.kill()
-                await proc.communicate()
+            await asyncio.to_thread(proc.communicate)
 
     lease = ExecutorLease(database.engine, environment="paper", account_uid=uid)
     assert (await lease.try_acquire()).state == LeaseState.NEEDS_CONFIRMATION
