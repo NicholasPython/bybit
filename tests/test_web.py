@@ -8,6 +8,7 @@ import datetime as dt
 import hashlib
 import io
 import json
+import zipfile
 from decimal import Decimal
 from pathlib import Path
 from uuid import uuid4
@@ -33,6 +34,7 @@ from bybitbot.db.models import (
     TradeIntent,
 )
 from bybitbot.settings.loader import load_config
+from bybitbot.web import app as web_app
 from bybitbot.web.app import SESSION_COOKIE, SESSION_SECONDS, create_app
 
 ORIGIN = "https://console.example.test"
@@ -660,3 +662,185 @@ def test_admin_file_rejects_symlink_and_malformed_hash(config, database, auth_pa
     )
     with pytest.raises(ValueError, match="认证文件无效"):
         create_app(config, database, auth_path)
+
+
+class _FakeValidationLifecycle:
+    """验证层测试替身；记录 Web 传入的环境与账户隔离范围。"""
+
+    calls = []
+
+    def __init__(self, database):
+        self.database = database
+
+    @classmethod
+    async def status(cls, database, *, environment, account_uid):
+        cls.calls.append(("status", environment, account_uid))
+        return {
+            "studies": [
+                {
+                    "run_id": "paper-run-1",
+                    "environment": environment,
+                    "account_uid": account_uid,
+                    "status": "running",
+                    "policy": "weak_down",
+                    "direction": "Put",
+                    "bases": ["BTC", "ETH"],
+                    "heartbeat_ms": 1_764_583_200_000,
+                    "gap_count": 3,
+                    "chain_head": "abcdef1234567890",
+                    "positions": [{"base": "BTC", "phase": "waiting"}],
+                    "frozen": True,
+                    "final_report_ready": False,
+                    "last_error": "sample_failed:api_key=private",
+                    "protocol": {"description": "private-protocol-body"},
+                },
+                {
+                    "run_id": "other-run",
+                    "environment": "live",
+                    "account_uid": "other-account",
+                    "status": "running",
+                },
+            ]
+        }
+
+    @classmethod
+    async def export(cls, database, run_id, *, environment, account_uid):
+        cls.calls.append(("export", run_id, environment, account_uid))
+        if run_id == "broken-ledger":
+            raise ValueError("验证账本校验失败")
+        if run_id == "not-found":
+            raise ValueError("验证运行不存在")
+        output = io.BytesIO()
+        with zipfile.ZipFile(output, "w") as archive:
+            archive.writestr("STATUS.md", "synthetic validation archive")
+        return output.getvalue()
+
+
+@pytest.fixture
+def fake_lifecycle(monkeypatch):
+    _FakeValidationLifecycle.calls = []
+    monkeypatch.setattr(web_app, "get_validation_lifecycle", lambda: _FakeValidationLifecycle)
+    return _FakeValidationLifecycle
+
+
+async def test_console_serves_validation_section(client):
+    await login(client)
+    response = await client.get("/")
+    assert response.status_code == 200
+    for marker in (
+        'id="tab-validation"',
+        'id="validation-body"',
+        'data-command="VALIDATION_START"',
+        'data-command="VALIDATION_STOP"',
+        "id=\"validation-error\"",
+    ):
+        assert marker in response.text
+
+
+async def test_validation_status_is_scoped_and_sanitized(client, fake_lifecycle):
+    await login(client)
+    response = await client.get("/api/status")
+    assert response.status_code == 200, response.text
+    validation = response.json()["validation"]
+    assert [row["run_id"] for row in validation["studies"]] == ["paper-run-1"]
+    row = validation["studies"][0]
+    assert row["status"] == "running"
+    assert row["phases"] == [{"base": "BTC", "phase": "waiting"}]
+    assert row["heartbeat_at"] == "2025-12-01T10:00:00.000Z"
+    assert row["gap_count"] == 3
+    assert row["chain_head"] == "abcdef123456"
+    assert row["last_error"] == "验证服务报告异常；请查看服务器日志。"
+    for private in ("private-protocol-body", "api_key", "private", "api-key", "other-run"):
+        assert private not in response.text
+    assert fake_lifecycle.calls == [("status", "paper", "paper-account")]
+
+
+async def test_validation_export_downloads_scoped_zip(client, fake_lifecycle):
+    await login(client)
+    response = await client.get("/api/validation/paper-run-1/export")
+    assert response.status_code == 200, response.text
+    assert response.headers["content-type"].startswith("application/zip")
+    assert response.headers["content-disposition"] == (
+        'attachment; filename="bybitbot-validation-paper-run-1.zip"'
+    )
+    assert response.headers["cache-control"] == "no-store"
+    assert fake_lifecycle.calls == [("export", "paper-run-1", "paper", "paper-account")]
+    with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
+        assert archive.read("STATUS.md") == b"synthetic validation archive"
+
+
+@pytest.mark.parametrize(
+    ("run_id", "status"),
+    [("not-found", 404), ("broken-ledger", 409), ("bad%20id", 422)],
+)
+async def test_validation_export_maps_errors(client, fake_lifecycle, run_id, status):
+    await login(client)
+    response = await client.get(f"/api/validation/{run_id}/export")
+    assert response.status_code == status
+    assert "Traceback" not in response.text
+    assert "private" not in response.text
+
+
+async def test_validation_export_requires_session(client, fake_lifecycle):
+    assert (await client.get("/api/validation/paper-run-1/export")).status_code == 401
+    assert fake_lifecycle.calls == []
+
+
+@pytest.mark.parametrize(
+    ("kind", "payload", "expected"),
+    [
+        (
+            "VALIDATION_START",
+            {
+                "run_id": "paper-run-2",
+                "bases": ["BTC", "ETH"],
+                "policy": "weak_down",
+                "direction": "Put",
+                "protocol": {"study_days": 5, "target_entry_days": 21},
+                "other_run_ids": ["paper-run-1"],
+            },
+            202,
+        ),
+        ("VALIDATION_STOP", {"run_id": "paper-run-1"}, 202),
+    ],
+)
+async def test_validation_commands_enqueue(client, database, kind, payload, expected):
+    headers = await login(client)
+    body = command(kind, payload)
+    responses = await asyncio.gather(
+        *(client.post("/api/commands", json=body, headers=headers) for _ in range(2))
+    )
+    assert {response.status_code for response in responses} == {expected}
+    assert sum(response.json()["created"] for response in responses) == 1
+    assert responses[0].json()["command"]["payload"] == payload
+    assert responses[0].json()["command"]["status"] == "PENDING"
+    async with database.sessionmaker() as session:
+        assert await session.scalar(select(func.count()).select_from(ControlCommand)) == 1
+        assert await session.scalar(select(func.count()).select_from(TradeIntent)) == 0
+        assert await session.scalar(select(func.count()).select_from(Order)) == 0
+
+
+@pytest.mark.parametrize(
+    ("kind", "payload"),
+    [
+        ("VALIDATION_START", {"run_id": "bad id", "bases": ["BTC"], "policy": "weak_down",
+                              "direction": "Put", "protocol": {"study_days": 5}}),
+        ("VALIDATION_START", {"run_id": "r1", "bases": ["BTC", "BTC"], "policy": "weak_down",
+                              "direction": "Put", "protocol": {"study_days": 5}}),
+        ("VALIDATION_START", {"run_id": "r1", "bases": ["BTC"], "policy": "weak_down",
+                              "direction": "Call", "protocol": {"study_days": 5}}),
+        ("VALIDATION_START", {"run_id": "r1", "bases": ["BTC"], "policy": "weak_down",
+                              "direction": "Put", "protocol": {"api_key": "private"}}),
+        ("VALIDATION_START", {"run_id": "r1", "bases": ["BTC"], "policy": "weak_down",
+                              "direction": "Put", "protocol": {"study_days": 5},
+                              "exchange_order": {"symbol": "BTCUSDT"}}),
+        ("VALIDATION_STOP", {"run_id": "../../etc/passwd"}),
+        ("VALIDATION_STOP", {"run_id": "r1", "api_key": "private"}),
+        ("VALIDATION_EXPORT", {"run_id": "r1"}),
+    ],
+)
+async def test_validation_commands_reject_unsafe_payloads(client, kind, payload):
+    headers = await login(client)
+    response = await client.post("/api/commands", json=command(kind, payload), headers=headers)
+    assert response.status_code == 422
+    assert "private" not in response.text

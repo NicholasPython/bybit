@@ -79,6 +79,7 @@ from bybitbot.validation.authority import (
 from bybitbot.validation.authority import (
     covered_paper_account,
 )
+from bybitbot.validation.lifecycle import ValidationLifecycle
 from bybitbot.validation.models import ValidationPosition, ValidationStudy
 from bybitbot.validation.orchestration import ValidationOrchestrator
 from bybitbot.validation.protocol import SpreadProtocol
@@ -253,6 +254,8 @@ class TradingService:
         )
         self.pauses = PauseManager(database.sessionmaker, self.environment)
         self.alerts = AlertManager(database.sessionmaker, self.environment)
+        self.validation_store = ValidationStore(database.sessionmaker, self.environment, self.uid)
+        self.validation = ValidationLifecycle(self.validation_store)
         self.commands = ControlCommandManager(database.sessionmaker, self.environment)
         self.reservations = ReservationManager(self.environment)
         self.ledger = LedgerWriter(self.environment)
@@ -581,10 +584,8 @@ class TradingService:
         await self._market()
         await self._account_sync()
         # Read-only observations continue while new trading exposure is paused.
-        await ValidationSampler(
-            ValidationStore(self.database.sessionmaker, self.environment, self.uid),
-            self.market_adapter,
-        ).tick()
+        await self._validation_lifecycle_tick()
+        await ValidationSampler(self.validation_store, self.market_adapter).tick()
         await self._process_commands()
         paused = (
             bool(await self.pauses.active_pauses()) or self.lease.state is not LeaseState.ELIGIBLE
@@ -1114,6 +1115,8 @@ class TradingService:
                 takeover_handler=self._takeover,
                 baseline_handler=self._initialize_baseline,
                 cash_flow_handler=self._register_external_cash_flow,
+                validation_start_handler=self._validation_start,
+                validation_stop_handler=self._validation_stop,
             )
 
     async def _register_external_cash_flow(self, command):
@@ -1766,6 +1769,65 @@ class TradingService:
             "status": outcome.outcome.value,
             "order_link_id": outcome.order.order_link_id if outcome.order else None,
         }
+
+    async def _validation_lifecycle_tick(self):
+        """心跳、冻结与互斥校验；任一失败即锁定暂停并停止验证执行。"""
+        for study in await self.validation_store.active():
+            try:
+                await self.validation.freeze(study.id)
+                await self.validation.heartbeat(study.id)
+                await self.validation.checkpoint(study.id)
+                await self.validation.check(study.id)
+            except Exception as exc:  # noqa: BLE001 - 验证失败必须 fail closed
+                logger.warning("验证运行 %s 完整性检查失败：%s", study.run_id, exc)
+                await self._fault(
+                    PauseReason.VALIDATION_INTEGRITY,
+                    f"验证运行 {study.run_id} 完整性检查失败",
+                    locked=True,
+                )
+                break
+
+    async def _validation_start(self, command):
+        """冻结并启动一次验证运行；只接受 paper 与受控协议字段。"""
+        if self.environment != "paper":
+            raise RuntimeError("验证运行只允许 paper 环境")
+        payload = command.payload or {}
+        protocol = SpreadProtocol.from_mapping(payload["protocol"])
+        protocol_data = json_value(asdict(protocol))
+        now_ms = int(now_utc().timestamp() * 1000)
+        study = await self.validation_store.start(
+            run_id=payload["run_id"],
+            bases=payload["bases"],
+            policy=payload["policy"],
+            direction=payload["direction"],
+            protocol=protocol,
+            started_ms=now_ms,
+        )
+        study.protocol = protocol_data
+        strategy_id, (_, version) = next(iter(self.strategies.items()))
+        await self.validation_store.bind(study.id, strategy_id=strategy_id, version=version)
+        await self.validation.freeze(study.id)
+        await self.validation.register_exclusion(
+            study.id, other_run_ids=payload.get("other_run_ids", ())
+        )
+        await self.validation.checkpoint(study.id)
+        await self.validation.check(study.id)
+        return {"run_id": study.run_id, "study_id": study.id, "status": study.status}
+
+    async def _validation_stop(self, command):
+        """结束运行并封存证据；不清除未解决敞口。"""
+        run_id = (command.payload or {}).get("run_id")
+        async with self.database.sessionmaker() as session:
+            study = await session.scalar(
+                select(ValidationStudy).where(
+                    ValidationStudy.environment == self.environment,
+                    ValidationStudy.account_uid == self.uid,
+                    ValidationStudy.run_id == run_id,
+                )
+            )
+        if study is None:
+            raise ValueError("验证运行不存在")
+        return await self.validation.end(study.id)
 
     async def _validation_tick(self, paused):
         """驱动验证价差编排器：把待办计划提交为交易意图，失败落库为 REJECTED。"""

@@ -40,6 +40,7 @@
     CANCEL_ORDER: "撤销指定 bot 订单", REDUCE: "受限减仓", RESUME: "恢复指定暂停",
     CONFIRM_TAKEOVER: "确认执行者接管", INITIALIZE_BASELINE: "建立首次风险基线",
     REGISTER_EXTERNAL_CASH_FLOW: "登记外部资金流",
+    VALIDATION_START: "启动验证运行", VALIDATION_STOP: "停止验证运行",
   };
   const state = (value) => text(stateNames[value], text(value, "未知"));
   const badge = (value, label) => {
@@ -246,6 +247,7 @@
       (r) => data.config_versions?.find((v) => v.strategy_id === r.id && v.active)?.currency || currency,
     ], "暂无持久化策略实例。请启动交易服务以校验并载入配置。");
     renderStrategyParams(data);
+    renderValidation(data.validation, data.environment);
     renderLimits(data.configuration);
     table("pauses-body", data.pauses, [
       (r) => stacked(`#${r.id}`, `${r.scope}${r.scope_key ? ` ${r.scope_key}` : ""}`),
@@ -260,6 +262,9 @@
       (r) => badge(r.status), (r) => r.requested_by, (r) => stamp(r.created_at),
       { value: (r) => ["PENDING", "EXECUTING"].includes(r.status) ? "等待交易服务写入最终结果" : JSON.stringify(r.result || {}), className: "wrap" },
     ], "暂无控制命令。所有命令均会保留编号、操作者与结果。");
+    document.querySelectorAll("[data-export-run-id]").forEach((button) => {
+      button.disabled = !session;
+    });
     $("refresh-at").textContent = `读取于 ${stamp(data.generated_at)}`;
     $("row-limit").textContent = `每表显示最近 ${data.table_limit} 条记录`;
     document.querySelectorAll("[data-command]").forEach((button) => { button.disabled = !session; });
@@ -344,6 +349,83 @@
     ], "暂无生效的策略配置版本。交易服务载入配置后会写入不可变版本。");
   }
 
+  const VALIDATION_STATES = {
+    running: "运行中", ending: "正在收尾", ended: "已结束",
+  };
+  const validationChain = (value) => {
+    const head = text(value, "");
+    return head && head !== "0".repeat(head.length) ? `${head.slice(0, 12)}…` : "尚未锚定";
+  };
+  const validationAction = (kind, runId, label) => {
+    const button = node("button", label, "button secondary small");
+    button.type = "button";
+    button.dataset.command = kind;
+    button.dataset.runId = runId;
+    button.disabled = !session;
+    button.addEventListener("click", () => openCommand(kind, { run_id: runId }));
+    return button;
+  };
+  const downloadValidation = async (runId, button) => {
+    if (button.disabled) return;
+    button.disabled = true;
+    showError($("validation-error"), "");
+    try {
+      const response = await fetch(`/api/validation/${encodeURIComponent(runId)}/export`, {
+        credentials: "same-origin",
+        signal: AbortSignal.timeout(12000),
+      });
+      if (!response.ok) {
+        let detail = `导出未完成（${response.status}）。`;
+        try { detail = (await response.json()).detail || detail; } catch { /* 保留状态码提示。 */ }
+        if (response.status === 401) location.assign("/login");
+        throw new Error(detail);
+      }
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `bybitbot-validation-${runId.replace(/[^A-Za-z0-9_-]+/g, "-")}.zip`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      showError($("validation-error"), error.message || "导出请求未完成，请稍后重试。");
+    } finally { button.disabled = false; }
+  };
+  const exportAction = (runId) => {
+    const button = node("button", "下载 ZIP", "button secondary small");
+    button.type = "button";
+    button.disabled = !session;
+    button.addEventListener("click", () => downloadValidation(runId, button));
+    return button;
+  };
+  function renderValidation(validation, environment) {
+    const runs = (validation?.studies || []).filter((run) => !environment || run.environment === environment);
+    showError($("validation-error"), "");
+    $("validation-scope").textContent = runs.length
+      ? `当前环境 ${environment || "未知"}，账户范围由服务校验`
+      : "当前环境暂无验证运行；启动入口位于人工控制。";
+    table("validation-body", runs, [
+      (r) => stacked(r.run_id, `${text(r.policy)} · ${text(r.direction)}${r.bases?.length ? ` · ${r.bases.join("/")}` : ""}`, true),
+      (r) => badge(r.status === "ended" ? "CONFIRMED" : r.status === "running" ? "EXECUTING" : "PENDING", VALIDATION_STATES[r.status] || text(r.status)),
+      (r) => {
+        const box = node("div");
+        for (const item of r.phases || []) box.append(node("p", `${item.base}：${item.phase}`));
+        return (box.children || []).length ? box : "尚无阶段记录";
+      },
+      (r) => stacked(stamp(r.heartbeat_at), r.heartbeat_age_seconds === null || r.heartbeat_age_seconds === undefined ? "心跳时间未知" : age(r.heartbeat_age_seconds)),
+      { value: (r) => r.gap_count ?? 0, className: "numeric" },
+      { value: (r) => validationChain(r.chain_head), className: "number" },
+      (r) => {
+        const box = node("div");
+        box.append(validationAction("VALIDATION_STOP", r.run_id, "停止"));
+        const exportButton = exportAction(r.run_id);
+        exportButton.dataset.exportRunId = r.run_id;
+        box.append(exportButton);
+        return box;
+      },
+    ], "当前环境暂无验证运行。启动前请确认研究口径与 paper-only 范围。");
+  }
+
   function renderLimits(config) {
     const rows = [];
     const add = (name, value, unit, scope) => rows.push({ name, value, unit, scope });
@@ -386,6 +468,8 @@
     CONFIRM_TAKEOVER: [["evidence", "旧进程已经停止的证据", "textarea", true], ["reason", "接管原因", "textarea", true]],
     INITIALIZE_BASELINE: [["reason", "建立风险起点的原因", "textarea", true]],
     REGISTER_EXTERNAL_CASH_FLOW: [["asset", "币种", "symbol", true], ["amount", "金额（正数）", "decimal", true], ["kind", "资金流类型", "cashflow", true], ["reference", "交易所流水标识", "text", true], ["occurred_at", "发生时间（ISO 8601，可留空）", "text"], ["reason", "登记原因", "textarea", true]],
+    VALIDATION_START: [["run_id", "运行编号", "text", true], ["bases", "验证标的（逗号分隔，BTC/ETH）", "text", true], ["policy", "信号口径", "policy", true], ["direction", "价差方向", "direction", true], ["protocol", "研究协议 JSON（对象）", "textarea", true], ["other_run_ids", "互斥运行编号（可选，逗号分隔）", "text"]],
+    VALIDATION_STOP: [["run_id", "运行编号", "text", true]],
   };
   const descriptions = {
     PAUSE_NEW_RISK: "暂停账户新增风险，交易服务会处理 bot 开仓挂单。已有可信库存的退出仍需按规则校验。",
@@ -396,6 +480,8 @@
     CONFIRM_TAKEOVER: "确认旧执行者已停止，并记录可核查依据。仅有数据库锁或服务页面连通不能证明旧执行者已停止。",
     INITIALIZE_BASELINE: "以完整估值建立首次风险起点，首日标记为不完整交易日。此操作不会覆盖已有起点，也不覆盖接入前损失。",
     REGISTER_EXTERNAL_CASH_FLOW: "登记账户外的充值、提现或划转。金额填正数，方向由类型决定；只登记估值币种。交易所流水标识用于日后核对，登记会记录操作者与时间。",
+    VALIDATION_START: "以冻结的研究协议启动 paper-only 验证运行；不会加载交易凭据或直接发送交易所请求。服务会校验口径、互斥登记与源码冻结，命令入队不等于运行已启动。",
+    VALIDATION_STOP: "申请结束指定验证运行并封存证据。服务会保留未解决敞口；停止命令入队不等于运行已结束。",
   };
   function scopeText(kind, payload = {}, environment) {
     let summary = `环境 ${environment || snapshot?.environment || "未知"}`;
@@ -404,6 +490,8 @@
     else if (kind === "RESUME") summary += `；暂停 #${payload.pause_id || "未填写"}`;
     else if (kind === "CANCEL_BOT_OPEN_ORDERS") summary += `；${payload.strategy_id ? `策略 ${payload.strategy_id}` : "全部策略"}；${payload.symbol || "全部标的"}；仅 bot 开仓单`;
     else if (kind === "REGISTER_EXTERNAL_CASH_FLOW") summary += `；${payload.asset || "未填写"} ${payload.amount || "未填写"}；${payload.kind || "未选择"}；流水 ${payload.reference || "未填写"}`;
+    else if (kind === "VALIDATION_START") summary += `；运行 ${payload.run_id || "未填写"}；${(payload.bases || []).join("/") || "未选择标的"}；${payload.policy || "未选择口径"} / ${payload.direction || "未选择方向"}；协议字段 ${Object.keys(payload.protocol || {}).length}`;
+    else if (kind === "VALIDATION_STOP") summary += `；运行 ${payload.run_id || "未填写"}；只结束当前 paper 环境的指定运行`;
     else summary += "；当前账户";
     return summary;
   }
@@ -420,6 +508,12 @@
         if (!/^(?:0|[1-9][0-9]{0,19})(?:\.[0-9]{1,18})?$/.test(value) || !/[1-9]/.test(value)) throw new Error(`${label}必须是正数，请保留原始精度。`);
       } else if (type === "symbol") value = value.toUpperCase();
       if (key === "order_link_ids") value = [...new Set(value.split(/[\s,]+/).filter(Boolean))];
+      else if (key === "bases") value = [...new Set(value.split(/[\s,]+/).filter(Boolean).map((item) => item.toUpperCase()))];
+      else if (key === "other_run_ids") value = [...new Set(value.split(/[\s,]+/).filter(Boolean))];
+      else if (key === "protocol") {
+        try { value = JSON.parse(value); } catch { throw new Error(`${label}必须是合法 JSON 对象。`); }
+        if (!value || typeof value !== "object" || Array.isArray(value) || !Object.keys(value).length) throw new Error(`${label}必须是非空 JSON 对象。`);
+      }
       payload[key] = value;
     }
     return payload;
@@ -443,17 +537,25 @@
       const wrapper = node("div");
       const id = `field-${key}`;
       const caption = node("label", label); caption.htmlFor = id;
-      const input = node(type === "textarea" ? "textarea" : ["category", "cashflow"].includes(type) ? "select" : "input");
+      const input = node(type === "textarea" ? "textarea" : ["category", "cashflow", "policy", "direction"].includes(type) ? "select" : "input");
       input.id = id; input.name = key; input.required = !!required; input.autocomplete = "off";
       if (type === "category") for (const [value, title] of [["spot", "现货 spot"], ["option", "期权 option"]]) {
+        const option = node("option", title); option.value = value; input.append(option);
+      }
+      if (type === "policy") for (const [value, title] of [["strong_up", "转强看涨 strong_up"], ["weak_down", "弱势看跌 weak_down"]]) {
+        const option = node("option", title); option.value = value; input.append(option);
+      }
+      if (type === "direction") for (const [value, title] of [["Call", "看涨价差 Call"], ["Put", "看跌价差 Put"]]) {
         const option = node("option", title); option.value = value; input.append(option);
       }
       if (type === "cashflow") for (const [value, title] of [["DEPOSIT", "充值 deposit"], ["TRANSFER_IN", "划入 transfer in"], ["WITHDRAWAL", "提现 withdrawal"], ["TRANSFER_OUT", "划出 transfer out"]]) {
         const option = node("option", title); option.value = value; input.append(option);
       }
       if (["id", "decimal"].includes(type)) input.inputMode = type === "id" ? "numeric" : "decimal";
-      if (input.tagName !== "SELECT") input.maxLength = key === "order_link_ids" ? 3200 : 500;
-      input.value = Array.isArray(values[key]) ? values[key].join("\n") : text(values[key], "");
+      if (input.tagName !== "SELECT") {
+        input.maxLength = key === "order_link_ids" ? 3200 : key === "protocol" ? 16384 : 500;
+      }
+      input.value = Array.isArray(values[key]) ? values[key].join(", ") : values[key] && typeof values[key] === "object" ? JSON.stringify(values[key]) : text(values[key], "");
       input.disabled = !!submitted;
       input.addEventListener("input", () => { try { $("scope-summary").textContent = scopeText(kind, collectPayload()); } catch { $("scope-summary").textContent = "请完整填写操作范围、数量和价格。"; } });
       wrapper.append(caption, input); $("command-fields").append(wrapper);

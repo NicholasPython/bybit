@@ -76,14 +76,26 @@ function createDocument(commandButtons) {
       if (!elements.has(id)) elements.set(id, new FakeNode("div"));
       return elements.get(id);
     },
-    createElement(tag) { return new FakeNode(tag); },
+    createElement(tag) {
+      const created = new FakeNode(tag);
+      Object.defineProperty(created, "id", {
+        get: () => created._id || "",
+        set: (next) => { created._id = next; elements.set(next, created); },
+        configurable: true,
+      });
+      return created;
+    },
     createTextNode(value) { const item = new FakeNode("#text"); item.textContent = value; return item; },
-    querySelectorAll(selector) { return selector === "[data-command]" ? commandButtons : []; },
+    querySelectorAll(selector) {
+      if (selector === "[data-command]") return commandButtons;
+      if (selector === "[data-export-run-id]") return [...elements.values()].filter((item) => item.dataset?.exportRunId);
+      return [];
+    },
     addEventListener() {},
   };
 }
 
-async function boot({ commands = [], pending = null, commandResponder = null, commandKind = "CANCEL_BOT_OPEN_ORDERS", snapshotPatch = {} } = {}) {
+async function boot({ commands = [], pending = null, commandResponder = null, commandKind = "CANCEL_BOT_OPEN_ORDERS", snapshotPatch = {}, fetchResponder = null } = {}) {
   const requests = [];
   const store = new Map();
   if (pending) store.set(PENDING_KEY, JSON.stringify(pending));
@@ -111,6 +123,10 @@ async function boot({ commands = [], pending = null, commandResponder = null, co
   const fetchStub = async (path, options = {}) => {
     const body = options.body ? JSON.parse(options.body) : null;
     requests.push({ path, method: options.method || "GET", body });
+    if (fetchResponder) {
+      const custom = await fetchResponder(path, options);
+      if (custom) return custom;
+    }
     if (path === "/api/session") return jsonResponse(200, { username: "operator", csrf_token: "csrf-token" });
     if (path === "/api/status") return jsonResponse(200, snapshot);
     if (path === "/api/commands") {
@@ -340,4 +356,114 @@ test("策略生效参数：只显示生效版本，列出参数与退出规则",
   assert.match(rules, /持有到期：hold_seconds=1209600/);
   assert.match(rules, /到期前退出：按全局配置/);
   assert.equal(rules.includes("max_reprice_attempts"), false, "不应展示执行细节字段");
+});
+
+const validationRun = {
+  run_id: "paper-validation-1",
+  environment: "paper",
+  status: "running",
+  policy: "weak_down",
+  direction: "Put",
+  bases: ["BTC", "ETH"],
+  heartbeat_at: "2026-11-01T02:43:00Z",
+  heartbeat_age_seconds: 19,
+  gap_count: 2,
+  chain_head: "abcdef1234567890",
+  phases: [{ base: "BTC", phase: "waiting" }],
+};
+
+function findByText(node, needle) {
+  if (!node || typeof node !== "object") return null;
+  if (String(node.textContent || "").includes(needle)) return node;
+  for (const child of node.children || []) {
+    const found = findByText(child, needle);
+    if (found) return found;
+  }
+  return null;
+}
+
+function fieldInput(app, label) {
+  const wrapper = findByText(app.element("command-fields"), label);
+  assert.ok(wrapper, `命令表单应包含字段 ${label}`);
+  const labelNode = (wrapper.children || []).find((child) => child.tagName === "LABEL");
+  assert.ok(labelNode, `字段 ${label} 应有标签`);
+  const fieldId = labelNode.htmlFor || labelNode.attributes?.for;
+  assert.ok(fieldId, `字段 ${label} 应关联输入控件`);
+  return app.element(fieldId);
+}
+
+test("验证运行：展示状态、相位、心跳、缺口与截断账本锚点", async () => {
+  const app = await boot({ snapshotPatch: {
+    validation: { studies: [validationRun, { ...validationRun, run_id: "other", environment: "live" }] },
+  } });
+  const body = app.element("validation-body");
+  assert.equal(body.children.length, 1, "只显示当前环境的验证运行");
+  const row = flatten(body.children[0]);
+  assert.match(row, /paper-validation-1/);
+  assert.match(row, /运行中/);
+  assert.match(row, /BTC：waiting/);
+  assert.match(row, /19\.0 秒/);
+  assert.match(row, /abcdef123456…/, "账本锚点应截断显示");
+  assert.equal(row.includes("abcdef1234567890"), false);
+  assert.equal(row.includes("other"), false);
+});
+
+test("验证停止：按运行编号打开既有命令对话框", async () => {
+  const app = await boot({ snapshotPatch: { validation: { studies: [validationRun] } } });
+  const stopButton = findByText(app.element("validation-body"), "停止");
+  assert.ok(stopButton, "验证运行表中应有停止按钮");
+  assert.equal(stopButton.disabled, false, "已登录时停止按钮应可用");
+  await stopButton.dispatch("click");
+  assert.equal(app.element("command-title").textContent, "停止验证运行");
+  assert.equal(app.element("field-run_id").value, "paper-validation-1");
+  assert.equal(app.element("confirmation").required, true);
+  app.element("confirmation").value = CONFIRMATION;
+  await app.element("command-form").dispatch("submit");
+  const posted = app.requests.filter((request) => request.path === "/api/commands")[0].body;
+  assert.equal(posted.kind, "VALIDATION_STOP");
+  assert.deepEqual(posted.payload, { run_id: "paper-validation-1" });
+});
+
+test("验证启动：协议 JSON 解析为对象并组装互斥运行编号", async () => {
+  const app = await boot({ commandKind: "VALIDATION_START" });
+  await app.commandButtons[0].dispatch("click");
+  assert.equal(app.element("command-title").textContent, "启动验证运行");
+  app.element("field-run_id").value = "paper-validation-2";
+  app.element("field-bases").value = "btc, ETH, btc";
+  app.element("field-policy").value = "weak_down";
+  app.element("field-direction").value = "Put";
+  app.element("field-protocol").value = '{"study_days":5,"target_entry_days":21}';
+  app.element("field-other_run_ids").value = "paper-validation-1,paper-validation-1";
+  app.element("confirmation").value = CONFIRMATION;
+  await app.element("command-form").dispatch("submit");
+  const posted = app.requests.filter((request) => request.path === "/api/commands")[0].body;
+  assert.equal(posted.kind, "VALIDATION_START");
+  assert.deepEqual(posted.payload, {
+    run_id: "paper-validation-2",
+    bases: ["BTC", "ETH"],
+    policy: "weak_down",
+    direction: "Put",
+    protocol: { study_days: 5, target_entry_days: 21 },
+    other_run_ids: ["paper-validation-1"],
+  });
+  assert.match(app.element("command-notice").textContent, /命令/);
+});
+
+test("验证导出：直接 GET 下载 ZIP，不经命令队列", async () => {
+  const app = await boot({ snapshotPatch: { validation: { studies: [validationRun] } },
+    fetchResponder: async (path, options) => {
+      if (path === "/api/validation/paper-validation-1/export") return {
+        status: 200, ok: true, blob: async () => ({ size: 4 }),
+      };
+      return null;
+    },
+  });
+  const exportButton = findByText(app.element("validation-body"), "下载 ZIP");
+  assert.ok(exportButton, "验证运行表中应有下载按钮");
+  assert.equal(typeof exportButton.dataset.exportRunId, "string");
+  await exportButton.dispatch("click");
+  const download = app.requests.find((request) => request.path.includes("/export"));
+  assert.ok(download, "应直接请求导出接口");
+  assert.equal(download.method, "GET");
+  assert.equal(app.requests.filter((request) => request.path === "/api/commands").length, 0);
 });

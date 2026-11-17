@@ -9,7 +9,7 @@
 | 一 | 指标/信号、Call/Put 价差配对与排序、成本闸门、内存阶段账本、观察缺口判定 | 已实现，阶段二 worker 采样已复用信号与候选计算 |
 | 二 | 四张验证表、采样身份/游标、跨标的事务预留、worker tick 采样 | 已实现，只读采样在暂停时仍运行 |
 | 三 | 标准意图、开空/平空、逐腿编排、完整 paper 执行与重启恢复 | 已实现，四腿真实链路测试通过 |
-| 四 | 状态/账本/心跳/最终报告、冻结 manifest 与哈希链、互斥登记、操作台 | 待实施 |
+| 四 | 状态/账本/心跳/最终报告、冻结 manifest 与哈希链、互斥登记、操作台 | 已实现，生命周期与操作台入口已接入 |
 
 ## 阶段一接口与口径
 
@@ -45,6 +45,17 @@ K 线从公开 unsigned GET `/v5/market/kline` 读取 BTCUSDT/ETHUSDT 现货 60/
 - 覆盖空头授权：paper 空头仅在 `covered_paper_account` 按规范事实（空头成交数量、唯一覆盖合约、`short_qty ≤ long_qty`、实际多头与库存可信）逐项对账后才被信任；对账与负债保护共用同一授权口径，授权空头估值计为负债。
 - 持久化事实：意图保留 `validation_position_id`、`coverage_symbol` 与编排器 signal 身份；撤单/过期沿 `_cancel_expired` 收口，暂停时新增敞口挂单会被撤销。
 
+## 阶段四生命周期与证据
+
+`ValidationLifecycle` 把 `ValidationStore` 的四张验证表与 `validation/archive.py` 的不可变证据串成运行级生命周期：
+
+- 冻结：启动时一次性钉住协议哈希、当前产品源码逐字节清单与策略版本绑定；后续每个 tick 逐字节复核，源码或绑定变化一律 fail closed。
+- 心跳与检查点：每个 tick 更新心跳，并把状态、持仓、观察与错误写进 `ValidationLedger` 的检查点事件；终态检查点最后写，保证归档末尾锚定最终状态。
+- 互斥：显式登记对向验证运行的编号、方向/策略口径、协议哈希、状态与账本头；任一登记对象的状态改变即停止验证执行，不靠风险敞口间接推断。
+- 终态：`VALIDATION_STOP` 将运行标记为 `ended`；未平仓腿改记为 `study_ended_unresolved` 并保留敞口与风险，绝不伪造结算。
+- 归档导出：只导出当前环境/账户的运行，`archive_bytes` 复核哈希链、观察哈希、协议哈希、检查点与冻结源码后生成可复现 ZIP，内含 `STATUS.md`、`FINAL_REPORT.md`、`state.json`、`ledger.jsonl`、`heartbeat.json`、`manifest.json` 与 `frozen/` 源码副本。
+- 命令：`CommandKind.VALIDATION_START` / `VALIDATION_STOP` 与其他控制命令一样先入持久化队列，再由持有执行租约的 worker 校验执行；停止命令只改验证运行账本，不发交易所写请求。
+
 ## 验证与边界
 
 新增测试覆盖冻结协议解析、信号阈值、坏输入、Call/Put 算术、共同数量步长、深度/预算限制、候选排列稳定性、原 bull-call 纯函数差分、逐腿拒绝原子性及未解决终态。全套项目回归结果记录在对应 PR 中。
@@ -53,6 +64,8 @@ K 线从公开 unsigned GET `/v5/market/kline` 读取 BTCUSDT/ETHUSDT 现货 60/
 
 阶段三验证：项目 Python 回归 1523 项通过，Ruff 全部通过。四腿真实链路用例驱动真实 `TradingService`、编排器、执行器、paper 适配器、对账与账本，行情取冻结 bull-call 快照 `market-4o2c_dfk` 的 ETH Call 报价（仅到期日平移）；覆盖买腿成交、开空成交、库存方向预留、回补空现金预留、平多库存预留、授权空头估值负债与暂停撤单。未发送任何真实交易请求。
 
-当前交付覆盖阶段一、二、三，阶段四尚未闭合。测试使用离线数据、模拟凭据和隔离数据库 schema。
+阶段四验证：项目 Python 回归 1547 项通过，操作台 Node 测试 10 项通过，Ruff 全部通过。
+
+当前交付覆盖阶段一、二、三、四。测试使用离线数据、模拟凭据和隔离数据库 schema，未装载实盘凭据或发送交易所写请求。
 
 这些数据可用于模拟定价回测，但不能替代历史期权真实报价。
