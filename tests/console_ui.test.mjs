@@ -156,6 +156,7 @@ async function boot({ commands = [], pending = null, commandResponder = null, co
   vm.runInContext(consoleSource, sandbox, { filename: "console.js" });
   await flush();
   return {
+    sandbox,
     document,
     requests,
     sessionStorage,
@@ -466,4 +467,56 @@ test("验证导出：直接 GET 下载 ZIP，不经命令队列", async () => {
   assert.ok(download, "应直接请求导出接口");
   assert.equal(download.method, "GET");
   assert.equal(app.requests.filter((request) => request.path === "/api/commands").length, 0);
+});
+
+test("恢复状态派生：阻塞、关注、就绪三档", async () => {
+  const app = await boot();
+  const derive = app.sandbox.__bybitbotConsole?.deriveRecoveryState;
+  assert.equal(typeof derive, "function", "console.js 应暴露纯派生函数供测试");
+
+  const blocking = derive({
+    runtime: { lease: "NEEDS_CONFIRMATION", valuation_complete: false },
+    heartbeat: { fresh: true },
+    account: { complete: true, stale: false },
+    reconciliations: [{ scope: "full", allows_resume: false, difference_count: 2, repaired: false }],
+    pauses: [{ id: 7, active: true, locked: true, reason_code: "MANUAL", reason_detail: "人工暂停" }],
+    orders: [{ status: "UNKNOWN", sync_state: "UNCERTAIN" }],
+  });
+  assert.equal(blocking.level, "blocking");
+  for (const code of ["RECONCILE_BLOCKED", "RECONCILE_DIFFERENCE", "LOCKED_PAUSE", "UNKNOWN_ORDER", "TAKEOVER_NOT_CONFIRMED"]) {
+    assert.ok(blocking.blocking.some((item) => item.code === code), `应包含 ${code}`);
+  }
+
+  const attention = derive({
+    runtime: { lease: "ELIGIBLE", valuation_complete: true },
+    heartbeat: { fresh: false },
+    account: { complete: true, stale: true },
+    reconciliations: [{ scope: "full", allows_resume: true, difference_count: 0, repaired: false }],
+    pauses: [{ id: 8, active: true, locked: false, reason_code: "SERVICE_FAILURE", reason_detail: "周期失败" }],
+    orders: [],
+  });
+  assert.equal(attention.level, "attention");
+  assert.ok(attention.attention.some((item) => item.code === "HEARTBEAT_STALE"));
+  assert.ok(attention.attention.some((item) => item.code === "TECHNICAL_PAUSE"));
+
+  const ready = derive({
+    runtime: { lease: "ELIGIBLE", valuation_complete: true },
+    heartbeat: { fresh: true },
+    account: { complete: true, stale: false },
+    baseline: { day: "2026-11-18" },
+    reconciliations: [{ scope: "full", allows_resume: true, difference_count: 0, repaired: false }],
+    pauses: [],
+    orders: [],
+  });
+  assert.equal(ready.level, "ready");
+});
+
+test("派生函数兼容字符串与对象形态的租约", async () => {
+  const app = await boot();
+  const { leaseState, isUnknownOrder } = app.sandbox.__bybitbotConsole;
+  assert.equal(leaseState({ lease: "NEEDS_CONFIRMATION" }), "NEEDS_CONFIRMATION");
+  assert.equal(leaseState({ lease: { state: "ELIGIBLE" } }), "ELIGIBLE");
+  assert.equal(isUnknownOrder({ status: "UNKNOWN" }), true);
+  assert.equal(isUnknownOrder({ status: "SUBMITTING" }), true);
+  assert.equal(isUnknownOrder({ status: "FILLED" }), false);
 });

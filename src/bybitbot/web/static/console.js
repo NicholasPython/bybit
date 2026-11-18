@@ -24,6 +24,83 @@
     return Number.isFinite(parsed.getTime()) ? parsed.toISOString().replace("T", " ").replace(/\.\d+Z$/, " UTC") : "时间无效";
   };
   const age = (value) => value === null || value === undefined ? "未知" : `${Number(value).toFixed(1)} 秒`;
+
+  // 纯派生函数：只汇总页面可见事实，不替代交易服务的风控/恢复判定。
+  const isActivePause = (pause) => !!(pause && pause.active);
+  const isUnknownOrder = (order) => !!(order && ["UNKNOWN", "SUBMITTING"].includes(order.status));
+  const leaseState = (runtime) => {
+    const lease = runtime?.lease;
+    return typeof lease === "object" && lease ? text(lease.state) : text(lease);
+  };
+  const deriveRecoveryState = (data = {}) => {
+    const runtime = data.runtime || {};
+    const pauses = (data.pauses || []).filter(isActivePause);
+    const recon = (data.reconciliations || []).find((row) => row.scope === "full");
+    const blocking = [];
+    const attention = [];
+    const add = (target, code, detail, action) => target.push({ code, detail, action });
+    if (recon && recon.allows_resume === false) add(blocking, "RECONCILE_BLOCKED", "最近全量对账不允许恢复", "review-reconciliations");
+    if (recon && Number(recon.difference_count) > 0 && recon.repaired === false) add(blocking, "RECONCILE_DIFFERENCE", "存在未修复对账差异", "review-reconciliations");
+    for (const pause of pauses.filter((row) => row.locked)) add(blocking, "LOCKED_PAUSE", `#${text(pause.id)} ${text(pause.reason_code)}：${text(pause.reason_detail)}`, "review-pauses");
+    const unknown = (data.orders || []).filter(isUnknownOrder);
+    if (unknown.length) add(blocking, "UNKNOWN_ORDER", `${unknown.length} 笔订单结果未确定`, "review-orders");
+    if (data.account && data.account.complete === false) add(blocking, "ACCOUNT_INCOMPLETE", "账户快照不完整", "review-account");
+    if (runtime.valuation_complete === false) add(blocking, "VALUATION_UNAVAILABLE", "风险估值不可用", "review-account");
+    if (leaseState(runtime) === "NEEDS_CONFIRMATION") add(blocking, "TAKEOVER_NOT_CONFIRMED", "执行租约等待人工接管确认", "review-takeover");
+    if (data.heartbeat && data.heartbeat.fresh === false) add(attention, "HEARTBEAT_STALE", "交易服务心跳失效", "review-health");
+    if (data.account && data.account.stale) add(attention, "ACCOUNT_STALE", "账户快照已过期", "review-account");
+    if ((data.quotes || []).some((quote) => quote.stale)) add(attention, "QUOTE_STALE", "存在过期行情快照", "review-quotes");
+    if (!data.baseline) add(attention, "BASELINE_MISSING", "风险基线尚未建立", "review-baseline");
+    for (const pause of pauses.filter((row) => !row.locked)) add(attention, "TECHNICAL_PAUSE", `#${text(pause.id)} ${text(pause.reason_code)}`, "review-pauses");
+    if ((data.alerts || []).some((alert) => alert.status === "ACTIVE" && Number(alert.delivery_attempts) > 0)) add(attention, "ALERT_DELIVERY", "告警尚未确认送达", "review-alerts");
+    return {
+      level: blocking.length ? "blocking" : attention.length ? "attention" : "ready",
+      blocking,
+      attention,
+      recon: recon || null,
+      baseline: data.baseline || null,
+      lease: leaseState(runtime),
+      accountComplete: data.account ? data.account.complete === true : false,
+      accountUid: data.account?.account_uid || runtime.account_uid || null,
+    };
+  };
+  const deriveHealth = (data = {}) => {
+    const runtime = data.runtime || {};
+    return {
+      heartbeatFresh: data.heartbeat?.fresh === true,
+      heartbeat: data.heartbeat || null,
+      tickAt: runtime.tick_at || null,
+      reconciledAt: runtime.reconciled_at || null,
+      configVersion: runtime.config_version || null,
+      lastError: runtime.last_error || null,
+      account: data.account || null,
+      staleQuotes: (data.quotes || []).filter((quote) => quote.stale).length,
+      activeAlerts: (data.alerts || []).filter((alert) => alert.status === "ACTIVE").length,
+      latency: runtime.latency || [],
+      retention: runtime.retention || null,
+    };
+  };
+  const deriveRiskPosture = (data = {}) => {
+    const config = data.configuration || {};
+    const active = (data.pauses || []).filter(isActivePause);
+    return {
+      currency: data.currency || null,
+      equity: data.runtime?.equity || null,
+      dailyPnl: data.runtime?.daily_pnl || null,
+      drawdown: data.runtime?.drawdown || null,
+      limits: config.budget || {},
+      risk: config.risk || {},
+      inventoryCount: (data.inventory || []).length,
+      positionCount: (data.positions || []).length,
+      openOrderCount: (data.orders || []).filter((order) => !["FILLED", "CANCELED", "REJECTED", "EXPIRED"].includes(order.status)).length,
+      lockedPauses: active.filter((pause) => pause.locked).length,
+      rejects: (data.risk_rejects || []).length,
+      caveat: "预留额度与逐标的 Delta 明细未由只读 API 提供；此页不臆测当前占用。",
+    };
+  };
+  const __test = { deriveRecoveryState, deriveHealth, deriveRiskPosture, leaseState, isUnknownOrder };
+  if (typeof window !== "undefined") window.__bybitbotConsole = __test;
+
   const stateNames = {
     STARTING: "正在启动", RECONCILING: "正在对账", RUNNING: "运行中", PAUSED_OPEN: "暂停新增风险",
     EXITING: "正在退出", STOPPED: "已停止", PREPARED: "已准备", SUBMITTING: "提交中",
@@ -62,6 +139,7 @@
   };
   const table = (id, rows, columns, empty) => {
     const body = $(id);
+    if (!body) return;
     body.replaceChildren();
     if (!rows || rows.length === 0) {
       const cell = node("td", empty || "当前环境暂无记录。", "empty-state");
@@ -146,6 +224,67 @@
   };
   const qtyUnit = (row) => row.category === "option" ? "合约" : (specsFor(row.symbol)?.base_coin || "基础币");
   const activePauses = () => (snapshot?.pauses || []).filter((pause) => pause.active);
+
+  function renderGoalSummaries(data) {
+    const recovery = deriveRecoveryState(data);
+    const health = deriveHealth(data);
+    const risk = deriveRiskPosture(data);
+    const levelText = { blocking: "存在阻塞证据", attention: "需要关注", ready: "页面可见证据无明显阻塞" };
+    const recoveryPanel = $("recovery-summary");
+    if (recoveryPanel) {
+      recoveryPanel.replaceChildren();
+      const heading = node("div", null, "goal-verdict");
+      heading.append(node("strong", levelText[recovery.level], `goal-level ${recovery.level}`));
+      heading.append(node("span", `最近全量对账：${recovery.recon ? stamp(recovery.recon.finished_at || recovery.recon.started_at) : "尚无记录"} · 允许恢复：${recovery.recon ? (recovery.recon.allows_resume ? "是" : "否") : "未知"}`, "muted"));
+      recoveryPanel.append(heading);
+      const list = node("ul", null, "goal-checklist");
+      const items = [...recovery.blocking, ...recovery.attention];
+      if (!items.length) list.append(node("li", "未发现阻塞或关注项；这不代表允许开仓，执行资格仍由交易服务判定。", "muted"));
+      for (const item of items) {
+        const row = node("li", null, `goal-item ${item.code === "RECONCILE_BLOCKED" || item.code === "LOCKED_PAUSE" || item.code === "UNKNOWN_ORDER" ? "blocking" : "attention"}`);
+        row.append(node("strong", item.code));
+        row.append(node("span", item.detail, "muted"));
+        list.append(row);
+      }
+      if (items.length) recoveryPanel.append(list);
+      recoveryPanel.append(node("p", `账户：${recovery.accountUid || "未确认"} · 估值完整性：${data.runtime?.valuation_complete ? "完整" : "不可用"} · 租约：${state(recovery.lease)} · 基线：${recovery.baseline ? "已建立" : "未建立"}`, "section-caption"));
+    }
+    const healthPanel = $("health-summary");
+    if (healthPanel) {
+      healthPanel.replaceChildren();
+      const grid = node("dl", null, "goal-facts");
+      for (const [label, value] of [
+        ["交易服务心跳", health.heartbeatFresh ? `有效 · ${age(health.heartbeat?.age_seconds)}前` : "失效或未读取"],
+        ["最近 tick", stamp(health.tickAt)],
+        ["最近对账", stamp(health.reconciledAt)],
+        ["配置版本", text(health.configVersion)],
+        ["账户快照", health.account ? `${age(health.account.age_seconds)}前 · ${health.account.stale ? "已过期" : "有效"}` : "尚未采集"],
+        ["过期行情", `${health.staleQuotes} 条`],
+        ["活动告警", `${health.activeAlerts} 条`],
+        ["延迟 P95", health.latency?.length ? `${health.latency[0].p95_ms ?? "—"} ms` : "无记录"],
+        ["留存清理", health.retention ? stamp(health.retention.ran_at) : "无记录"],
+      ]) { const cell = node("div"); cell.append(node("dt", label)); cell.append(node("dd", value)); grid.append(cell); }
+      healthPanel.append(grid);
+      if (health.lastError) healthPanel.append(node("p", health.lastError, "notice warning"));
+    }
+    const riskPanel = $("risk-summary");
+    if (riskPanel) {
+      riskPanel.replaceChildren();
+      const grid = node("dl", null, "goal-facts");
+      for (const [label, value] of [
+        ["风险权益", health.account ? amount(data.runtime?.equity, data.currency) : "不可用"],
+        ["当日盈亏", data.runtime?.baseline_available ? amount(data.runtime?.daily_pnl, data.currency) : "基线未就绪"],
+        ["回撤", data.runtime?.baseline_available ? amount(data.runtime?.drawdown, data.currency) : "基线未就绪"],
+        ["bot 库存行", risk.inventoryCount],
+        ["账户持仓行", risk.positionCount],
+        ["非终态订单", risk.openOrderCount],
+        ["锁定暂停", risk.lockedPauses],
+        ["风控拒绝", risk.rejects],
+      ]) { const cell = node("div"); cell.append(node("dt", label)); cell.append(node("dd", value)); grid.append(cell); }
+      riskPanel.append(grid);
+      riskPanel.append(node("p", risk.caveat, "section-caption"));
+    }
+  }
 
   function render(data) {
     snapshot = data;
@@ -234,6 +373,11 @@
       (r) => badge(r.allows_resume ? "CONFIRMED" : "UNCERTAIN", r.allows_resume ? "对账允许" : "不允许"),
       { value: (r) => { const details = node("div"); for (const d of (r.differences || [])) details.append(node("p", `${d.kind}：${d.detail}`)); return details.childNodes.length ? details : "无差异"; }, className: "wrap" },
     ], "暂无对账记录。恢复开仓前必须完成对账。");
+    table("cash-flows-body", data.cash_flows, [
+      (r) => `#${r.id}`, (r) => r.asset,
+      { value: (r) => amount(r.amount, r.asset), className: "numeric" }, (r) => text(r.kind),
+      (r) => text(r.reference, "无引用"), (r) => stamp(r.occurred_at),
+    ], "暂无已登记的外部资金流。未解释的现金变化会触发严重暂停。");
     table("alerts-body", data.alerts, [
       (r) => badge(r.severity), { value: (r) => stacked(r.title, r.detail), className: "wrap" },
       (r) => state(r.status), (r) => stamp(r.first_seen_at), (r) => stamp(r.resolved_at),
@@ -249,6 +393,7 @@
     renderStrategyParams(data);
     renderValidation(data.validation, data.environment);
     renderLimits(data.configuration);
+    renderGoalSummaries(data);
     table("pauses-body", data.pauses, [
       (r) => stacked(`#${r.id}`, `${r.scope}${r.scope_key ? ` ${r.scope_key}` : ""}`),
       { value: (r) => stacked(r.reason_code, r.reason_detail), className: "wrap" },
@@ -624,7 +769,7 @@
   });
   const tabs = [...document.querySelectorAll("[data-tab]")];
   function selectTab(name, focus = false) {
-    if (!tabs.some((tab) => tab.dataset.tab === name)) name = "account";
+    if (!tabs.some((tab) => tab.dataset.tab === name)) name = "recovery";
     for (const tab of tabs) {
       const selected = tab.dataset.tab === name;
       tab.setAttribute("aria-selected", String(selected)); tab.tabIndex = selected ? 0 : -1;
@@ -641,7 +786,9 @@
       if (move || ["Home", "End"].includes(event.key)) { event.preventDefault(); selectTab(tabs[next].dataset.tab, true); }
     });
   }
-  $("open-ops").addEventListener("click", (event) => { event.preventDefault(); selectTab("ops"); });
+  document.querySelectorAll("[data-goto]").forEach((link) => {
+    link.addEventListener("click", (event) => { event.preventDefault(); selectTab(link.dataset.goto); });
+  });
   selectTab(location.hash.slice(1));
   async function refresh() {
     if (refreshing) return;
