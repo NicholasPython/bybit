@@ -9,6 +9,12 @@
     3. 交易所已受理但本地 UNKNOWN 未落库；
     4. 成交已发生但本地未入账。
 以及 EXE-05 的双进程租约竞争、失权与人工接管前置条件。
+
+跨测试文件复用 test_execution 的辅助件时用顶层导入
+``from test_execution import ...``，不要写 ``from tests.test_execution import ...``：
+tests/ 没有 ``__init__.py``，pytest 默认的 prepend 导入模式会把 tests/ 挂到
+``sys.path`` 上，顶层导入在 ``uv run pytest``（CWD 不在 sys.path）下同样成立；
+``tests.`` 包形式只在 ``python -m pytest`` 下能解析，CI 会 ModuleNotFoundError。
 """
 
 from __future__ import annotations
@@ -198,7 +204,7 @@ def run_child(database, crash_stage: str, intent_id: int, reservation_id: int) -
 
 async def test_CR1_intent_before_prepared_has_no_order_and_releases_reservation(database):
     """崩溃点 1：意图受理但 PREPARED 未持久化。恢复证明未发送。"""
-    from tests.test_execution import ControlledPaper, make_executor
+    from test_execution import ControlledPaper, make_executor
 
     intent_id, reservation_id = await seed(database)
     # 子进程在 submit 之前死亡：进程内没有任何写请求，数据库中只有孤儿预留。
@@ -246,7 +252,7 @@ async def test_CR1_intent_before_prepared_has_no_order_and_releases_reservation(
 
 async def test_CR2_send_before_response_is_unknown_no_retry_and_reservation_held(database):
     """崩溃点 2：SUBMITTING/PENDING 时死亡。恢复不得重发或释放预留。"""
-    from tests.test_execution import ControlledPaper, make_executor, plan
+    from test_execution import ControlledPaper, make_executor, plan
 
     intent_id, reservation_id = await seed(database)
     await asyncio.to_thread(
@@ -285,7 +291,7 @@ async def test_CR2_send_before_response_is_unknown_no_retry_and_reservation_held
 
 async def test_CR3_exchange_ack_without_local_record_is_reconciled(database):
     """崩溃点 3：交易所已受理，本地未保存。对账用订单事实消解未知。"""
-    from tests.test_execution import ControlledPaper, make_executor
+    from test_execution import ControlledPaper, make_executor
 
     intent_id, reservation_id = await seed(database)
     await asyncio.to_thread(
@@ -318,7 +324,7 @@ async def test_CR3_exchange_ack_without_local_record_is_reconciled(database):
 
 async def test_CR4_fill_before_ledger_replay_is_deduped(database):
     """崩溃点 4：成交已发生但未入账。回放只入账一次，成交数量单调。"""
-    from tests.test_execution import ControlledPaper, fill, make_executor, plan, prepared
+    from test_execution import ControlledPaper, fill, make_executor, plan, prepared
 
     adapter = ControlledPaper(database.sessionmaker)
     executor = make_executor(database.sessionmaker, adapter)
@@ -340,8 +346,9 @@ async def test_CR4_fill_before_ledger_replay_is_deduped(database):
 
 async def test_two_processes_compete_for_lease_and_manual_confirm_is_required(database):
     """AC-12：双进程抢租约只有一个成功；断连失权；人工确认前不能发单。"""
+    from test_execution import ControlledPaper, make_executor
+
     from bybitbot.execution.executor import ExecutionAuthorityError
-    from tests.test_execution import ControlledPaper, make_executor
 
     uid = "dual-" + uuid.uuid4().hex
     script = textwrap.dedent(
@@ -418,8 +425,9 @@ async def test_two_processes_compete_for_lease_and_manual_confirm_is_required(da
 
 async def test_database_disconnect_invalidates_authority_immediately(database):
     """数据库断连 → 会话级锁释放 → 心跳失权；已发写请求不重试。"""
+    from test_execution import ControlledPaper, make_executor, plan, prepared
+
     from bybitbot.execution.executor import ExecutionAuthorityError
-    from tests.test_execution import ControlledPaper, make_executor, plan, prepared
 
     intent, reservation, _ = await prepared(database.sessionmaker)
     adapter = ControlledPaper(database.sessionmaker)
