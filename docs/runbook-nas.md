@@ -17,7 +17,7 @@
 | 应用镜像 | `localhost/bybitbot:0.1.0`；发布前记录完整 image ID |
 | 基础运行时镜像 | `localhost/bybitbot-runtime:0.1.0` |
 | 数据库镜像 | 复用已有 `localhost/artex-postgres:16` 镜像，使用独立的 Bybit 命名卷 |
-| 数据库 schema head | `8a4d17c2f905` |
+| 数据库 schema head | `d438b9a83a10` |
 | Quadlet 源文件 | `~/.config/containers/systemd/bybitbot-*.container` 和 `.volume` |
 | 运行配置、数据库环境变量、管理身份 | `~/.config/bybitbot/{config.yaml,postgres.env,admin.json}`，0600 |
 | 备份加密公钥 | `~/.config/bybitbot/backup-public.asc` |
@@ -85,6 +85,14 @@ worker 启动前执行数据库迁移；数据库不可达时启动可能失败�
 
 先给运行中的镜像保存独立标签，再构建候选镜像，通过配置检查后才移动服务使用的标签。以下以 `release-20261031-r2` 为示例；下一次发布换用新的唯一名称。
 
+一次完成的脚本形式（推荐，单次 SSH 往返完成全部步骤，包含迁移与只读核验，不做接管确认/策略启用/基线初始化）：
+
+```bash
+bash deploy/release-nas.sh release-YYYYMMDD
+```
+
+下列分步命令是脚本做的事，需要逐步观察或排障时使用：
+
 ```bash
 ssh nas 'podman tag localhost/bybitbot:0.1.0 localhost/bybitbot:rollback-before-release-20261031-r2'
 ```
@@ -120,6 +128,14 @@ ssh nas 'podman tag localhost/bybitbot:release-20261031-r2 localhost/bybitbot:0.
 2026-11-02 期权收紧发布已核验：镜像 `a9bc0bca0a096c1097cef1d993bc272ed887511ef2b0885144b4e593e69f5f37`，发布标签 `localhost/bybitbot:option-controls-20261102`（已移动为 `0.1.0`），回滚点 `localhost/bybitbot:pre-option-controls-20261102`（`5ea93d176eca`）。配置原文件以 0600 保存为 `~/.config/bybitbot/config.pre-option-controls-20261102.yaml`。本次收紧 `eth-call-weekly` 的到期窗口、Delta 区间、行权价带、权利金与费用占比上限，并新增权利金止损、持有期限、ETH 权利金与 Delta 上限、权利金占权益比例上限；策略生成 v2 配置版本后停在对账暂停，`CONFIG_CHANGED` 锁定暂停未解除，两策略仍禁用，订单/成交/意图/库存均为零。改动依据与逐项验证见 [option-controls-2026-11-02.md](option-controls-2026-11-02.md)。
 
 2026-11-04 复核补丁发布已核验：镜像 `abb970cb269ffde3c1ffc99cfab677be3af378694150e6021db723e9a964e86f`，发布标签 `localhost/bybitbot:option-controls-20261104-r2`（已移动为 `0.1.0`），回滚点 `localhost/bybitbot:pre-option-controls-guard-20261104`（`a9bc0bca0a096c1097cef1d993bc272ed887511ef2b0885144b4e593e69f5f37`，即 11-02 发布镜像）。同日中间镜像 `localhost/bybitbot:option-controls-20261104`（`edff2cbaedfb`）已被 r2 取代，不再使用。配置本次未变，仍以 0600 保存在 `~/.config/bybitbot/config.yaml`；`config check` 通过（两个策略 `enabled: false`、`live_allowed: false`）。补丁只补两处缺口：权利金止损在配置期就拒绝挂在现货策略上（现货按买一价判定权利金成本，永远不会触发），以及操作台的退出规则只展示业务字段（重试次数、有效期等执行细节不再淹没阈值）。配置版本仍为 v2，未写入新版本；运行状态 `PAUSED_OPEN`、无 `last_error`，`CONFIG_CHANGED`（锁定）、`NOTIFICATION_FAILURE`、`VALUATION_UNAVAILABLE` 三条暂停均未解除，订单/成交/意图/库存全部为零。
+
+2026-11-18 版本追赶发布已核验：镜像 `2bab4ab7b726949039caa6160b32c3b8e752d93841760cd51974f4b60bba48c8`，发布标签 `localhost/bybitbot:release-20261118-r3`（已移动为 `0.1.0`），回滚点 `localhost/bybitbot:rollback-before-release-20261118`（`abb970cb269ffde3c1ffc99cfab677be3af378694150e6021db723e9a964e86f`，即 11-04 发布镜像）。中间镜像 `release-20261118`（`2f59af038c53`）与 `release-20261118-r2`（`6579372ece94`）仅因构建上下文混入 `.DS_Store` 与 `__pycache__` 而被取代，应用代码与 r3 完全一致，不再使用；`src/.DS_Store` 本就在 `.gitignore`，是同步与构建上下文未排除导致进入镜像，已在仓库根目录新增 `.containerignore`（必须用 `**/__pycache__/` 与 `**/.DS_Store`，单层模式只覆盖构建根目录）。
+
+本次发布把 NAS 从 11-04 的 `abb970cb269f` 追到本地 `34c0f44`（`feat/p0-acceptance-evidence-20261117`，含 main 的 `2b79bd6` 校验生命周期合并），跨度约两周：新增持久化校验采样/执行/方向库存/账本链、两腿价差合成执行、ops 的时钟/指标/限流/留存模块、按 AST 审计修复的对账会话复用缺陷。数据库从 `8a4d17c2f905` 升到 `d438b9a83a10`（两级迁移一次性执行成功，均事务性 DDL）。发布前加密备份 `bybitbot-20261118T023318Z.dump.gpg`（6,846,946 字节）已生成并复制到 Mac 的 `secrets/offsite-backups/`，两端 SHA-256 一致为 `dc2a70856c7e41ac26597e63d3b668f4336a109e2b0fc2d0ac255a68ab6130a0`。87 个应用/迁移/配置示例文件本地与 NAS 的 SHA-256 全部一致；运行时基础层重建缓存命中、镜像 ID 保持 `0590a0bde8c1`，证明依赖锁（2026-10-31 后未变）与运行时一致。
+
+发布前旧 worker 自 2026-11-14 21:26:00 起每周期 `交易服务周期失败：TransientError`（`risk_pause` id 89），`reconciled_at` 冻结、`account_snapshot` 停增。升级后该暂停被自动解除（`resolved_by=system:technical-resync`），心跳恢复推进、`last_error` 为空、`account_snapshot` 重新增长、`valuation_complete=true`、`account.complete=true`。**根因未最终定位**：在旧镜像上手工重放完整 tick 连续三次成功，说明不是配置或网络层面的确定性故障，更像是旧版本特有的偶发路径（旧 tick 的调度与校验生命周期代码与新版不同）。本次以"升级后连续观察约 20 分钟无复发"作为缓解证据，不宣称根因已修复；若再出现同型 `SERVICE_FAILURE`，按本手册第 2 节抓 `last_error` 与对账快照再查。
+
+当前保持：`state=PAUSED_OPEN`、`lease=NEEDS_CONFIRMATION`、`baseline_available=false`，两条策略 `enabled=false`，订单/成交/意图/非零库存全为零；`CONFIG_CHANGED`（锁定）、`NOTIFICATION_FAILURE`、`VALUATION_UNAVAILABLE` 三条既有暂停**未解除**，未代为执行接管确认、风险基线初始化或策略启用。`/health` 在 NAS 本机 `127.0.0.1:18080` 与 Tailscale 入口 `https://nicholas-4.tail068b64.ts.net` 均返回 HTTP 200；控制台 `/api/status` 登录后返回完整数据，心跳 `fresh=true`。配置本次未变。
 
 依赖锁变化时先重建基础层；该文件复用 NAS 已有的 Python 3.12.15 基础镜像，并通过 `--require-hashes` 安装依赖：
 
