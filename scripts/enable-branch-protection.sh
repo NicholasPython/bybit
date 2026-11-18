@@ -2,10 +2,11 @@
 # 给 main 加服务端分支保护。
 #
 # 前置条件（二选一）：
-#   * 账号升级到 GitHub Pro（private 仓库的 branch protection 需要 Pro）；或
-#   * 把仓库改成 public（公开仓库免费提供 branch protection / ruleset）。
-# 两者都没有时 GitHub 会返回 403：
+#   * 仓库是 public（公开仓库免费提供 branch protection）；或
+#   * 账号升级到 GitHub Pro（private 仓库需要 Pro）。
+# 两种都不满足时 GitHub 会返回 403：
 #   "Upgrade to GitHub Pro or make this repository public to enable this feature."
+# 本仓库已经改为 public，此脚本已成功执行并验证 main.protected = true。
 #
 # 用法：scripts/enable-branch-protection.sh [owner/repo]
 #

@@ -2,34 +2,38 @@
 
 ## 结论先说
 
-GitHub 提示「Your main branch isn't protected」，**不是配置漏了，而是当前套餐拿不到这个功能**。
-本仓库是 **private**，账号套餐下调用分支保护 API 直接被拒：
+GitHub 提示「Your main branch isn't protected」的根因是**仓库原来是 private，而当前套餐下
+branch protection / ruleset 对 private 仓库需要 GitHub Pro**；当时 API 直接返回 403：
 
 ```
 $ gh api repos/NicholasPython/bybit/branches/main/protection
 {"message":"Upgrade to GitHub Pro or make this repository public to enable this feature.","status":"403"}
 ```
 
-`rulesets` 接口返回同样的 403。GitHub 的规则是：**private 仓库的 branch protection / ruleset 需要
-GitHub Pro（或 Team / Enterprise）；公开仓库则免费提供。**
+2026-11-18 已将仓库改为 **public**，公开仓库免费提供 branch protection / ruleset。
+随后调用 `scripts/enable-branch-protection.sh NicholasPython/bybit` 开启了服务端保护，
+并已通过 API 验证：`main` 的 `protected = true`。
 
-因此服务端「禁止强推 / 禁止删除 / 合并前必须过状态检查」这三条，当前**无法**在仓库设置里打开。
-可行的路径只有两条，都要账户层面动作：
+| 设置 | 值 |
+|---|---|
+| `required_status_checks` | `verify`、`PR 分支需包含 base 最新提交`，`strict = true` |
+| `enforce_admins` | `true`（管理员同样受保护） |
+| `required_linear_history` | `true` |
+| `allow_force_pushes` | `false` |
+| `allow_deletions` | `false` |
+| `required_conversation_resolution` | `true` |
+| `required_pull_request_reviews` | 未开启（单维护者仓库无法给自己审批，会锁死合并） |
+| `restrictions` | 未开启（保留紧急修复通道；要完全禁止直推见脚本注释） |
 
-| 方案 | 代价 | 效果 |
-|---|---|---|
-| 升级 GitHub Pro | 个人账号 $4/月 | private 仓库完整支持 branch protection 与 ruleset；**顺带解决 Actions 计费闸门**（当前 CI 因 "recent account payments have failed / spending limit" 无法启动 job） |
-| 把仓库改成 public | 免费 | 公开仓库免费获得 branch protection / ruleset；代价是**代码对所有人可见** |
+公开化的前置检查：扫描了当前工作树与全部历史 blob（密钥、私钥、硬编码密码、token、
+内网 IP、邮箱/个人信息），未发现凭据；`secrets/`、`.env`、`config/credentials*.json`
+等路径由 `.gitignore` 排除且从未进入 Git。唯一涉及基础设施的是
+`docs/runbook-nas.md` 里的 Tailscale 私网域名和 SSH 别名，无凭据。
+仓库体积约 15 MB（pack 9.8 MiB），公开后不存在历史大文件泄露问题。
 
-升级后一条命令即可开启：
+## 仍然生效的补充护栏
 
-```bash
-scripts/enable-branch-protection.sh NicholasPython/bybit
-```
-
-## 在没有 Pro 之前，实际生效的护栏
-
-服务端拿不到强制点，就用能在当前套餐下生效的三层手段补上。
+服务端保护是主门槛，下面两层继续作为纵深防御。
 
 ### 1. 仓库级设置（已应用，GitHub 侧立即生效）
 
@@ -70,15 +74,16 @@ scripts/install-git-hooks.sh
 | `PR 分支需包含 base 最新提交` | `pull_request` | 等价于分支保护里的 strict 行为：PR 必须先同步 base 才允许合并 |
 | `main 只能通过 PR 合入` | `push` 到 `main` | 校验落到 main 的提交是不是某个已合并 PR 的 `merge_commit_sha`；不是就红 |
 
-这两条是**检测**而非**阻止**——CI 跑在推送之后，挡不住已经发生的推送。真正的阻止靠上面的本地钩子与
-squash-only 设置。三者叠加的效果接近分支保护，只是少了服务端那道「不满足就不给合并」的硬门槛。
+这两条是**检测**而非**阻止**——CI 跑在推送之后，挡不住已经发生的推送。
+服务端保护已经打开，合并按钮会被 status checks 真正拦住；本地钩子与 squash-only 设置则是纵深防御。
+需要注意：CI job 目前仍被账户计费闸门挡住（"recent account payments have failed / spending limit"），
+状态检查未通过时分支保护会拒绝合并，这是预期的 fail-closed 行为，需账户侧恢复 billing 后才能合入。
 
 ## 还没覆盖的
 
-* **合并前强制状态检查**：CI 会跑回归，但 GitHub 不会因此拦住合并按钮。要真正强制，需要 Pro。
-* **禁止他人直接推送 main**：只有维护者一个写权限账号，当前靠约定与钩子；一旦出现第二个写权限账号，
-  建议直接升级 Pro 并加上 `restrictions`（见 `scripts/enable-branch-protection.sh` 里的注释）。
-* **CODEOWNERS**：private + 免费套餐同样不生效，因此没有添加；升级 Pro 后再加才有意义。
+* **CODEOWNERS**：尚未添加；公开仓库可以配置，但目前只有单维护者，实际收益有限。
+* **他人直推 main**：`restrictions` 未开启（保留紧急修复通道），目前只有维护者一个写权限账号；
+  若新增写权限账号，把 `restrictions` 改为 `{"users": [], "teams": [], "apps": []}` 即可完全禁止直推。
 
 ## 相关
 
