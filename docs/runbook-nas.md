@@ -137,6 +137,12 @@ ssh nas 'podman tag localhost/bybitbot:release-20261031-r2 localhost/bybitbot:0.
 
 当前保持：`state=PAUSED_OPEN`、`lease=NEEDS_CONFIRMATION`、`baseline_available=false`，两条策略 `enabled=false`，订单/成交/意图/非零库存全为零；`CONFIG_CHANGED`（锁定）、`NOTIFICATION_FAILURE`、`VALUATION_UNAVAILABLE` 三条既有暂停**未解除**，未代为执行接管确认、风险基线初始化或策略启用。`/health` 在 NAS 本机 `127.0.0.1:18080` 与 Tailscale 入口 `https://nicholas-4.tail068b64.ts.net` 均返回 HTTP 200；控制台 `/api/status` 登录后返回完整数据，心跳 `fresh=true`。配置本次未变。
 
+2026-11-18 控制台目标对齐发布已核验：镜像 `52e9022d2b83d7b6368c57fb65af035eb67353f15766a9599a696b2b669a3b42`，发布标签 `localhost/bybitbot:release-20261118-console-v1`（已移动为 `0.1.0`），回滚点 `localhost/bybitbot:rollback-before-release-20261118-console-v1`（`2bab4ab7b726949039caa6160b32c3b8e752d93841760cd51974f4b60bba48c8`，即同日版本追赶发布镜像）。本次使用 `deploy/release-nas.sh` 一次 SSH 往返完成发布（备份之后的所有步骤），脚本的迁移步骤因已是 head 而空跑成功。发布前加密备份 `bybitbot-20261118T060507Z.dump.gpg`（7,001,641 字节）已生成；异机复制时 `scp` 两次静默截断（3,394,560 / 3,916,800 字节），改用 `rsync --partial` 重传后才得到完整文件，两端 SHA-256 均为 `b3938d7c2692aee0e86a55a3c75bb5e29868a2527115824ba8be20ead11196af`。**以后异机备份复制一律用 rsync 并核对哈希，不用 scp 的静默成功判断完整性。**
+
+应用变化：操作台从六个数据实体 tab 改为五个运维目标（对账与恢复/运行健康/风控态势/交易明细/人工控制），对账与恢复为默认首屏；新增恢复结论、证据链（对账水位/游标、UNKNOWN 订单、锁定暂停、租约、账本锚点）与四步引导；命令按钮带前置条件提示；审计 CSV 改为 fetch 下载并显式提示截断；表格按内容签名跳过无变化的重建。`/api/status` 只补已落库事实的只读字段（`clock_checked`/`capabilities`/`latency`/`retention`、对账 `watermark`/`cursor`、`cash_flows[]`），无新写接口，命令语义未变。
+
+发布后核验：schema head 仍为 `d438b9a83a10`；心跳持续推进（06:09:31 → 06:10:00 UTC），`last_error` 为空，`held=false`、账户 `complete=true` 且 `stale=false`；`/health` 在 NAS 本机与 Tailscale 入口均 HTTP 200；`/api/status` 登录后返回完整数据，新增字段均已上线（`cash_flows` 与 latency 为空、watermark/cursor 为 null 属 NAS 当前无对应记录，不是渲染故障）。保持 `state=PAUSED_OPEN`、`lease=NEEDS_CONFIRMATION`、`baseline_available=false`，两策略禁用，订单/成交/意图/非零库存均为零；`CONFIG_CHANGED`（锁定）、`NOTIFICATION_FAILURE`、`VALUATION_UNAVAILABLE` 三条暂停未解除。未代为执行接管确认、风险基线初始化或策略启用。
+
 依赖锁变化时先重建基础层；该文件复用 NAS 已有的 Python 3.12.15 基础镜像，并通过 `--require-hashes` 安装依赖：
 
 ```bash
