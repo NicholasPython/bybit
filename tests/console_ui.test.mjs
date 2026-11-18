@@ -520,3 +520,43 @@ test("派生函数兼容字符串与对象形态的租约", async () => {
   assert.equal(isUnknownOrder({ status: "SUBMITTING" }), true);
   assert.equal(isUnknownOrder({ status: "FILLED" }), false);
 });
+
+test("恢复证据链：对账水位、UNKNOWN 订单、锁定暂停、租约", async () => {
+  const app = await boot({ snapshotPatch: {
+    runtime: { lease: "NEEDS_CONFIRMATION", valuation_complete: false },
+    reconciliations: [{ id: 42, scope: "full", allows_resume: false, difference_count: 2, repaired: false,
+      watermark: "2026-11-18T02:00:00Z", cursor: "offset-19", started_at: "2026-11-18T01:59:00Z", finished_at: "2026-11-18T02:00:00Z" }],
+    orders: [{ id: 7, order_link_id: "unknown-1", symbol: "BTCUSDT", status: "UNKNOWN", sync_state: "UNCERTAIN", local_ttl_expires_at: "2026-11-18T02:10:00Z" }],
+    pauses: [{ id: 9, active: true, locked: true, reason_code: "MANUAL", reason_detail: "人工暂停", created_at: "2026-11-18T01:00:00Z" }],
+    cash_flows: [],
+  } });
+  const evidence = app.element("recovery-evidence-grid");
+  const evidenceText = flatten(evidence);
+  assert.ok(evidenceText.includes("offset-19"), "应展示对账游标");
+  assert.ok(evidenceText.includes("unknown-1"), "应展示 UNKNOWN 订单编号");
+  assert.ok(evidenceText.includes("MANUAL"), "应展示锁定暂停原因");
+  assert.ok(evidenceText.includes("等待接管确认"), "应展示租约状态");
+
+  const steps = app.element("recovery-workflow-steps");
+  const stepText = flatten(steps);
+  assert.ok(stepText.includes("补齐交易与账户事实"));
+  assert.ok(stepText.includes("登记未解释的外部资金变化"));
+  assert.ok(stepText.includes("核实 UNKNOWN 订单与锁定暂停"));
+  assert.ok(stepText.includes("逐条解除暂停并确认接管"));
+  assert.ok(steps.children.length === 4, "应有四个恢复步骤");
+});
+
+test("恢复证据条的证据入口按钮切换到对应工作区", async () => {
+  const app = await boot({ snapshotPatch: {
+    runtime: { lease: "NEEDS_CONFIRMATION", valuation_complete: true },
+    reconciliations: [{ scope: "full", allows_resume: false, difference_count: 1, repaired: false }],
+  } });
+  const summary = app.element("recovery-summary");
+  const buttons = [];
+  const collect = (node) => { if (node.tagName === "BUTTON" && String(node.textContent).includes("查看证据")) buttons.push(node); for (const child of node.children || []) collect(child); };
+  collect(summary);
+  assert.ok(buttons.length > 0, "阻塞项应带证据入口按钮");
+  await buttons[0].dispatch("click");
+  // 假 DOM 没有真实 tab 列表；验证按钮可点击且不抛错即可，
+  // 模板里五个 tab 的存在与默认选中由 test_web.py 断言。
+});
