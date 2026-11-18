@@ -42,7 +42,9 @@ def init_admin(path: Path, *, password_file: Path | None = None, username: str =
         with open(
             password_file, "x", encoding="utf-8", opener=lambda p, f: os.open(p, f, 0o600)
         ) as stream:
-            stream.write(password + "\n")
+            # 不写结尾换行：从文件里整行复制到登录框时，换行会被当成密码的一部分，
+            # 服务端按字面比对，于是报"用户名或密码错误"。
+            stream.write(password)
     print(f"管理身份已创建：{path}；密码未输出到日志")
 
 
