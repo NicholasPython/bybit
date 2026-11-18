@@ -1,0 +1,45 @@
+#!/bin/sh
+# 阻止把 main 直接推上去，并阻止任何强制推送。
+#
+# 背景：本仓库是 private，当前 GitHub 套餐**没有**分支保护
+# （GitHub 的 branch protection / ruleset 对 private 仓库需要 Pro；
+#  仓库公开后才免费可用）。服务端没有强制点，这个钩子是本地唯一的强制点。
+#
+# main 只允许通过 PR 合入。确实需要绕过时（罕见，且应当记录理由）：
+#     ALLOW_MAIN_PUSH=1 git push origin main
+#
+# 安装：scripts/install-git-hooks.sh
+
+set -eu
+
+MAIN_REF=refs/heads/main
+
+# 1) 强制推送（refspec 带 "+" 前缀）一律拒绝。
+for refspec in "$@"; do
+    case "$refspec" in
+        +*)
+            echo "拒绝：强制推送（$refspec）。" >&2
+            echo "      强推会改写已发布的历史，任何人拉取后都要手工收拾。" >&2
+            echo "      确实必须强推时，先与维护者确认并说明理由。" >&2
+            exit 1
+            ;;
+    esac
+done
+
+# 2) main 的任何推送（更新或删除）一律拒绝，除非显式放行。
+#    git 送入 stdin 的四元组：<本地 ref> <本地 sha> <远端 ref> <远端 sha>
+while read -r _local_ref _local_sha remote_ref _remote_sha; do
+    if [ "$remote_ref" != "$MAIN_REF" ]; then
+        continue
+    fi
+    if [ "${ALLOW_MAIN_PUSH:-0}" = "1" ]; then
+        echo "警告：ALLOW_MAIN_PUSH=1 —— 正在直接推送 $MAIN_REF，绕过 PR。" >&2
+        break
+    fi
+    echo "拒绝：$MAIN_REF 只能通过 PR 合入。" >&2
+    echo "      流程：开分支 → 推分支 → 开 PR → CI 通过 → squash 合并。" >&2
+    echo "      确需绕过（应当记录理由）：ALLOW_MAIN_PUSH=1 git push origin main" >&2
+    exit 1
+done
+
+exit 0
