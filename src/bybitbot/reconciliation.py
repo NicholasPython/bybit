@@ -555,12 +555,16 @@ class Reconciler:
                 ):
                     # covered_paper_account 需要全账户视图来找覆盖多头，
                     # 不能只传当前空头。
-                    authorized_short = await covered_paper_account(
-                        session,
-                        environment=self.environment,
-                        account_uid=self.account_uid,
-                        positions=list(views),
-                    )
+                    # 必须开独立作用域的会话：上面读持仓的那个会话已经关闭，
+                    # 复用它会另起一个永不提交的事务，把行锁留在隔离 schema 上，
+                    # 使 fixture 清理时的 DROP SCHEMA ... CASCADE 永久等待。
+                    async with self.sessionmaker() as auth_session:
+                        authorized_short = await covered_paper_account(
+                            auth_session,
+                            environment=self.environment,
+                            account_uid=self.account_uid,
+                            positions=list(views),
+                        )
                 trusted = (
                     matches
                     and all(item.trusted for item in owned)
@@ -575,9 +579,9 @@ class Reconciler:
                             view.symbol,
                         )
                     )
-                async with self.sessionmaker() as session:
+                async with self.sessionmaker() as write_session:
                     await self.ledger.upsert_position(
-                        session,
+                        write_session,
                         category=category,
                         symbol=view.symbol,
                         position_idx=view.position_idx,
@@ -596,7 +600,7 @@ class Reconciler:
                     )
                     # 仅当账户视图不可信时才释放该合约下所有库存的可信标记。
                     if not trusted:
-                        for item in await session.scalars(
+                        for item in await write_session.scalars(
                             select(Inventory)
                             .where(
                                 Inventory.environment == self.environment,
@@ -605,7 +609,7 @@ class Reconciler:
                             .with_for_update()
                         ):
                             item.trusted = False
-                    await session.commit()
+                    await write_session.commit()
         return await self._record(result, started)
 
     async def _cash_evidence(self, account, *, pending_flows=()):

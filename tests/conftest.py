@@ -46,6 +46,11 @@ async def database():
     finally:
         await db.dispose()
         async with admin.begin() as connection:
+            # 任何遗留的未关闭事务都会持有本 schema 的行锁，而
+            # DROP SCHEMA ... CASCADE 需要 AccessExclusiveLock —— 不设上限
+            # 就会永久等待（CI 上表现为卡满 6 小时被自动取消）。设 lock_timeout
+            # 让它快速失败并把真凶指出来，而不是把整轮回归挂死。
+            await connection.execute(text("SET lock_timeout = '30s'"))
             await connection.execute(text(f'DROP SCHEMA "{schema}" CASCADE'))
         await admin.dispose()
 

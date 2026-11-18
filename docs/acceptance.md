@@ -22,7 +22,17 @@
 
 2026-11-17 的完整回归为 **1386 passed in 103.14s**（`pytest tests`），其中新增时钟韧性 19 项、容量与保留 12 项；`ruff check src/bybitbot tests` 通过。
 
-2026-11-17 后续增量再补 11 项（故障恢复 6、风控组合 4、对账闭环 1），完整回归 **1397 passed in 96.43s**（`pytest tests -q --maxfail=1 -vv`），Ruff 通过。一次不带 `-vv` 的 `pytest tests -q` 曾在本机卡在约 41% 且无失败输出；排查后定性为**本机环境问题**：同一提交在 CI（原生 Docker 网络）全量通过，而在本机 `main`、`ac5af09` 等更早提交上也能复现同样的卡死——卡死时进程 CPU 满转并持续重建数据库连接，指向 podman（gvproxy 用户态 TCP 转发）在高频建连下的缺陷，与代码无关。故障恢复测试的子进程管理已因此从 asyncio 子进程改为阻塞 `subprocess.run`（经 `to_thread`），消除事件循环 watcher 线程这一叠加因素。CI 为权威回归渠道。
+2026-11-17 后续增量再补 11 项（故障恢复 6、风控组合 4、对账闭环 1），完整回归 **1397 passed in 96.43s**（`pytest tests -q --maxfail=1 -vv`），Ruff 通过。故障恢复测试的子进程管理已从 asyncio 子进程改为阻塞 `subprocess.run`（经 `to_thread`），消除事件循环 watcher 线程这一叠加因素。
+
+**回归卡死的根因（2026-11-18 定位并修复）**：此前把卡死定性为"本机 podman/gvproxy 环境问题"是**错误**的结论。真相是产品代码缺陷：`Reconciler.reconcile_positions` 在第 475 行 `async with self.sessionmaker() as session:` 读持仓后，于第 558 行 `covered_paper_account(session, ...)` **复用了这个已经关闭的会话**。SQLAlchemy 允许已关闭的 `AsyncSession` 再次使用，于是它另起一个**永不提交、也永不关闭**的事务，把 `reservation`/`execution`/`inventory` 的 `AccessShareLock` 留在隔离 schema 上；随后 `tests/conftest.py` 清理阶段的 `DROP SCHEMA ... CASCADE` 需要 `AccessExclusiveLock`，**永久等待**——整个测试进程卡死。
+
+证据链：Postgres 侧 `pg_stat_activity` 显示 `DROP SCHEMA ... CASCADE` 的 `wait_event=Lock/relation`，`pg_blocking_pids()` 指向一个 `idle in transaction` 的会话，其最后一条语句正是 `covered_paper_account` 的 `SELECT inventory.... WHERE symbol IN ($2,$3) AND qty > $4`；`pg_locks` 显示该会话持有同 schema 的 `AccessShareLock`。单跑 `tests/test_validation_service_execution.py` 可稳定复现（第一个用例通过后卡在 teardown），与并发负载无关。
+
+同一缺陷也解释了 CI 上的卡死：`ac5af09`/`b47ea85`/`3f22a10`/`ca8f129` 的 push 事件 run 连续卡满 6 小时被自动取消（卡在约 36%，与本机位置一致），而同一提交的 pull_request run 却能在 85.6s 内跑完（1583 passed + 6 failed）。此前"CI 原生 Docker 不受影响、CI 是权威渠道"的判断因此不成立。
+
+修复：`covered_paper_account` 改用独立作用域的会话，并把同一函数内层 `async with ... as session` 的遮蔽改名，避免再次出现"块外复用已关闭会话"。同时用 AST 审计全仓 `src/`（`web/app.py` 的命中是登录 cookie 会话，误报），确认没有同类问题；`tests/` 为 0 处。
+
+注：本机同时存在一个遗留的自复制实验脚本 `/tmp/nullpool_test.sh`（上一轮 NullPool 实验未清理，每 17 秒重启一次并持续压同一个数据库），它会放大连接churn、干扰排查，已终止。CI 本身没有这个脚本，因此 CI 上的卡死是上述代码缺陷本身。
 
 2026-11-01 已用一把**真实只读** Bybit key 做过一次读取链路核验（主账户 UID 587220933，`readOnly=1`）：身份、账户模式、钱包余额、持仓、挂单、合约规格、行情与费率字段均按真实响应核对，结论见整改记录第 5 节。该 key 无交易权限，**未产生任何订单**，因此写路径、成交、撤单与到期交割仍无真实账户证据。
 
