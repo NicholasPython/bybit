@@ -21,7 +21,7 @@ from dataclasses import asdict
 from decimal import Decimal as D
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from bybitbot.adapters.base import InstrumentSpec, OrderBook, Ticker
 from bybitbot.adapters.paper import PaperAdapter
@@ -302,6 +302,31 @@ async def positions(database):
         return list(await session.scalars(select(ValidationPosition)))
 
 
+async def assert_no_leaked_transactions(database):
+    """断言没有遗留的未关闭事务。
+
+    被复用的已关闭会话会另起一个永不提交的事务，把行锁留在隔离 schema 上；
+    fixture 清理时的 ``DROP SCHEMA ... CASCADE`` 需要 AccessExclusiveLock，
+    于是永久等待（CI 上表现为卡满 6 小时被取消）。这里把它变成一次显式失败。
+    """
+    async with database.sessionmaker() as session:
+        schema = await session.scalar(text("SELECT current_schema()"))
+        leaked = await session.scalar(
+            text(
+                "SELECT count(*) FROM pg_stat_activity a "
+                "WHERE a.datname = current_database() "
+                "AND a.pid <> pg_backend_pid() "
+                "AND a.state LIKE 'idle in transaction%' "
+                "AND EXISTS (SELECT 1 FROM pg_locks l "
+                "JOIN pg_class c ON c.oid = l.relation "
+                "JOIN pg_namespace n ON n.oid = c.relnamespace "
+                "WHERE l.pid = a.pid AND n.nspname = :schema)"
+            ),
+            {"schema": schema},
+        )
+    assert leaked == 0, f"遗留未关闭事务 {leaked} 个，仍持有隔离 schema 的行锁"
+
+
 async def drive_until(service, predicate, limit=16):
     """反复 tick 直到状态满足断言；每轮 tick 走完采样、对账与编排。
 
@@ -422,6 +447,7 @@ async def test_two_leg_spread_runs_through_real_service_chain(database):
                 (order.symbol, order.status) for order in orders
             ]
         assert study.id is not None
+        await assert_no_leaked_transactions(database)
     finally:
         await service.close()
 

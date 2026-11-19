@@ -20,6 +20,20 @@ from zoneinfo import ZoneInfo
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 # --------------------------------------------------------------------------
+# 首期容量（NFR-01）
+#
+#   1 个账户、最多 5 个策略实例、10 个现货交易对、200 个候选期权合约；
+#   策略合计提交意图不超过 1 次/秒。
+#
+# 超出首期容量的部署必须**另做容量及订阅验证**，因此配置直接拒绝，
+# 而不是让系统悄悄跑在未验证的容量上。
+# --------------------------------------------------------------------------
+
+FIRST_PHASE_MAX_STRATEGIES = 5
+FIRST_PHASE_MAX_SPOT_PAIRS = 10
+FIRST_PHASE_MAX_OPTION_CANDIDATES = 200
+
+# --------------------------------------------------------------------------
 # 枚举
 # --------------------------------------------------------------------------
 
@@ -601,6 +615,8 @@ class OpsConfig(BaseModel):
     raw_market_data_retention_days: Annotated[int, Field(ge=1)] = 7
     backup_target: str | None = None
     max_clock_skew_seconds: Annotated[int, Field(ge=1, le=600)] = 5
+    #: 两次交易所时间偏差测量之间的最小间隔（秒）。
+    clock_skew_check_interval_seconds: Annotated[int, Field(ge=5, le=600)] = 60
     day_boundary_tz: str = "Asia/Shanghai"
     valuation: ValuationPolicy
     #: 首次接入的独立风险起点；缺失时系统保持暂停开仓（LED-04）。
@@ -716,7 +732,11 @@ class RuntimeConfig(BaseModel):
     proxy: str | None = None
     poll_seconds: Annotated[int, Field(ge=2, le=60)] = 5
     catalog_refresh_seconds: Annotated[int, Field(ge=300)] = 3600
-    max_option_candidates: Annotated[int, Field(ge=1, le=200)] = 200
+    max_option_candidates: Annotated[
+        int, Field(ge=1, le=FIRST_PHASE_MAX_OPTION_CANDIDATES)
+    ] = FIRST_PHASE_MAX_OPTION_CANDIDATES
+    #: 策略合计每秒最多提交多少个意图（NFR-01 首期容量：1 次/秒）。
+    max_intents_per_second: Annotated[int, Field(ge=1, le=100)] = 1
     option_units_verified: bool = False
     option_reduce_only_verified: bool = False
     option_capability_record_ref: str | None = None

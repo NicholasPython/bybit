@@ -47,6 +47,7 @@ from starlette.concurrency import run_in_threadpool
 from bybitbot.db.models import (
     AccountSnapshot,
     Alert,
+    CashFlow,
     ControlCommand,
     EquityBaseline,
     Execution,
@@ -597,6 +598,40 @@ def _heartbeat(runtime: Any, now: dt.datetime) -> dict[str, Any]:
     }
 
 
+def _runtime_ops_row(value: Any) -> dict[str, Any] | None:
+    """投影 runtime_state 里的运维报告；只保留已定义的非密字段。"""
+    if not isinstance(value, dict):
+        return None
+    return {
+        key: _value(value[key])
+        for key in (
+            "ran_at",
+            "cutoff",
+            "raw_market_data_deleted",
+            "raw_market_data_remaining",
+            "decision_snapshots_kept",
+        )
+        if key in value
+    }
+
+
+def _runtime_ops_list(value: Any) -> list[dict[str, Any]]:
+    """延迟摘要可能是单个 dict 或 dict 列表，统一成安全白名单数组。"""
+    rows = value if isinstance(value, list) else [value]
+    result = []
+    for row in rows[:20]:
+        if not isinstance(row, dict):
+            continue
+        projected = {
+            key: _value(row[key])
+            for key in ("name", "count", "p50_ms", "p95_ms", "max_ms", "mean_ms")
+            if key in row
+        }
+        if projected:
+            result.append(projected)
+    return result
+
+
 def _runtime(row: Any) -> dict[str, Any]:
     data = row.value if row is not None and isinstance(row.value, dict) else {}
     public = {
@@ -611,6 +646,20 @@ def _runtime(row: Any) -> dict[str, Any]:
     public.update({key: _number(data.get(key)) for key in ("equity", "daily_pnl", "drawdown")})
     public["valuation_complete"] = data.get("valuation_complete") is True
     public["baseline_available"] = data.get("baseline_available") is True
+    public["clock_checked"] = data.get("clock_checked") is True
+    capabilities = data.get("capabilities")
+    public["capabilities"] = (
+        {
+            key: capabilities.get(key) is True
+            for key in ("option_units", "option_reduce_only")
+        }
+        if isinstance(capabilities, dict)
+        else {}
+    )
+    # 延迟摘要与留存报告已经落在 runtime_state，但此前没有进入页面；
+    # 这里只做白名单投影，不把任意 JSON 原样回传。
+    public["latency"] = _runtime_ops_list(data.get("latency"))
+    public["retention"] = _runtime_ops_row(data.get("retention"))
     public["last_error"] = (
         "服务报告异常；请检查暂停原因及服务器日志。" if data.get("last_error") else None
     )
@@ -888,7 +937,7 @@ async def _status(database: Database, config: AppConfig, now: dt.datetime) -> di
                 "reconciliations",
                 ReconciliationRun,
                 ReconciliationRun.started_at,
-                "id scope started_at finished_at repaired allows_resume",
+                "id scope started_at finished_at repaired allows_resume watermark cursor",
             ),
         )
         for key, model, order, fields in collections:
@@ -984,6 +1033,25 @@ async def _status(database: Database, config: AppConfig, now: dt.datetime) -> di
             .limit(TABLE_LIMIT)
         )
         data["control_commands"] = [_command(row) for row in commands]
+        flows = await session.scalars(
+            select(CashFlow)
+            .where(CashFlow.environment == environment)
+            .order_by(CashFlow.occurred_at.desc(), CashFlow.id.desc())
+            .limit(TABLE_LIMIT)
+        )
+        data["cash_flows"] = [
+            {
+                **_row(flow, "id asset amount kind external occurred_at created_at"),
+                # dedupe_key 形如 external-cash-flow:<reference>，只展示用户登记的引用，
+                # 不把整条 key 或其他内部字段暴露到页面。
+                "reference": (
+                    _text(flow.dedupe_key.removeprefix("external-cash-flow:"))[:128]
+                    if isinstance(flow.dedupe_key, str)
+                    else None
+                ),
+            }
+            for flow in flows
+        ]
         versions = await session.scalars(
             select(StrategyConfigVersion)
             .join(Strategy, Strategy.id == StrategyConfigVersion.strategy_id)

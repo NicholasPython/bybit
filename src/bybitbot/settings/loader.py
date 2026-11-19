@@ -16,10 +16,13 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import BaseModel, ConfigDict, ValidationError
+from pydantic import BaseModel, ConfigDict, ValidationError, model_validator
 
 from bybitbot.fees import FeeModel
 from bybitbot.settings.models import (
+    FIRST_PHASE_MAX_OPTION_CANDIDATES,
+    FIRST_PHASE_MAX_SPOT_PAIRS,
+    FIRST_PHASE_MAX_STRATEGIES,
     AccountConfig,
     BudgetConfig,
     Environment,
@@ -59,6 +62,37 @@ class AppConfig(BaseModel):
     fees: FeeEstimationConfig = FeeEstimationConfig()
     runtime: RuntimeConfig = RuntimeConfig()
     strategies: tuple[StrategyConfig, ...] = ()
+
+    @model_validator(mode="after")
+    def _first_phase_capacity(self) -> AppConfig:
+        """首期容量校验（NFR-01）。
+
+        首期容量是**已验证**的运行边界：1 个账户、最多 5 个策略实例、
+        10 个现货交易对、200 个候选期权合约。超出边界的部署必须另做容量
+        及订阅验证 —— 系统在这里直接拒绝，而不是悄悄跑在未验证的容量上。
+        """
+        if len(self.strategies) > FIRST_PHASE_MAX_STRATEGIES:
+            raise ValueError(
+                f"策略实例 {len(self.strategies)} 个超过首期容量上限 "
+                f"{FIRST_PHASE_MAX_STRATEGIES} 个（NFR-01）；超出需另做容量及订阅验证"
+            )
+        spot_pairs = {
+            symbol
+            for cfg in self.strategies
+            if cfg.kind == "spot_fixed_budget_dca"
+            for symbol in cfg.symbols
+        }
+        if len(spot_pairs) > FIRST_PHASE_MAX_SPOT_PAIRS:
+            raise ValueError(
+                f"现货交易对 {len(spot_pairs)} 个超过首期容量上限 "
+                f"{FIRST_PHASE_MAX_SPOT_PAIRS} 个（NFR-01）；超出需另做容量及订阅验证"
+            )
+        if self.runtime.max_option_candidates > FIRST_PHASE_MAX_OPTION_CANDIDATES:
+            raise ValueError(
+                f"候选期权合约 {self.runtime.max_option_candidates} 个超过首期容量上限 "
+                f"{FIRST_PHASE_MAX_OPTION_CANDIDATES} 个（NFR-01）"
+            )
+        return self
 
     @property
     def profile(self) -> EnvironmentProfile:
@@ -168,22 +202,25 @@ def load_config(
     except ValidationError as exc:
         raise ConfigError(f"配置校验失败：\n{exc}") from exc
 
-    cfg = AppConfig(
-        active_environment=active,
-        environments=environments,
-        account=account,
-        budget=budget,
-        risk=risk,
-        market=market,
-        execution=execution,
-        option=option,
-        ops=ops,
-        live_gates=live_gates,
-        paper=paper,
-        fees=fees,
-        runtime=runtime,
-        strategies=strategies,
-    )
+    try:
+        cfg = AppConfig(
+            active_environment=active,
+            environments=environments,
+            account=account,
+            budget=budget,
+            risk=risk,
+            market=market,
+            execution=execution,
+            option=option,
+            ops=ops,
+            live_gates=live_gates,
+            paper=paper,
+            fees=fees,
+            runtime=runtime,
+            strategies=strategies,
+        )
+    except ValidationError as exc:
+        raise ConfigError(f"配置校验失败：\n{exc}") from exc
     _cross_validate(cfg)
     return cfg
 

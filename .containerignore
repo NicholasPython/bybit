@@ -1,13 +1,6 @@
-.git
-.venv
-secrets
-var
-config/config.yaml
-config/credentials*.json
-config/admin*.json
-.env*
-__pycache__
-.pytest_cache
-.ruff_cache
-tests
-.DS_Store
+# NAS 构建上下文排除项（Containerfile.nas）。
+# 不写 `__pycache__/`：该模式只匹配构建根目录的一层，镜像里仍会带上
+# src/bybitbot/**/__pycache__。必须用 `**/` 前缀递归排除。
+**/__pycache__/
+**/*.pyc
+**/.DS_Store

@@ -14,8 +14,8 @@
     * **技术暂停**（``locked=False``）：数据暂时失效等。解除条件是
       「重新同步 + 全部检查通过」，由系统判定，不靠人工点头。
     * **锁定暂停**（``locked=True``）：亏损熔断、未知订单、外部改仓、
-      恢复演练造成的暂停。必须走审计化的人工解除，并且**不能**因为重启
-      或换日而消失。
+      恢复演练造成的暂停，以及时钟跳变造成的暂停 —— 调度时刻失去可信度，
+      必须走审计化的人工解除，并且**不能**因为重启或换日而消失。
 
 所有暂停都落库，因此重启后自动恢复 —— 这是「重启不能解除暂停」的实现方式。
 """
@@ -50,6 +50,8 @@ class PauseReason(StrEnum):
     ACCOUNT_DEBT = "ACCOUNT_DEBT"
     ACCOUNT_UNTRUSTED = "ACCOUNT_UNTRUSTED"
     EXECUTION_AUTHORITY_LOST = "EXECUTION_AUTHORITY_LOST"
+    #: 时钟跳变：调度时刻失去可信度，必须人工确认后才能继续（NFR-06）。
+    CLOCK_JUMP = "CLOCK_JUMP"
     # 技术类
     MARKET_DATA_STALE = "MARKET_DATA_STALE"
     MARKET_DATA_GAP = "MARKET_DATA_GAP"
@@ -73,6 +75,7 @@ LOCKED_REASONS: frozenset[str] = frozenset(
         PauseReason.ACCOUNT_DEBT,
         PauseReason.ACCOUNT_UNTRUSTED,
         PauseReason.EXECUTION_AUTHORITY_LOST,
+        PauseReason.CLOCK_JUMP,
     }
 )
 

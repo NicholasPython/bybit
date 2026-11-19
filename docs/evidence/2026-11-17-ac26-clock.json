@@ -1,0 +1,16 @@
+{
+  "generated_at": "2026-11-17T02:29:02.888017+00:00",
+  "environment": "paper",
+  "scenario": "系统时钟前跳 3600 秒",
+  "jump_seconds": 3595.0,
+  "jump_direction": "forward",
+  "max_skew_seconds": 5.0,
+  "pause_reason": "CLOCK_JUMP",
+  "pause_locked": true,
+  "machine_state": "PAUSED_OPEN",
+  "allows_new_exposure": false,
+  "rejected_reason": "暂停新增风险或合约不可交易",
+  "intents_before": 0,
+  "intents_after": 1,
+  "approved_intents": 0
+}

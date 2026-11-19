@@ -5,17 +5,16 @@
     <a class="brand" href="/">Bybit<span class="brand-sub">个人交易操作台</span></a>
     <div class="environment-line"><span class="muted">当前环境</span><strong id="environment">等待服务</strong></div>
     <nav class="nav-tabs" role="tablist" aria-label="工作区" aria-orientation="vertical">
-      <button id="tab-account" role="tab" aria-selected="true" aria-controls="panel-account" data-tab="account" tabindex="0">账户与持仓</button>
-      <button id="tab-orders" role="tab" aria-selected="false" aria-controls="panel-orders" data-tab="orders" tabindex="-1">订单与成交</button>
-      <button id="tab-audit" role="tab" aria-selected="false" aria-controls="panel-audit" data-tab="audit" tabindex="-1">审计与对账</button>
-      <button id="tab-config" role="tab" aria-selected="false" aria-controls="panel-config" data-tab="config" tabindex="-1">策略与风控</button>
+      <button id="tab-recovery" role="tab" aria-selected="true" aria-controls="panel-recovery" data-tab="recovery" tabindex="0">对账与恢复</button>
+      <button id="tab-health" role="tab" aria-selected="false" aria-controls="panel-health" data-tab="health" tabindex="-1">运行健康</button>
+      <button id="tab-risk" role="tab" aria-selected="false" aria-controls="panel-risk" data-tab="risk" tabindex="-1">风控态势</button>
+      <button id="tab-trades" role="tab" aria-selected="false" aria-controls="panel-trades" data-tab="trades" tabindex="-1">交易明细</button>
       <button id="tab-ops" role="tab" aria-selected="false" aria-controls="panel-ops" data-tab="ops" tabindex="-1">人工控制</button>
-      <button id="tab-validation" role="tab" aria-selected="false" aria-controls="panel-validation" data-tab="validation" tabindex="-1">验证运行</button>
     </nav>
     <div class="sidebar-foot"><p>UTC 时间<br>金额按币种标注</p><span id="operator">验证会话中</span><button id="logout" class="text-button" type="button">退出登录</button></div>
   </aside>
   <main id="main" class="workspace">
-    <header class="workspace-header"><div><p class="muted" id="page-context">账户与持仓</p><h1>交易运行记录</h1></div><div class="header-actions"><span id="refresh-at" class="muted">尚未读取</span><button id="refresh" class="button secondary" type="button">刷新</button></div></header>
+    <header class="workspace-header"><div><p class="muted" id="page-context">对账与恢复</p><h1>系统状态与人工操作台</h1></div><div class="header-actions"><span id="refresh-at" class="muted">尚未读取</span><button id="refresh" class="button secondary" type="button">刷新</button></div></header>
     <p id="connection-error" class="notice danger" role="alert" hidden></p>
     <noscript><p class="notice danger">请启用浏览器 JavaScript 以查看实时记录及执行操作。</p></noscript>
     <section class="status-pane" aria-labelledby="status-heading">
@@ -25,39 +24,55 @@
     </section>
     <div class="section-meta"><span id="row-limit">每表显示最近 100 条记录</span><span>自动刷新 15 秒</span></div>
 
-    <section id="panel-account" role="tabpanel" aria-labelledby="tab-account" tabindex="0">
+    <!-- 目标一：对账与恢复（默认首屏） -->
+    <section id="panel-recovery" role="tabpanel" aria-labelledby="tab-recovery" tabindex="0" data-panel="recovery">
+      <section id="recovery-summary" class="data-section goal-summary" aria-live="polite"><div class="section-heading"><h2>恢复结论</h2><span class="muted">仅汇总页面可见事实，不替代交易服务的恢复判定</span></div><p class="muted">正在读取对账与恢复证据。</p></section>
+      <section id="recovery-evidence" class="data-section"><div class="section-heading"><h2>恢复证据链</h2><span class="muted">对账水位 · UNKNOWN 订单 · 租约</span></div><div id="recovery-evidence-grid" class="evidence-grid"></div></section>
+      <section id="recovery-workflow" class="data-section"><div class="section-heading"><h2>恢复步骤</h2><span class="muted">按证据闭环，不跳过核对</span></div><ol id="recovery-workflow-steps" class="workflow-steps"></ol></section>
+      <section class="data-section"><div class="section-heading"><h2>恢复引导</h2><span class="muted">按现有命令完成闭环</span></div><p class="section-caption">未解释的外部资金变化先用“登记外部资金流”补齐事实，待下一轮全量对账允许恢复后，再逐条解除暂停。UNKNOWN 订单不能靠人工点击消除；命令受理不等于成交，停机不等于平仓。</p><div class="control-list"><div><h3>登记外部资金流</h3><p>登记充值、提现或划转，使现金变化可解释。</p><button class="button secondary" type="button" data-command="REGISTER_EXTERNAL_CASH_FLOW" disabled>登记外部资金流</button></div><div><h3>解除指定暂停</h3><p>每次一条；服务会重新检查对账、估值与订单事实。</p><button class="button secondary" type="button" data-command="RESUME" disabled>恢复指定暂停</button></div><div><h3>确认执行者接管</h3><p>须记录旧进程停止依据；确认后仍需干净对账。</p><button class="button secondary" type="button" data-command="CONFIRM_TAKEOVER" disabled>确认执行者接管</button></div></div></section>
+      <section class="data-section"><div class="section-heading"><h2>最近对账</h2><a href="#trades" class="goal-link" data-goto="trades">查看审计链路 →</a></div><div class="table-scroll" tabindex="0" aria-label="最近对账"><table><thead><tr><th>编号 / 范围</th><th>开始时间 (UTC)</th><th>结束时间 (UTC)</th><th class="numeric">差异数</th><th>已修复</th><th>允许恢复</th><th>差异详情</th></tr></thead><tbody id="reconciliations-body"></tbody></table></div></section>
+      <section class="data-section"><div class="section-heading"><h2>外部资金流登记</h2><span class="muted">最近 100 条 · 只读</span></div><div class="table-scroll" tabindex="0" aria-label="外部资金流登记"><table><thead><tr><th>编号</th><th>资产</th><th class="numeric">金额</th><th>类型</th><th>登记引用</th><th>发生时间 (UTC)</th></tr></thead><tbody id="cash-flows-body"></tbody></table></div></section>
+      <section class="data-section"><div class="section-heading"><h2>活动与历史暂停</h2><a href="#ops" class="goal-link" data-goto="ops">前往人工控制 →</a></div><div class="table-scroll" tabindex="0" aria-label="暂停记录"><table><thead><tr><th>编号 / 范围</th><th>原因</th><th>锁定</th><th>状态</th><th>创建时间 (UTC)</th><th>解除记录</th><th>操作</th></tr></thead><tbody id="pauses-body"></tbody></table></div></section>
+      <section class="data-section"><div class="section-heading"><h2>告警记录</h2></div><div class="table-scroll" tabindex="0" aria-label="告警记录"><table><thead><tr><th>级别</th><th>告警 / 详情</th><th>状态</th><th>首次发现 (UTC)</th><th>恢复时间 (UTC)</th></tr></thead><tbody id="alerts-body"></tbody></table></div></section>
+    </section>
+
+    <!-- 目标二：运行健康 -->
+    <section id="panel-health" role="tabpanel" aria-labelledby="tab-health" tabindex="0" hidden data-panel="health">
+      <section id="health-summary" class="data-section goal-summary"><div class="section-heading"><h2>长期运行健康</h2><span class="muted">15 秒刷新 · 数据年龄以 UTC 标注</span></div><p class="muted">正在读取运行健康摘要。</p></section>
+      <section class="data-section"><div class="section-heading"><h2>最近行情时效</h2><span class="muted">决策快照保留来源和接收时间</span></div><div class="table-scroll" tabindex="0" aria-label="行情时效"><table><thead><tr><th>产品 / 标的</th><th>来源时间 (UTC)</th><th>接收时间 (UTC)</th><th class="numeric">数据年龄</th><th>有效性</th></tr></thead><tbody id="quotes-body"></tbody></table></div></section>
+    </section>
+
+    <!-- 目标三：风控态势 -->
+    <section id="panel-risk" role="tabpanel" aria-labelledby="tab-risk" tabindex="0" hidden data-panel="risk">
+      <section id="risk-summary" class="data-section goal-summary"><div class="section-heading"><h2>当前风险态势</h2><span class="muted">静态限额与可见占用</span></div><p class="muted">正在读取风险摘要。</p></section>
+      <section class="data-section"><div class="section-heading"><h2>风控拒绝</h2><a href="#trades" class="goal-link" data-goto="trades">查看审计链路 →</a></div><div class="table-scroll" tabindex="0" aria-label="风控拒绝"><table><thead><tr><th>意图 / 信号</th><th>标的</th><th>拒绝原因</th><th>配置版本</th><th>时间 (UTC)</th></tr></thead><tbody id="risk-body"></tbody></table></div></section>
+      <section class="data-section"><div class="section-heading"><h2>策略实例与不可变版本</h2><span id="config-version" class="muted"></span></div><p class="section-caption">已发出的订单保留决策时的配置版本。配置在服务器维护，页面只读展示生效记录。</p><div class="table-scroll" tabindex="0" aria-label="策略版本"><table><thead><tr><th>策略</th><th>模板</th><th>启用状态</th><th>版本</th><th>标的 / UTC 调度</th><th class="numeric">每轮预算</th><th class="numeric">单笔上限</th><th>币种</th></tr></thead><tbody id="strategies-body"></tbody></table></div></section>
+      <section class="data-section"><div class="section-heading"><h2>策略生效参数</h2><span class="muted">来自当前生效的不可变配置版本</span></div><p class="section-caption">这里只显示真正参与决策的参数与退出规则（期权筛选区间、权利金与费用上限、止损等）。参数由服务器配置维护，页面只读展示；已发出的订单保留其决策时的版本。</p><div class="table-scroll" tabindex="0" aria-label="策略生效参数"><table><thead><tr><th>策略</th><th>版本</th><th>生效参数</th><th>退出规则</th></tr></thead><tbody id="strategy-params-body"></tbody></table></div></section>
+      <section class="data-section"><div class="section-heading"><h2>资金与风控限制</h2><span class="muted">所有限额均按配置币种生效</span></div><div class="table-scroll" tabindex="0" aria-label="资金与风控限制"><table><thead><tr><th>参数</th><th class="numeric">限制值</th><th>单位 / 币种</th><th>计算范围</th></tr></thead><tbody id="limits-body"></tbody></table></div></section>
+    </section>
+
+    <!-- 目标四：交易明细（原有数据表下钻，不删除任何信息） -->
+    <section id="panel-trades" role="tabpanel" aria-labelledby="tab-trades" tabindex="0" hidden data-panel="trades">
       <section class="data-section"><div class="section-heading"><h2>账户余额</h2><span id="account-identity" class="muted">等待账户快照</span></div><p class="section-caption">账户余额包含外部资产；只有已归属且可信的 bot 库存才可用于受限减仓。</p><div class="table-scroll" tabindex="0" aria-label="账户余额，可横向滚动"><table><thead><tr><th>币种</th><th class="numeric">权益</th><th class="numeric">可用</th><th class="numeric">锁定</th><th class="numeric">借款</th><th class="numeric">应计利息</th><th class="numeric">美元估值 (USD)</th></tr></thead><tbody id="coins-body"><tr><td colspan="7" class="empty-state">尚未采集账户快照。请检查交易服务与账户连接；页面不会填入模拟余额。</td></tr></tbody></table></div></section>
       <section class="data-section"><div class="section-heading"><h2>风险权益口径</h2><span id="valuation-version" class="muted"></span></div><div class="table-scroll" tabindex="0" aria-label="风险权益"><table><thead><tr><th>估值币种</th><th class="numeric">风险权益</th><th class="numeric">当日盈亏</th><th class="numeric">回撤</th><th>估值状态</th><th>风险基线</th></tr></thead><tbody id="valuation-body"></tbody></table></div><p id="baseline-note" class="section-caption">首次接入的交易日可能不完整；未建立基线时不显示零盈亏。</p></section>
       <section class="data-section"><div class="section-heading"><h2>账户实际持仓</h2><span class="muted">与策略库存分开核对</span></div><div class="table-scroll" tabindex="0" aria-label="账户实际持仓"><table><thead><tr><th>产品 / 标的</th><th>方向</th><th class="numeric">数量</th><th class="numeric">均价</th><th class="numeric">标记价</th><th>结算币种</th><th>可信度</th><th>更新时间 (UTC)</th></tr></thead><tbody id="positions-body"></tbody></table></div></section>
       <section class="data-section"><div class="section-heading"><h2>bot 策略归属库存</h2></div><div class="table-scroll" tabindex="0" aria-label="策略归属库存"><table><thead><tr><th>策略</th><th>标的</th><th class="numeric">数量</th><th class="numeric">平均成本</th><th>成本币种</th><th>可信度 / 来源</th><th>更新时间 (UTC)</th><th>操作</th></tr></thead><tbody id="inventory-body"></tbody></table></div></section>
-    </section>
-
-    <section id="panel-orders" role="tabpanel" aria-labelledby="tab-orders" tabindex="0" hidden>
       <section class="data-section"><div class="section-heading"><h2>物理订单</h2><button class="button secondary" data-command="CANCEL_BOT_OPEN_ORDERS" type="button" disabled>撤销 bot 开仓单</button></div><p class="section-caption">已受理不代表成交；UNKNOWN 表示结果未确定。本地 TTL 到期只触发撤单，不能视为交易所终态。</p><div class="table-scroll" tabindex="0" aria-label="物理订单"><table><thead><tr><th>订单编号 / 意图</th><th>标的 / 产品</th><th>方向</th><th class="numeric">委托数量</th><th class="numeric">已成交</th><th class="numeric">委托价格</th><th>状态 / 同步</th><th>创建时间 (UTC)</th><th>操作</th></tr></thead><tbody id="orders-body"></tbody></table></div></section>
       <section class="data-section"><div class="section-heading"><h2>交易所成交事实</h2></div><div class="table-scroll" tabindex="0" aria-label="成交事实"><table><thead><tr><th>成交编号 / 订单</th><th>标的</th><th>方向</th><th class="numeric">成交数量</th><th class="numeric">成交价</th><th class="numeric">手续费</th><th>费用币种</th><th>成交时间 (UTC)</th></tr></thead><tbody id="executions-body"></tbody></table></div></section>
+      <section class="data-section"><div class="section-heading"><h2>审计链路</h2><button id="export-audit" class="button secondary" type="button">导出审计 CSV</button></div><p class="section-caption">导出关联交易意图、风控决策、物理订单与成交，最多 5,000 行。多次风控检查、订单及成交会展开成多行；不要直接合计重复的意图金额。响应头 X-Export-Truncated 为 true 时表示导出已截断。</p><p id="audit-export-note" class="notice warning" hidden>导出结果已被截断，文件内容不是完整历史；请按时间范围重新核对。</p></section>
     </section>
 
-    <section id="panel-audit" role="tabpanel" aria-labelledby="tab-audit" tabindex="0" hidden>
-      <section class="data-section"><div class="section-heading"><h2>审计链路</h2><a class="button secondary" href="/api/audit.csv">导出审计 CSV</a></div><p class="section-caption">导出关联交易意图、风控决策、物理订单与成交，最多 5,000 行。多次风控检查、订单及成交会展开成多行；不要直接合计重复的意图金额。</p><div class="section-heading compact"><h3>风控拒绝</h3></div><div class="table-scroll" tabindex="0" aria-label="风控拒绝"><table><thead><tr><th>意图 / 信号</th><th>标的</th><th>拒绝原因</th><th>配置版本</th><th>时间 (UTC)</th></tr></thead><tbody id="risk-body"></tbody></table></div></section>
-      <section class="data-section"><div class="section-heading"><h2>最近行情时效</h2><span class="muted">决策快照保留来源和接收时间</span></div><div class="table-scroll" tabindex="0" aria-label="行情时效"><table><thead><tr><th>产品 / 标的</th><th>来源时间 (UTC)</th><th>接收时间 (UTC)</th><th class="numeric">数据年龄</th><th>有效性</th></tr></thead><tbody id="quotes-body"></tbody></table></div></section>
-      <section class="data-section"><div class="section-heading"><h2>最近对账</h2></div><div class="table-scroll" tabindex="0" aria-label="最近对账"><table><thead><tr><th>编号 / 范围</th><th>开始时间 (UTC)</th><th>结束时间 (UTC)</th><th class="numeric">差异数</th><th>已修复</th><th>允许恢复</th><th>差异详情</th></tr></thead><tbody id="reconciliations-body"></tbody></table></div></section>
-      <section class="data-section"><div class="section-heading"><h2>告警记录</h2></div><div class="table-scroll" tabindex="0" aria-label="告警记录"><table><thead><tr><th>级别</th><th>告警 / 详情</th><th>状态</th><th>首次发现 (UTC)</th><th>恢复时间 (UTC)</th></tr></thead><tbody id="alerts-body"></tbody></table></div></section>
-    </section>
-
-    <section id="panel-config" role="tabpanel" aria-labelledby="tab-config" tabindex="0" hidden>
-      <section class="data-section"><div class="section-heading"><h2>策略实例与不可变版本</h2><span id="config-version" class="muted"></span></div><p class="section-caption">已发出的订单保留决策时的配置版本。配置在服务器维护，页面只读展示生效记录。</p><div class="table-scroll" tabindex="0" aria-label="策略版本"><table><thead><tr><th>策略</th><th>模板</th><th>启用状态</th><th>版本</th><th>标的 / UTC 调度</th><th class="numeric">每轮预算</th><th class="numeric">单笔上限</th><th>币种</th></tr></thead><tbody id="strategies-body"></tbody></table></div></section>
-      <section class="data-section"><div class="section-heading"><h2>策略生效参数</h2><span class="muted">来自当前生效的不可变配置版本</span></div><p class="section-caption">这里只显示真正参与决策的参数与退出规则（期权筛选区间、权利金与费用上限、止损等）。参数由服务器配置维护，页面只读展示；已发出的订单保留其决策时的版本。</p><div class="table-scroll" tabindex="0" aria-label="策略生效参数"><table><thead><tr><th>策略</th><th>版本</th><th>生效参数</th><th>退出规则</th></tr></thead><tbody id="strategy-params-body"></tbody></table></div></section>
-      <section class="data-section"><div class="section-heading"><h2>资金与风控限制</h2><span class="muted">所有限额均按配置币种生效</span></div><div class="table-scroll" tabindex="0" aria-label="资金与风控限制"><table><thead><tr><th>参数</th><th class="numeric">限制值</th><th>单位 / 币种</th><th>计算范围</th></tr></thead><tbody id="limits-body"></tbody></table></div></section>
+    <!-- 目标五：人工控制 -->
+    <section id="panel-ops" role="tabpanel" aria-labelledby="tab-ops" tabindex="0" hidden data-panel="ops">
+      <section class="data-section"><div class="section-heading"><h2>命令中心</h2><span class="muted">按处置场景分组 · 全部先入队</span></div><p class="section-caption">命令先进入持久化队列，再由持有执行租约的交易服务校验。待处理不代表交易所已受理，也不代表已成交。每条命令需核对作用范围并输入“确认”。</p><div class="control-list">
+        <div><h3>紧急止血</h3><p>暂停新增风险，保留现有持仓与订单事实。</p><button class="button warning" type="button" data-command="PAUSE_NEW_RISK" disabled>暂停新增风险</button></div>
+        <div><h3>订单处置</h3><p>撤销 bot 开仓单或核对后撤销指定订单。</p><button class="button secondary" type="button" data-command="CANCEL_BOT_OPEN_ORDERS" disabled>撤销 bot 开仓单</button></div>
+        <div><h3>减仓退出</h3><p>指定可信库存、数量与最低价格；仍需通过风控。</p><button class="button secondary" type="button" data-command="REDUCE" disabled>受限减仓</button></div>
+        <div><h3>恢复放行</h3><p>每次只解除一条暂停；服务先核验对账与订单证据。</p><button class="button secondary" type="button" data-command="RESUME" disabled>恢复指定暂停</button><button class="button secondary" type="button" data-command="CONFIRM_TAKEOVER" disabled>确认执行者接管</button></div>
+        <div><h3>账务修正</h3><p>登记外部资金流，或首次建立风险基线。</p><button class="button secondary" type="button" data-command="REGISTER_EXTERNAL_CASH_FLOW" disabled>登记外部资金流</button></div>
+        <div><h3>研究验证</h3><p>仅 paper-only 公开行情研究，不加载交易凭据。</p><button class="button secondary" type="button" data-command="VALIDATION_START" disabled>启动验证运行</button><button class="button secondary" type="button" data-command="VALIDATION_STOP" disabled>停止验证运行</button></div>
+      </div></section>
       <section id="baseline-action" class="baseline-action" hidden><div><h3>建立首次风险基线</h3><p>使用当前完整估值建立首次风险起点，首日仍标记为不完整。不会覆盖已有基线；需先通过账户身份与对账检查。</p></div><button class="button secondary" type="button" data-command="INITIALIZE_BASELINE" disabled>建立首次风险基线</button></section>
-    </section>
-
-    <section id="panel-ops" role="tabpanel" aria-labelledby="tab-ops" tabindex="0" hidden>
-      <section class="data-section"><div class="section-heading"><h2>人工控制</h2></div><p class="section-caption">控制命令先进入持久化队列，再由持有执行租约的交易服务校验。待处理不代表交易所已受理，也不代表已成交。</p><div class="control-list"><div><h3>受限减仓</h3><p>指定单一策略、可信 bot 库存、数量和最低价格；仍需经过风控、预留与可成交价格检查。</p><button class="button secondary" type="button" data-command="REDUCE" disabled>受限减仓</button></div><div><h3>恢复指定暂停</h3><p>每次只解除一条暂停。服务会先检查证据与对账；其他活动暂停仍然有效。</p><button class="button secondary" type="button" data-command="RESUME" disabled>恢复指定暂停</button></div><div><h3>启动验证运行</h3><p>以冻结的只读研究协议启动 paper-only 验证；不加载交易凭据，也不直接发送交易所请求。</p><button class="button secondary" type="button" data-command="VALIDATION_START" disabled>启动验证运行</button></div><div><h3>停止验证运行</h3><p>在运行列表中按运行编号申请结束；服务会封存证据并保留未解决敞口。</p><button class="button secondary" type="button" data-command="VALIDATION_STOP" disabled>停止验证运行</button></div>
-      <div><h3>确认执行者接管</h3><p>须明确记录旧进程已停止的依据。人工确认后仍需完成新一轮干净对账，才可能获得执行资格。</p><button class="button secondary" type="button" data-command="CONFIRM_TAKEOVER" disabled>确认执行者接管</button></div><div><h3>登记外部资金流</h3><p>登记账户外的充值、提现或划转。未登记的现金变化会被判为无法解释并触发严重暂停；登记后计入账户总风险但不归属任何策略。</p><button class="button secondary" type="button" data-command="REGISTER_EXTERNAL_CASH_FLOW" disabled>登记外部资金流</button></div></div></section>
-      <section class="data-section"><div class="section-heading"><h2>暂停记录</h2></div><div class="table-scroll" tabindex="0" aria-label="暂停记录"><table><thead><tr><th>编号 / 范围</th><th>原因</th><th>锁定</th><th>状态</th><th>创建时间 (UTC)</th><th>解除记录</th><th>操作</th></tr></thead><tbody id="pauses-body"></tbody></table></div></section>
-    </section>
-
-    <section id="panel-validation" role="tabpanel" aria-labelledby="tab-validation" tabindex="0" hidden>
       <section class="data-section"><div class="section-heading"><h2>验证运行</h2><button class="button secondary" data-command="VALIDATION_START" type="button" disabled>启动验证运行</button></div>
         <p class="section-caption">仅 paper-only 公开行情研究。协议正文与来源清单由服务冻结，页面只显示运行摘要；停止与导出须按具体运行记录操作，命令入队不等于服务已执行。</p>
         <p id="validation-scope" class="muted">正在读取验证运行。</p>
@@ -66,7 +81,7 @@
       </section>
     </section>
 
-    <section class="data-section command-log"><div class="section-heading"><h2>最近控制命令</h2><a href="#ops" id="open-ops">查看人工控制</a></div><p id="command-notice" class="command-notice" role="status">命令状态以服务写入的记录为准。</p><div class="table-scroll" tabindex="0" aria-label="最近控制命令"><table><thead><tr><th>命令编号</th><th>操作 / 范围</th><th>状态</th><th>操作者</th><th>登记时间 (UTC)</th><th>结果</th></tr></thead><tbody id="commands-body"></tbody></table></div></section>
+    <section class="data-section command-log"><div class="section-heading"><h2>最近控制命令</h2><a href="#ops" class="goal-link" data-goto="ops">查看人工控制 →</a></div><p id="command-notice" class="command-notice" role="status">命令状态以服务写入的记录为准。</p><div class="table-scroll" tabindex="0" aria-label="最近控制命令"><table><thead><tr><th>命令编号</th><th>操作 / 范围</th><th>状态</th><th>操作者</th><th>登记时间 (UTC)</th><th>结果</th></tr></thead><tbody id="commands-body"></tbody></table></div></section>
     <footer class="workspace-footer"><span>记录仅来自当前环境的数据库</span><span>页面连通不代表交易服务在线</span></footer>
   </main>
 </div>

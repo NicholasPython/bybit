@@ -419,6 +419,17 @@ async def test_status_is_environment_scoped_and_allowlisted(client, database, mo
                         "drawdown": None,
                         "valuation_complete": True,
                         "baseline_available": False,
+                        "clock_checked": True,
+                        "capabilities": {"option_units": True, "private": "sensitive-cap"},
+                        "latency": [
+                            {"name": "tick", "p95_ms": 42.5, "api_key": "sensitive-latency"},
+                            "not-a-dict",
+                        ],
+                        "retention": {
+                            "ran_at": "2026-10-31T08:00:00Z",
+                            "raw_market_data_deleted": 3,
+                            "secret": "sensitive-retention",
+                        },
                         "last_error": "api_secret=sensitive-runtime",
                         "session_secret": "sensitive-runtime",
                     },
@@ -498,8 +509,12 @@ async def test_status_is_environment_scoped_and_allowlisted(client, database, mo
     data = response.json()
     assert data["environment"] == "paper"
     assert data["account"]["coins"][0]["available"] == "999"
-    assert data["runtime"]["baseline_available"] is False
-    assert data["runtime"]["daily_pnl"] is None
+    assert data["runtime"]["lease"] == "NEEDS_CONFIRMATION"
+    assert data["runtime"]["clock_checked"] is True
+    assert data["runtime"]["capabilities"] == {"option_units": True, "option_reduce_only": False}
+    assert data["runtime"]["latency"] == [{"name": "tick", "p95_ms": 42.5}]
+    assert data["runtime"]["retention"]["raw_market_data_deleted"] == 3
+    assert data["cash_flows"] == []
     assert data["baseline"] is None
     assert data["pauses"][0]["reason_detail"].startswith("敏感诊断内容已隐藏")
     assert data["reconciliations"][0]["differences"][0]["detail"] == "需补齐交易事实"
@@ -723,12 +738,21 @@ def fake_lifecycle(monkeypatch):
     return _FakeValidationLifecycle
 
 
-async def test_console_serves_validation_section(client):
+async def test_console_serves_goal_oriented_sections(client):
     await login(client)
     response = await client.get("/")
     assert response.status_code == 200
+    # 五目标导航；验证运行已归入人工控制，不再是独立 tab。
     for marker in (
-        'id="tab-validation"',
+        'id="tab-recovery"',
+        'id="tab-health"',
+        'id="tab-risk"',
+        'id="tab-trades"',
+        'id="tab-ops"',
+        'id="recovery-summary"',
+        'id="health-summary"',
+        'id="risk-summary"',
+        'id="cash-flows-body"',
         'id="validation-body"',
         'data-command="VALIDATION_START"',
         'data-command="VALIDATION_STOP"',

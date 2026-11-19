@@ -27,6 +27,7 @@ from bybitbot.db.models import (
     Inventory,
     Order,
     RiskDecision,
+    ScheduleRun,
     TradeIntent,
 )
 from bybitbot.db.session import Database
@@ -170,6 +171,19 @@ async def _command(service, kind, payload):
     return row.result
 
 
+async def _pending_schedules(database, environment: str) -> int:
+    """尚未落地的调度计划数（PLANNED/RUNNING）。"""
+    async with database.sessionmaker() as session:
+        return await session.scalar(
+            select(func.count())
+            .select_from(ScheduleRun)
+            .where(
+                ScheduleRun.environment == environment,
+                ScheduleRun.status.in_(["PLANNED", "RUNNING"]),
+            )
+        )
+
+
 async def _facts(database):
     async with database.sessionmaker() as session:
         orders = list(await session.scalars(select(Order).order_by(Order.id)))
@@ -263,7 +277,15 @@ async def verify(directory: Path):
                 planned_at=now_utc(),
                 input_snapshot={"symbol": strategy.symbols[0]},
             )
-        await service._schedule()
+        # 限速：策略合计每秒最多提交 1 个意图（NFR-01）。两个策略的同一秒计划
+        # 会被延后到下一个调度周期，因此验收驱动系统直到计划全部落地。
+        for _ in range(10):
+            await service._schedule()
+            if await _pending_schedules(database, service.environment) == 0:
+                break
+            await asyncio.sleep(1.05)
+        else:
+            raise RuntimeError("沙盒验收失败：调度计划未在限速窗口内落地")
         submitted = await _facts(database)
         _check(len(submitted["orders"]) == len(config.strategies), "两种策略均生成受理订单")
         _check(not submitted["executions"], "下单前的旧盘口不能产生成交")

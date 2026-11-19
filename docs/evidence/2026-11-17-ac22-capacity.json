@@ -1,0 +1,30 @@
+{
+  "generated_at": "2026-11-17T02:29:30.621293+00:00",
+  "environment": "paper",
+  "capacity": {
+    "strategies": 5,
+    "spot_pairs": 8,
+    "option_candidates": 200,
+    "catalog_option_contracts": 200
+  },
+  "latency_intent_validation_ms": {
+    "name": "intent_validation",
+    "count": 15,
+    "p50_ms": 33.765,
+    "p95_ms": 44.907,
+    "max_ms": 78.608,
+    "mean_ms": 37.004
+  },
+  "baseline_p95_ms": 500,
+  "cpu_seconds": 2.292,
+  "cpu_seconds_per_intent": 0.1528,
+  "max_rss_mb": 108.5,
+  "bulk_option_quote_calls": 2,
+  "depth_subscription_calls": 31,
+  "disk_growth_bytes": {
+    "quote_snapshot": 24576,
+    "trade_intent": 32768,
+    "order": 40960,
+    "ledger_event": 0
+  }
+}
