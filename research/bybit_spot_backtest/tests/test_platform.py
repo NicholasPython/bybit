@@ -192,6 +192,24 @@ class PlatformTests(unittest.TestCase):
         finally:
             os.close(held_fd)
 
+    def test_manual_sync_forwards_proxy_and_transport_environment(self):
+        # A minimal subprocess environment drops the proxy settings and the
+        # collector transport, so the public API calls would time out.
+        with mock.patch.dict(
+            os.environ,
+            {
+                "https_proxy": "http://127.0.0.1:7890",
+                "http_proxy": "http://127.0.0.1:7890",
+                "BYBIT_COLLECTOR_SSH_HOST": "",
+            },
+        ):
+            env = dashboard.sync_env()
+        self.assertEqual(env["https_proxy"], "http://127.0.0.1:7890")
+        self.assertEqual(env["http_proxy"], "http://127.0.0.1:7890")
+        self.assertEqual(env["BYBIT_COLLECTOR_SSH_HOST"], "")
+        self.assertEqual(env["PYTHONNOUSERSITE"], "1")
+        self.assertNotIn("SECRET", env)
+
     def test_next_open_execution_and_flat_rsi(self):
         bars = [
             (i * 60_000, opened, max(opened, close), min(opened, close), close)

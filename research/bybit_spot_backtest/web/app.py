@@ -99,6 +99,20 @@ app.config["TRUSTED_HOSTS"] = ["nicholas-4.tail068b64.ts.net", "127.0.0.1", "loc
 csrf_token = secrets.token_urlsafe(32)
 executor = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="backtest")
 
+# The collector subprocess needs the proxy and transport settings that the web
+# service itself was started with; a minimal environment would silently drop
+# them and the public API calls would time out.
+FORWARDED_ENV = ("http_proxy", "https_proxy", "no_proxy", "BYBIT_COLLECTOR_SSH_HOST")
+
+
+def sync_env():
+    env = {"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8", "PYTHONNOUSERSITE": "1"}
+    for name in FORWARDED_ENV:
+        value = os.environ.get(name)
+        if value is not None:
+            env[name] = value
+    return env
+
 
 def connection():
     if not DB_PATH.is_file():
@@ -786,7 +800,7 @@ def sync_now():
             text=True,
             timeout=65,
             cwd=str(ROOT.parent),
-            env={"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8", "PYTHONNOUSERSITE": "1"},
+            env=sync_env(),
             check=False,
         )
     except subprocess.TimeoutExpired:
