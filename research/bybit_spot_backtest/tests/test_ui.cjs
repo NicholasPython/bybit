@@ -104,7 +104,7 @@ test('all nine result variants render metrics, costs and benchmark controls', ()
   const fn=source.slice(source.indexOf('function showResult('),source.indexOf('async function pollJob('));
   for(const [strategy,item] of Object.entries(researchCatalog)){
     const nodes={};
-    const sandbox={RESEARCH:researchCatalog,PAIRS:['BTCUSDT','ETHUSDT'],strategyNames:Object.fromEntries(Object.entries(researchCatalog).map(([k,v])=>[k,v.name])),orderReasons:{},resultGeneration:0,lastSingleEquity:[],lastEquity:[],lastHoldEquity:[],
+    const sandbox={RESEARCH:researchCatalog,PAIRS:['BTCUSDT','ETHUSDT'],api:url=>url,baseAsset:inst=>String(inst||'').replace(/USDT$/,''),strategyNames:Object.fromEntries(Object.entries(researchCatalog).map(([k,v])=>[k,v.name])),orderReasons:{},resultGeneration:0,lastSingleEquity:[],lastEquity:[],lastHoldEquity:[],
       $:id=>nodes[id]||(nodes[id]={innerHTML:'',addEventListener(){}}),esc:String,number:String,money:String,cst:String,quantityText:String,drawEquity(){},requestAnimationFrame:fn=>fn(),Number};
     vm.createContext(sandbox);vm.runInContext(fn,sandbox);
     const result={strategy,inst_id:'BTCUSDT',is_multi:item.multi,bars:1000,signal_bars:100,warmup_bars:10,capital:10000,final_equity:10500,return_pct:5,buy_hold_pct:3,max_drawdown_pct:2,order_count:3,completed_trades:1,win_rate_pct:100,cash_usdt:5000,fees_paid:10,turnover_usdt:10000,slippage_cost_usdt:5,realized_pnl_usdt:20,skipped_orders:0,stop_exits:1,rebalances:1,grid_rounds:1,grid_levels:[70,100,130],dca_buys:1,open_position:true,start_ms:100,end_ms:1000,last_signal_unfilled:false,recent_orders:[],equity_curve:[],buy_hold_curve:[],holdings:[{inst_id:'BTCUSDT',final_qty:1,target_weight_pct:40,actual_weight_pct:39}],strategy_params:Object.fromEntries(Object.entries(item.fields).map(([k,f])=>[k,f.default]))};
@@ -114,4 +114,18 @@ test('all nine result variants render metrics, costs and benchmark controls', ()
     assert.ok(nodes.results.innerHTML.includes(item.name));
     assert.ok(!nodes.results.innerHTML.includes('undefined'),strategy);
   }
+});
+
+test('base asset labels strip the Bybit USDT quote suffix', () => {
+  const start=source.indexOf('const baseAsset =');
+  const fn=source.slice(start,source.indexOf('\n',start));
+  const sandbox={};
+  vm.createContext(sandbox);
+  vm.runInContext(fn,sandbox);
+  const baseAsset=vm.runInContext('baseAsset',sandbox);
+  assert.equal(baseAsset('BTCUSDT'),'BTC');
+  assert.equal(baseAsset('XAUTUSDT'),'XAUT');
+  assert.equal(baseAsset(''),'');
+  // The old OKX format carried a dash; it must not leave a trailing dash.
+  assert.equal(baseAsset('BTC-USDT'),'BTC-');
 });

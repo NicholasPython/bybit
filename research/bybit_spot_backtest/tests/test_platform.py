@@ -187,10 +187,32 @@ class PlatformTests(unittest.TestCase):
         self.assertEqual(run.call_args.args[0][-1], "sync")
         held_fd = dashboard.acquire_run_lock()
         self.assertIsNotNone(held_fd)
+        contender_fd = None
         try:
-            self.assertIsNone(dashboard.acquire_run_lock())
+            contender_fd = dashboard.acquire_run_lock()
+            self.assertIsNone(contender_fd)
         finally:
+            if contender_fd is not None:
+                os.close(contender_fd)
             os.close(held_fd)
+
+    def test_manual_sync_forwards_proxy_and_transport_environment(self):
+        # A minimal subprocess environment drops the proxy settings and the
+        # collector transport, so the public API calls would time out.
+        with mock.patch.dict(
+            os.environ,
+            {
+                "https_proxy": "http://127.0.0.1:7890",
+                "http_proxy": "http://127.0.0.1:7890",
+                "BYBIT_COLLECTOR_SSH_HOST": "",
+            },
+        ):
+            env = dashboard.sync_env()
+        self.assertEqual(env["https_proxy"], "http://127.0.0.1:7890")
+        self.assertEqual(env["http_proxy"], "http://127.0.0.1:7890")
+        self.assertEqual(env["BYBIT_COLLECTOR_SSH_HOST"], "")
+        self.assertEqual(env["PYTHONNOUSERSITE"], "1")
+        self.assertNotIn("SECRET", env)
 
     def test_next_open_execution_and_flat_rsi(self):
         bars = [

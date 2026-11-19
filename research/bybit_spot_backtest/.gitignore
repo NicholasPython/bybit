@@ -10,5 +10,8 @@ web/jobs/
 web/venv*/
 backups/
 runtime/
+# Published correlation snapshots are data, not source.
+research/top20-current/
+research/top20-*/
 .pytest_cache/
 .DS_Store
