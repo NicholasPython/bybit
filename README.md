@@ -11,6 +11,7 @@
 - 2026-11-16 公共层与本地 paper 系统交付：[docs/paper-system-2026-11-16.md](docs/paper-system-2026-11-16.md)
 - 公共层边界与研究迁移：[docs/shared-domain.md](docs/shared-domain.md)
 - 研究前向账本与交易系统模块映射（2026-11-16 暂停后的证据与缺口）：[docs/research-ledger-mapping-2026-11-16.md](docs/research-ledger-mapping-2026-11-16.md)
+- 现货－永续价差套利的只读采集与回测（2026-11-18，含真实数据结论）：[docs/cash-futures-spread-2026-11-18.md](docs/cash-futures-spread-2026-11-18.md)
 
 ## 组成
 
@@ -65,7 +66,7 @@ uv run ruff check src tests deploy
 uv run pytest -q
 ```
 
-2026-11-16 最新结果为 **701 项通过**（一个 Alembic `path_separator` 弃用警告）。测试在 `BYBITBOT_TESTING=1` 下运行；`tests/conftest.py` 阻断 httpx 的默认同步和异步 HTTP transport，交易所 HTTP 响应使用 `httpx.MockTransport`，交易行为使用 `PaperAdapter` 合成。数据库用例各自使用独立 PostgreSQL schema，结束后只删除自己的 schema。这不是操作系统级网络隔离，也不构成真实 Bybit 能力验收。管理页命令提示另有 `node --test tests/console_ui.test.mjs`（6 项）覆盖。
+2026-11-18 最新结果为 **1411 项通过**（一个 Alembic `path_separator` 弃用警告）。测试在 `BYBITBOT_TESTING=1` 下运行；`tests/conftest.py` 阻断 httpx 的默认同步和异步 HTTP transport，交易所 HTTP 响应使用 `httpx.MockTransport`，交易行为使用 `PaperAdapter` 合成。数据库用例各自使用独立 PostgreSQL schema，结束后只删除自己的 schema。这不是操作系统级网络隔离，也不构成真实 Bybit 能力验收。管理页命令提示另有 `node --test tests/console_ui.test.mjs`（6 项）覆盖。
 
 ## 配置
 
@@ -176,7 +177,8 @@ uv run bybitbot sandbox verify --directory var/paper-system
 
 ```
 src/bybitbot/     应用代码
-tests/            701 项 Python 隔离测试、6 项页面提示测试
+research/         研究脚本（含现货－永续价差只读采集与回测）
+tests/            1411 项 Python 隔离测试、6 项页面提示测试
 alembic/          数据库迁移（当前 head: 8a4d17c2f905）
 config/           配置示例（无密钥）
 deploy/           容器、Quadlet、备份、Mac 端监控与安装脚本
