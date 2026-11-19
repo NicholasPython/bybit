@@ -3,7 +3,7 @@
   const $ = id => document.getElementById(id);
   const PREFIX = document.body.dataset.prefix || '';
   const api = url => PREFIX + url;
-  const base = inst => inst.replace(/-USDT$/, '');
+  const base = inst => String(inst||'').replace(/USDT$/, '');
   const finite = value => typeof value === 'number' && Number.isFinite(value);
   const coefficient = value => finite(value) ? value.toFixed(3) : '历史不足';
   const percent = value => finite(value) ? `${value >= 0 ? '+' : ''}${value.toFixed(2)}%` : '历史不足';
@@ -124,12 +124,12 @@
       : value >= .4 ? '在此窗口内存在一定共同波动，也有各自的价格变化。'
       : '在此窗口内共同波动较弱；这不等于反向对冲或再平衡盈利。';
     detail.append(node('p', interpretation, 'pair-interpretation'));
-    if (a === 'XAUT-USDT' || b === 'XAUT-USDT') detail.append(node('p', 'XAUT 是黄金支持代币，资产属性不同于一般加密币。', 'warning'));
+    if (a === 'XAUTUSDT' || b === 'XAUTUSDT') detail.append(node('p', 'XAUT 是黄金支持代币，资产属性不同于一般加密币。', 'warning'));
   }
   function renderLists() {
     const pairs = validPairs();
     const strong = [...pairs].sort((a, b) => b.pearson - a.pearson).slice(0, 5);
-    const weak = pairs.filter(p => !$('excludeGold').checked || (p.a !== 'XAUT-USDT' && p.b !== 'XAUT-USDT'))
+    const weak = pairs.filter(p => !$('excludeGold').checked || (p.a !== 'XAUTUSDT' && p.b !== 'XAUTUSDT'))
       .sort((a, b) => a.pearson - b.pearson).slice(0, 5);
     for (const [id, list] of [['strongPairs', strong], ['weakPairs', weak]]) {
       $(id).replaceChildren(...list.map((p, i) => {
@@ -176,7 +176,7 @@
       analysis = await response.json();
       $('snapshotDate').textContent = cst(analysis.snapshot.snapshot_ms).split(' ')[0];
       $('snapshotTime').textContent = `排名 ${cst(analysis.snapshot.snapshot_ms)} · 数据截至 ${cst(analysis.analysis_end_ms)}`;
-      populateSelect('benchmarkCoin', 'BTC-USDT'); populateSelect('pairA', 'BTC-USDT'); populateSelect('pairB', 'ETH-USDT');
+      populateSelect('benchmarkCoin', 'BTCUSDT'); populateSelect('pairA', 'BTCUSDT'); populateSelect('pairB', 'ETHUSDT');
       renderWindow(); renderNotes();
       $('researchContent').classList.remove('hidden');
     } catch (error) {
