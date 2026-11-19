@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>热门 Top20 · 收益相关性 | Bybit 现货回测台</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/correlation.css">
+</head>
+<body>
+  <div class="shell">
+    <header class="topbar">
+      <div class="brand"><div class="brand-mark">B</div><div><span class="eyebrow">PRIVATE MARKET LAB</span><strong>Bybit 现货回测台</strong></div></div>
+      <div class="top-right"><span class="private-pill"><span class="pulse"></span> TAILSCALE 私有访问</span></div>
+    </header>
+    <nav class="page-nav" aria-label="主要导航"><a href="/">行情与回测</a><a href="/correlation" aria-current="page">热门 Top20 · 收益相关性</a></nav>
+    <main>
+      <section class="hero research-hero">
+        <div><p class="eyebrow teal">MARKET RELATIONSHIPS · SNAPSHOT</p><h1>哪些币一起波动，<br><em>哪些走势各有节奏。</em></h1><p class="subtitle">Bybit 热门现货 Top20 · 小时收益相关性 · 累计表现对比</p></div>
+        <div class="hero-status"><span class="mini-label">固定排名快照 · 北京时间</span><strong id="snapshotDate">—</strong><span id="snapshotTime">正在加载分析…</span></div>
+      </section>
+      <div id="researchError" class="error-box hidden" role="alert"><p id="researchErrorText"></p><button id="retryResearch" class="secondary-button" type="button">重新加载</button></div>
+      <div id="researchContent" class="hidden">
+        <section class="panel research-controls">
+          <div class="section-heading"><div><p class="eyebrow">ANALYSIS WINDOW</p><h2>收益观察窗口</h2></div><label>统一比较区间 <select id="analysisWindow"><option value="90">最近 90 天</option><option value="30">最近 30 天</option></select></label></div>
+          <p id="windowDescription" class="quality-summary" role="status"></p>
+          <p class="quiet">排名依据快照时最近 24 小时的 USDT 现货成交额，排除稳定币；不是全市场榜。相关系数使用已完结的 1 小时对数收益，不使用价格水平。页面刷新会重新读取已发布快照。</p>
+          <div id="researchSummary" class="research-stats"></div>
+        </section>
+
+        <section class="section-block panel">
+          <div class="section-heading"><div><p class="eyebrow">01 / MARKET HEAT</p><h2>热门现货 Top20</h2></div><label>相关性对照币 <select id="benchmarkCoin" aria-label="排名表相关性对照币"></select></label></div>
+          <p class="quiet table-intro">按成交热度排列。累计价格收益未扣手续费与滑点；“历史不足”不代表零收益或零相关。</p>
+          <div class="research-table-wrap"><table class="research-table" id="rankingTable"><caption class="sr-only">热门现货排名、价格收益和相关性</caption><thead><tr><th scope="col">热度</th><th scope="col">币种</th><th scope="col">24h 成交额<br>百万 USDT</th><th scope="col" id="returnHeading">90 天价格收益</th><th scope="col" id="corrHeading">与 BTC 相关性</th><th scope="col">数据覆盖</th></tr></thead><tbody id="rankingBody"></tbody></table></div>
+        </section>
+
+        <section class="section-block panel">
+          <div class="section-heading"><div><p class="eyebrow">02 / RETURN CORRELATION</p><h2>20 × 20 收益相关矩阵</h2></div><span class="section-aside">点击任意格子查看币对 · 手机可横向滑动</span></div>
+          <div class="heatmap-legend"><span class="legend-negative">−1 反向</span><span class="legend-zero">0 关联弱</span><span class="legend-positive">+1 同向</span><span class="legend-na">NA 历史不足</span></div>
+          <div class="research-table-wrap heatmap-wrap" tabindex="0" aria-label="可横向滚动的相关性矩阵"><table class="heatmap" id="heatmap"><caption class="sr-only">按成交热度排序的 Pearson 收益相关性；格子为可选择币对的按钮</caption></table></div>
+          <p class="quiet">相关性衡量共同波动，不等于累计收益相同。低正相关仍可能一起下跌；对角线为与自身的相关性。NA 项保持空缺，不补历史价格。</p>
+        </section>
+
+        <section class="section-block panel" id="pairSection">
+          <div class="section-heading"><div><p class="eyebrow">03 / PAIR INSPECTOR</p><h2>两币走势对比</h2></div><div class="control-row"><label>币种 A <select id="pairA"></select></label><label>币种 B <select id="pairB"></select></label></div></div>
+          <div id="pairDetails" class="pair-detail" aria-live="polite"></div>
+          <p class="quiet">同涨同跌比例排除零收益时段。Spearman 用于观察秩相关；滚动 30 天范围仅提供于 90 天窗口，按日采样。</p>
+        </section>
+
+        <section class="section-block pair-lists">
+          <div class="panel"><p class="eyebrow">STRONGER CO-MOVEMENT</p><h2>同向关联最高</h2><div id="strongPairs" class="ranked-pairs"></div></div>
+          <div class="panel"><p class="eyebrow">WEAKER CO-MOVEMENT</p><h2>关联最低</h2><label class="research-checkbox"><input type="checkbox" id="excludeGold" checked> 此列表排除黄金代币 XAUT</label><div id="weakPairs" class="ranked-pairs"></div></div>
+        </section>
+
+        <section class="section-block panel">
+          <div class="section-heading"><div><p class="eyebrow">04 / COVERAGE & INTERPRETATION</p><h2>数据覆盖与解读</h2></div></div>
+          <div id="coverageNotes" class="research-notes"></div>
+          <details class="strategy-guide"><summary>如何用于屯币宝研究？</summary><div><p>先检查币对相关性在不同窗口是否稳定，再看相对价格是否往复，最后比较计入交易费用后的再平衡回测。弱相关不保证对冲或再平衡盈利。</p><p>今日 Top20 只能作为当前观察名单。历史选币回测须使用当时可获得的排名，避免未来信息与幸存者偏差。<a href="/">策略回测</a>现已支持相同 Top20 币种，使用独立采集的完整分钟数据；小时相关性数据不用于代替分钟成交。实际区间取决于上市时间与分钟回溯进度。</p><p><a href="https://bybit-exchange.github.io/docs/v5/market/tickers" target="_blank" rel="noopener noreferrer">Bybit 官方行情 API ↗</a> · <a href="https://gold.tether.to/" target="_blank" rel="noopener noreferrer">XAUT 黄金属性说明 ↗</a></p></div></details>
+          <div class="research-downloads"><a href="/api/correlation/download/top20-ranking.csv">排名 CSV ↓</a><a id="matrixDownload" href="/api/correlation/download/correlation-90.csv">当前相关矩阵 CSV ↓</a><a href="/api/correlation/download/correlation-common-161h.csv">20 币共同短窗矩阵 ↓</a><a href="/api/correlation/download/report.md">完整报告 ↓</a><a href="/api/correlation/download/bybit-top20-analysis.zip">全部数据与图表 ZIP ↓</a></div>
+        </section>
+      </div>
+      <footer><span>BYBIT SPOT LAB</span><span>公开行情 · 私有访问 · 研究用途</span></footer>
+    </main>
+  </div>
+  <script src="/static/correlation.js" defer></script>
+</body>
+</html>
