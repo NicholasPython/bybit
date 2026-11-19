@@ -1,0 +1,61 @@
+name: Branch Guard
+# 服务端没有分支保护（private 仓库 + 免费套餐拿不到 branch protection /
+# ruleset），这里用 CI 补上两条最关键的门：
+#   1) PR 必须已同步 base 分支（等价于 required_status_checks 的 strict 行为）；
+#   2) main 上的提交必须来自已合并的 PR（检测绕过 PR 直接推送）。
+# 两条都是"检测"而非"阻止"：真正的阻止靠 .githooks/pre-push 与仓库的
+# squash-only 合并设置。
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  up-to-date:
+    name: PR 分支需包含 base 最新提交
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - name: 校验 PR 已同步 base
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin "+refs/heads/$BASE_REF:refs/remotes/origin/$BASE_REF"
+          if ! git merge-base --is-ancestor "refs/remotes/origin/$BASE_REF" HEAD; then
+            echo "::error::PR 分支落后于 $BASE_REF，请先点 Update branch 同步后再合并"
+            exit 1
+          fi
+          echo "PR 已包含 $BASE_REF 的最新提交。"
+
+  no-direct-push:
+    name: main 只能通过 PR 合入
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: 校验本次推送来自已合并的 PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HEAD_SHA: ${{ github.event.head_commit.id }}
+        run: |
+          set -euo pipefail
+          # squash 合并时，PR 的 merge_commit_sha 就是落到 main 上的那个提交。
+          merged=$(gh api "repos/${{ github.repository }}/pulls?state=closed&base=main&per_page=100" \
+            --jq '[.[] | select(.merged_at != null) | .merge_commit_sha] | join(" ")')
+          case " $merged " in
+            *" $HEAD_SHA "*)
+              echo "该提交来自已合并的 PR，合规。"
+              ;;
+            *)
+              echo "::error::main 上出现不属于任何已合并 PR 的提交 $HEAD_SHA —— 疑似绕过 PR 直接推送"
+              exit 1
+              ;;
+          esac
