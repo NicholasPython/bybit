@@ -160,6 +160,8 @@ class BybitPublic:
                 "BatchMode=yes",
                 "-o",
                 "ConnectTimeout=10",
+                "-o",
+                "StrictHostKeyChecking=accept-new",
                 self.ssh_host,
                 remote_cmd,
             ],
