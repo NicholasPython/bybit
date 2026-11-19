@@ -69,10 +69,15 @@ WEB_PREFIX = os.environ.get("BYBIT_WEB_PREFIX", "").strip().rstrip("/")
 if WEB_PREFIX:
     if not WEB_PREFIX.startswith("/"):
         raise RuntimeError("BYBIT_WEB_PREFIX must start with /")
-    app.config["APPLICATION_ROOT"] = WEB_PREFIX
 
     class _PrefixMiddleware:
-        """Strip the proxy path so Flask's existing routes and JS URLs keep working."""
+        """Mount the app under a path prefix.
+
+        The reverse proxy may or may not strip the prefix before forwarding:
+        Tailscale Serve strips it, while a direct request keeps it. Either way
+        the browser must receive prefixed URLs, so SCRIPT_NAME is always set
+        and the prefix is removed from PATH_INFO when it is present.
+        """
 
         def __init__(self, wrapped, prefix):
             self.wrapped = wrapped
@@ -84,6 +89,7 @@ if WEB_PREFIX:
                 environ["PATH_INFO"] = "/"
             elif path.startswith(self.prefix + "/"):
                 environ["PATH_INFO"] = path[len(self.prefix):]
+            environ["SCRIPT_NAME"] = self.prefix
             return self.wrapped(environ, start_response)
 
     app.wsgi_app = _PrefixMiddleware(app.wsgi_app, WEB_PREFIX)
