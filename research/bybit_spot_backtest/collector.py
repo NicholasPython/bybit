@@ -222,7 +222,7 @@ class BybitPublic:
             payload = None
             for attempt in range(4):
                 try:
-                    with urllib.request.urlopen(request, timeout=25) as response:  # noqa: S310
+                    with urllib.request.urlopen(request, timeout=60) as response:  # noqa: S310
                         payload = json.load(response)
                     if payload.get("retCode") != 0 or not isinstance(payload.get("result"), dict):
                         raise RuntimeError("Bybit API error " + str(payload.get("retCode")))
@@ -230,7 +230,7 @@ class BybitPublic:
                 except Exception as exc:  # noqa: BLE001 -- remote-equivalent retry path
                     error = type(exc).__name__ + ": " + str(exc)
                     payload = None
-                    time.sleep(0.4 * (attempt + 1))
+                    time.sleep(2 * (attempt + 1))
             record = {"path": path, "params": params}
             if payload is not None:
                 record["payload"] = payload
