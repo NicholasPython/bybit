@@ -25,6 +25,8 @@ dev = [
     "pytest-cov>=6.0",
     "hypothesis>=6.131",
     "ruff>=0.9",
+    # research/bybit_spot_backtest 的回测台用到 Flask；仅测试环境需要。
+    "flask==3.1.3",
 ]
 
 [project.scripts]

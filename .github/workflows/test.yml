@@ -31,11 +31,13 @@ jobs:
       - name: Install locked project
         run: uv sync --frozen --extra dev
       - name: Lint
-        run: uv run ruff check src tests deploy alembic
+        run: uv run ruff check src tests deploy alembic research/bybit_spot_backtest
       - name: Test with synthetic credentials and blocked exchange HTTP
         run: uv run pytest -q
       - name: Verify console command feedback
         run: node --test tests/console_ui.test.mjs
+      - name: Verify spot backtest console behaviour
+        run: node --test research/bybit_spot_backtest/tests/test_ui.cjs
       - name: Verify migration convergence
         env:
           BYBITBOT_DB_DSN: postgresql+psycopg://postgres:bybitbot@127.0.0.1:55432/bybitbot

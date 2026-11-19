@@ -13,6 +13,7 @@
 - 研究前向账本与交易系统模块映射（2026-11-16 暂停后的证据与缺口）：[docs/research-ledger-mapping-2026-11-16.md](docs/research-ledger-mapping-2026-11-16.md)
 - 现货－永续价差套利的只读采集与回测（2026-11-18，含真实数据结论）：[docs/cash-futures-spread-2026-11-18.md](docs/cash-futures-spread-2026-11-18.md)
 - 现货－永续价差实盘前风险清单（2026-11-19，含产品侧缺口与验证清单）：[docs/cash-futures-live-risk-checklist-2026-11-19.md](docs/cash-futures-live-risk-checklist-2026-11-19.md)
+- 现货 1 分钟采集与回测子工程（2026-11-19，Bybit 公共接口，只读研究）：[research/bybit_spot_backtest/README.md](research/bybit_spot_backtest/README.md)
 
 ## 组成
 
@@ -68,6 +69,8 @@ uv run pytest -q
 ```
 
 2026-11-18 最新结果为 **1411 项通过**（一个 Alembic `path_separator` 弃用警告）。测试在 `BYBITBOT_TESTING=1` 下运行；`tests/conftest.py` 阻断 httpx 的默认同步和异步 HTTP transport，交易所 HTTP 响应使用 `httpx.MockTransport`，交易行为使用 `PaperAdapter` 合成。数据库用例各自使用独立 PostgreSQL schema，结束后只删除自己的 schema。这不是操作系统级网络隔离，也不构成真实 Bybit 能力验收。管理页命令提示另有 `node --test tests/console_ui.test.mjs`（6 项）覆盖。
+
+现货采集与回测子工程的测试随同 `pytest` 一起运行（`research` 在 `testpaths` 内，Flask 已在 `dev` 附加依赖中固定为 3.1.3）；它的页面交互另有 `node --test research/bybit_spot_backtest/tests/test_ui.cjs`（7 项）。两者都不需要网络与交易所凭据。
 
 ## 配置
 
@@ -179,12 +182,23 @@ uv run bybitbot sandbox verify --directory var/paper-system
 ```
 src/bybitbot/     应用代码
 research/         研究脚本（含现货－永续价差只读采集与回测）
+research/bybit_spot_backtest/  现货 1 分钟采集与回测子工程（独立于交易服务）
 tests/            1411 项 Python 隔离测试、6 项页面提示测试
 alembic/          数据库迁移（当前 head: 8a4d17c2f905）
 config/           配置示例（无密钥）
 deploy/           容器、Quadlet、备份、Mac 端监控与安装脚本
 docs/             需求、评审、验收矩阵、NAS 手册
 ```
+
+## 研究子工程：现货 1 分钟采集与回测
+
+`research/bybit_spot_backtest/` 是独立的**研究**子工程：采集 Bybit 公共接口的现货 1 分钟 K 线写入本地 SQLite，并提供参数化策略回测页面（屯币宝、双均线、RSI、海龟及九种研究策略）。它与 `src/bybitbot` 的交易闭环完全分离：
+
+- 只读公共行情，不需要也不持有任何 API 密钥，不创建账户、不下单、不写交易所
+- 不属于部署产物；实盘镜像只包含 `src/`，此子工程不会进入交易服务
+- 采集与回测的取值口径（信号在收盘生成、下一分钟开盘成交、缺口拒绝回测）与交易服务各自的策略实现彼此独立
+
+细节见 [子工程说明](research/bybit_spot_backtest/README.md) 与[数据库说明](research/bybit_spot_backtest/docs/database.md)。它的 Python 测试随仓库主测试一起运行（`research` 已在 pytest 的 `testpaths` 内），页面交互另有 Node 测试；全部不需要网络与交易所凭据。
 
 ## 安全边界
 
