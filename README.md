@@ -12,6 +12,7 @@
 - 公共层边界与研究迁移：[docs/shared-domain.md](docs/shared-domain.md)
 - 研究前向账本与交易系统模块映射（2026-11-16 暂停后的证据与缺口）：[docs/research-ledger-mapping-2026-11-16.md](docs/research-ledger-mapping-2026-11-16.md)
 - 现货－永续价差套利的只读采集与回测（2026-11-18，含真实数据结论）：[docs/cash-futures-spread-2026-11-18.md](docs/cash-futures-spread-2026-11-18.md)
+- 现货－永续价差实盘前风险清单（2026-11-19，含产品侧缺口与验证清单）：[docs/cash-futures-live-risk-checklist-2026-11-19.md](docs/cash-futures-live-risk-checklist-2026-11-19.md)
 
 ## 组成
 
