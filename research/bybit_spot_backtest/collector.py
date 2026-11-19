@@ -37,7 +37,7 @@ BASE_URL = "https://api.bybit.com"
 BAR_MS = 60_000
 PAGE_LIMIT = 1000
 DEFAULT_DB = Path(__file__).resolve().parent / "bybit_spot_1m.sqlite3"
-DEFAULT_SSH_HOST = "nas"
+DEFAULT_SSH_HOST = os.environ.get("BYBIT_COLLECTOR_SSH_HOST", "nas")
 ALLOWED = {
     "/v5/market/time": frozenset(),
     "/v5/market/instruments-info": frozenset({"category", "limit", "cursor"}),
