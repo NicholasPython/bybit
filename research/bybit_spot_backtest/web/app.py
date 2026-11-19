@@ -19,7 +19,15 @@ from pathlib import Path
 
 from backtest_config import BACKTEST_TIMEOUT_SECONDS, MAX_BACKTEST_MINUTES, validate_backtest_window
 from correlation_data import DOWNLOADS, load_analysis, public_analysis
-from flask import Flask, Response, abort, jsonify, render_template, request, send_file
+from flask import (
+    Flask,
+    Response,
+    abort,
+    jsonify,
+    render_template,
+    request,
+    send_file,
+)
 from market_config import INSTRUMENTS, SUPPORTED_INSTRUMENTS, TOP20_SNAPSHOT_DATE
 from strategy_catalog import MULTI_STRATEGIES, STRATEGIES, strategy_params
 from turtle_strategy import turtle_params
@@ -327,12 +335,13 @@ def index():
         instruments=INSTRUMENTS,
         universe_date=TOP20_SNAPSHOT_DATE,
         research_strategies=STRATEGIES,
+        prefix=WEB_PREFIX,
     )
 
 
 @app.get("/correlation")
 def correlation_page():
-    return render_template("correlation.html")
+    return render_template("correlation.html", prefix=WEB_PREFIX)
 
 
 @app.get("/api/correlation")

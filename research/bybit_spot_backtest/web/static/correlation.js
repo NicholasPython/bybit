@@ -1,6 +1,8 @@
 'use strict';
 (() => {
   const $ = id => document.getElementById(id);
+  const PREFIX = document.body.dataset.prefix || '';
+  const api = url => PREFIX + url;
   const base = inst => inst.replace(/-USDT$/, '');
   const finite = value => typeof value === 'number' && Number.isFinite(value);
   const coefficient = value => finite(value) ? value.toFixed(3) : '历史不足';
@@ -145,7 +147,7 @@
     $('windowDescription').textContent = `${cst(start)} → ${cst(end)}（北京时间） · 每币 ${Number(d) * 24} 个小时收益样本`;
     $('researchSummary').replaceChildren(metric('观察币种', '20'), metric('完整窗口币种', `${complete} / 20`),
       metric('可比较币对', String(pairs.length)), metric('负相关币对', String(negative)));
-    $('matrixDownload').href = `/api/correlation/download/correlation-${d}.csv`;
+    $('matrixDownload').href = `${api('/api/correlation/download/correlation-')}${d}.csv`;
     renderRanking(); renderHeatmap(); renderPair(); renderLists();
   }
   function renderNotes() {
@@ -166,7 +168,7 @@
     $('researchContent').classList.add('hidden');
     $('retryResearch').disabled = true;
     try {
-      const response = await fetch('/api/correlation', {headers: {'Accept': 'application/json'}, signal: AbortSignal.timeout(15000)});
+      const response = await fetch(api('/api/correlation'), {headers: {'Accept': 'application/json'}, signal: AbortSignal.timeout(15000)});
       if (!response.ok) {
         if (response.status === 403) throw new Error('访问被拒绝，请检查 Tailscale 本人身份连接。');
         const error = await response.json(); throw new Error(error.error || '无法读取分析数据');

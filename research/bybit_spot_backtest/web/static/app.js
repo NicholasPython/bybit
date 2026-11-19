@@ -1,3 +1,5 @@
+const PREFIX = document.body.dataset.prefix || '';
+const api = url => PREFIX + url;
 const PAIRS = JSON.parse(document.body.dataset.instruments);
 const RESEARCH = JSON.parse(document.body.dataset.researchStrategies || '{}');
 const $ = id => document.getElementById(id);
@@ -183,7 +185,7 @@ async function jsonFetch(url, options={}){
 
 async function refreshStatus(){
   try{
-    const data=await jsonFetch('/api/status');
+    const data=await jsonFetch(api('/api/status'));
     marketPairs=data.pairs;refreshPortfolioControls();refreshResearchRange();
     if(!initialWindowSet){
       try{const range=portfolioWindow();$('btEnd').value=localInput(range.end);$('btStart').value=localInput(Math.max(range.start,range.end-86400000));initialWindowSet=true;}catch{}
@@ -243,7 +245,7 @@ async function loadChart(){
   try{
     const query=chartQuery();lastChartQuery=query;
     const params=new URLSearchParams(query);
-    const [data,quality]=await Promise.all([jsonFetch('/api/candles?'+params),jsonFetch('/api/quality?'+params)]);
+    const [data,quality]=await Promise.all([jsonFetch(api('/api/candles?')+params),jsonFetch(api('/api/quality?')+params)]);
     lastCandles=data.candles;drawCandles(lastCandles);
     const gaps=quality.gaps.slice(0,3).map(g=>`${cst(g.start_ms)} 起 ${g.minutes} 分钟`).join('、');
     $('qualitySummary').textContent=`质量检查：${number(quality.present)}/${number(quality.expected)} 根 · 覆盖率 ${quality.coverage_pct}% · 缺失 ${number(quality.missing)} 分钟 · 异常 OHLC ${number(quality.invalid)} 根${gaps?' · 首批缺口：'+gaps:''}${quality.gaps_truncated?'（仅显示前 20 段）':''}`;
@@ -303,7 +305,7 @@ function showResult(job){
   const holdings=portfolio?`<h4>各币持仓 · 对比初始买入持有数量</h4><div class="holdings-wrap"><table class="holdings-table"><thead><tr><th>币种</th><th>目标 / 期末权重</th><th>初始 / 期末数量</th><th>数量变化</th></tr></thead><tbody>${r.holdings.map(a=>`<tr><td>${esc(a.inst_id.slice(0,-4))}</td><td>${a.weight_pct.toFixed(2)}% / ${a.actual_weight_pct.toFixed(2)}%</td><td>${quantityText(a.initial_qty)}<br>${quantityText(a.final_qty)}</td><td class="${a.qty_change_pct>=0?'up':'down'}">${a.qty_change_pct>=0?'+':''}${a.qty_change_pct.toFixed(2)}%</td></tr>`).join('')}</tbody></table></div>`:'';
   const modeNote=portfolio?` · ${r.rebalance_mode==='threshold'?'比例':'定时'}平衡，每 ${number(r.interval_minutes)} 分钟检查，阈值 ${r.threshold_pct} 个百分点 · 最小模拟成交额 ${money(r.min_trade_usdt)} USDT · 跳过 ${number(r.skipped_rebalances)} 次小额调仓 · 期末仍持币，净值扣除估计卖出成本`:r.open_position?' · 期末仍持仓，按末根收盘价扣除估计卖出成本':' · 期末空仓';
   const eventRows=portfolio?`<h4>最近调仓</h4><div class="order-list">${r.recent_rebalances.map(x=>`<div><span>${cst(x.ts_ms)} CST · ${number(x.orders)} 笔</span><span>触发偏离 ${x.max_deviation_pp.toFixed(3)} 个百分点</span></div>`).join('')||'区间内未触发有效调仓'}</div>`:'';
-  area.innerHTML=`<div class="result-head"><h3>${esc(strategyNames[r.strategy]||'回测')}结果</h3><small>${portfolio||multi?r.holdings.length+' 个币种 · 每币 ':esc(r.inst_id)+' · '}${number(r.bars)} 根 K 线</small></div><div class="metric-grid">${metrics.map(m=>`<div class="metric"><span>${esc(m[0])}</span><strong class="${m[2]}">${esc(m[1])}</strong></div>`).join('')}</div><div class="single-comparison"><label>单币现货持有对照（可选）<select id="benchmarkCoin"><option value="">不比较</option>${PAIRS.map(inst=>`<option value="${inst}">${esc(inst.slice(0,-4))} / USDT</option>`).join('')}</select></label><p id="benchmarkNote" class="result-note" aria-live="polite">用全部初始资金买入所选币种，保持原回测区间、手续费及滑点；无需重跑策略。</p><div id="benchmarkMetrics" class="metric-grid hidden"></div><button type="button" id="downloadComparison" class="text-button hidden">下载含单币对照的 JSON</button></div><div class="curve-legend"><span>● 策略净值</span>${portfolio||research?`<span class="portfolio-hold">● ${multi?'币池等权持有':portfolio?'同权重组合持有':'策略币种持有'}</span>`:''}<span id="singleLegend" class="single-hold hidden"></span></div><div class="equity-wrap"><canvas id="equityChart" aria-label="策略与买入持有净值曲线"></canvas></div><p class="result-note">${cst(r.start_ms)} — ${cst(r.end_ms)} CST${modeNote}${turtleNote}${researchNote}${fingerprint}${r.last_signal_unfilled?' · 最后一分钟触发的信号未成交':''}</p>${holdings}${researchHoldings}${eventRows}<h4>最近成交${r.orders_truncated?`（仅保留最后 ${portfolio||research?50:30} 条）`:''}</h4><div class="order-list">${r.recent_orders.map(x=>`<div><span><b>${x.side==='buy'?'买入':'卖出'}</b> ${esc(x.inst_id||'')}${x.reason?' · '+esc(orderReasons[x.reason]||x.reason):''} · ${cst(x.ts_ms)} CST</span><span>${quantityText(x.qty)} × ${quantityText(x.price)}${x.pnl===undefined?'':` · 盈亏 ${money(x.pnl)}`}</span></div>`).join('')||'无成交'}</div><p class="result-note"><a href="/api/backtests/${esc(job.id)}/download">下载 JSON 结果与参数</a>${portfolio?' · 所有统计覆盖完整区间，成交和调仓明细各保留最近 50 条':''}</p>`;
+  area.innerHTML=`<div class="result-head"><h3>${esc(strategyNames[r.strategy]||'回测')}结果</h3><small>${portfolio||multi?r.holdings.length+' 个币种 · 每币 ':esc(r.inst_id)+' · '}${number(r.bars)} 根 K 线</small></div><div class="metric-grid">${metrics.map(m=>`<div class="metric"><span>${esc(m[0])}</span><strong class="${m[2]}">${esc(m[1])}</strong></div>`).join('')}</div><div class="single-comparison"><label>单币现货持有对照（可选）<select id="benchmarkCoin"><option value="">不比较</option>${PAIRS.map(inst=>`<option value="${inst}">${esc(inst.slice(0,-4))} / USDT</option>`).join('')}</select></label><p id="benchmarkNote" class="result-note" aria-live="polite">用全部初始资金买入所选币种，保持原回测区间、手续费及滑点；无需重跑策略。</p><div id="benchmarkMetrics" class="metric-grid hidden"></div><button type="button" id="downloadComparison" class="text-button hidden">下载含单币对照的 JSON</button></div><div class="curve-legend"><span>● 策略净值</span>${portfolio||research?`<span class="portfolio-hold">● ${multi?'币池等权持有':portfolio?'同权重组合持有':'策略币种持有'}</span>`:''}<span id="singleLegend" class="single-hold hidden"></span></div><div class="equity-wrap"><canvas id="equityChart" aria-label="策略与买入持有净值曲线"></canvas></div><p class="result-note">${cst(r.start_ms)} — ${cst(r.end_ms)} CST${modeNote}${turtleNote}${researchNote}${fingerprint}${r.last_signal_unfilled?' · 最后一分钟触发的信号未成交':''}</p>${holdings}${researchHoldings}${eventRows}<h4>最近成交${r.orders_truncated?`（仅保留最后 ${portfolio||research?50:30} 条）`:''}</h4><div class="order-list">${r.recent_orders.map(x=>`<div><span><b>${x.side==='buy'?'买入':'卖出'}</b> ${esc(x.inst_id||'')}${x.reason?' · '+esc(orderReasons[x.reason]||x.reason):''} · ${cst(x.ts_ms)} CST</span><span>${quantityText(x.qty)} × ${quantityText(x.price)}${x.pnl===undefined?'':` · 盈亏 ${money(x.pnl)}`}</span></div>`).join('')||'无成交'}</div><p class="result-note"><a href="${api('/api/backtests')}/${esc(job.id)}/download">下载 JSON 结果与参数</a>${portfolio?' · 所有统计覆盖完整区间，成交和调仓明细各保留最近 50 条':''}</p>`;
   let comparison=null;
   $('benchmarkCoin').addEventListener('change',async()=>{
     const select=$('benchmarkCoin'),inst=select.value;
@@ -315,7 +317,7 @@ function showResult(job){
     if(!inst){note.textContent='用全部初始资金买入所选币种，保持原回测区间、手续费及滑点；无需重跑策略。';return;}
     select.disabled=true;note.textContent=`正在读取 ${inst} 完整区间数据并计算持有收益…`;
     try{
-      const data=await jsonFetch(`/api/backtests/${job.id}/benchmark?`+new URLSearchParams({inst}));
+      const data=await jsonFetch(`${api('/api/backtests')}/${job.id}/benchmark?`+new URLSearchParams({inst}));
       if(generation!==resultGeneration)return;
       comparison=data;const b=data.benchmark;lastSingleEquity=b.equity_curve;
       const metrics=[['单币持有收益',`${b.return_pct>=0?'+':''}${b.return_pct.toFixed(2)}%`,b.return_pct],['单币期末净值',money(b.final_equity)+' USDT',null],['单币最大回撤',b.max_drawdown_pct.toFixed(2)+'%',null],['策略超额 vs 单币',data.excess_return_pp.toFixed(2)+' 个百分点',data.excess_return_pp],['策略净值差 vs 单币',money(data.equity_difference_usdt)+' USDT',data.equity_difference_usdt]];
@@ -340,7 +342,7 @@ async function pollJob(id){
   const deadline=Date.now()+630000;
   while(Date.now()<deadline){
     await new Promise(resolve=>setTimeout(resolve,1500));
-    try{const job=await jsonFetch('/api/backtests/'+id);showResult(job);if(job.state==='done'||job.state==='error'){await loadHistory();return;}}catch(err){$('results').innerHTML=`<p class="error-box">${esc(err.message)}</p>`;return;}
+    try{const job=await jsonFetch(api('/api/backtests/')+id);showResult(job);if(job.state==='done'||job.state==='error'){await loadHistory();return;}}catch(err){$('results').innerHTML=`<p class="error-box">${esc(err.message)}</p>`;return;}
   }
   $('results').innerHTML='<p class="error-box">页面等待已结束，请在回测历史中查看任务状态。</p>';await loadHistory();
 }
@@ -348,9 +350,9 @@ async function pollJob(id){
 async function loadHistory(){
   const area=$('backtestHistory');
   try{
-    const data=await jsonFetch('/api/backtests');
+    const data=await jsonFetch(api('/api/backtests'));
     if(!data.jobs.length){area.textContent='尚无保存的回测。';return;}
-    area.innerHTML=data.jobs.map(job=>`<div class="history-row"><div><strong>${esc(job.params.allocations?job.params.allocations.map(a=>a.inst_id.slice(0,-4)+':'+a.weight_pct+'%').join(' / '):job.params.universe?job.params.universe.map(a=>a.slice(0,-4)).join(' / '):job.params.inst_id)} · ${esc(strategyNames[job.params.strategy]||job.params.strategy)}</strong><span>${cst(job.created_at_ms)} CST · ${esc(job.state==='done'?'已完成':job.state==='error'?'失败':'运行中')}</span></div><div class="history-actions"><button type="button" data-action="open" data-id="${esc(job.id)}">查看</button><a href="/api/backtests/${esc(job.id)}/download">下载</a><button type="button" data-action="delete" data-id="${esc(job.id)}" ${job.state==='running'||job.state==='queued'?'disabled':''}>删除</button></div></div>`).join('');
+    area.innerHTML=data.jobs.map(job=>`<div class="history-row"><div><strong>${esc(job.params.allocations?job.params.allocations.map(a=>a.inst_id.slice(0,-4)+':'+a.weight_pct+'%').join(' / '):job.params.universe?job.params.universe.map(a=>a.slice(0,-4)).join(' / '):job.params.inst_id)} · ${esc(strategyNames[job.params.strategy]||job.params.strategy)}</strong><span>${cst(job.created_at_ms)} CST · ${esc(job.state==='done'?'已完成':job.state==='error'?'失败':'运行中')}</span></div><div class="history-actions"><button type="button" data-action="open" data-id="${esc(job.id)}">查看</button><a href="${api('/api/backtests')}/${esc(job.id)}/download">下载</a><button type="button" data-action="delete" data-id="${esc(job.id)}" ${job.state==='running'||job.state==='queued'?'disabled':''}>删除</button></div></div>`).join('');
   }catch(err){area.textContent='历史记录加载失败：'+err.message;}
 }
 
@@ -359,10 +361,10 @@ $('backtestHistory').addEventListener('click',async event=>{
   const id=button.dataset.id;if(!/^[0-9a-f]{24}$/.test(id))return;
   try{
     if(button.dataset.action==='open'){
-      showResult(await jsonFetch('/api/backtests/'+id));$('results').scrollIntoView({behavior:'smooth',block:'center'});
+      showResult(await jsonFetch(api('/api/backtests/')+id));$('results').scrollIntoView({behavior:'smooth',block:'center'});
     }else if(button.dataset.action==='delete'){
       if(button.dataset.confirm!=='yes'){button.dataset.confirm='yes';button.textContent='确认删除';return;}
-      await jsonFetch('/api/backtests/'+id,{method:'DELETE',headers:{'X-CSRF-Token':document.body.dataset.csrf}});
+      await jsonFetch(api('/api/backtests/')+id,{method:'DELETE',headers:{'X-CSRF-Token':document.body.dataset.csrf}});
       await loadHistory();
     }
   }catch(err){$('backtestHistory').textContent='操作失败：'+err.message;}
@@ -402,12 +404,12 @@ $('chartLoad').addEventListener('click',loadChart);
 $('chartExport').addEventListener('click',()=>{
   try{
     const query=chartQuery();if(Number(query.end)-Number(query.start)>7*86400000)throw new Error('CSV 导出最多 7 天，请使用自定义范围');
-    window.location.href='/api/candles.csv?'+new URLSearchParams(query);
+    window.location.href=api('/api/candles.csv?')+new URLSearchParams(query);
   }catch(err){$('qualitySummary').textContent=err.message;}
 });
 $('syncNow').addEventListener('click',async()=>{
   const button=$('syncNow');button.disabled=true;$('ingestMessage').textContent='正在同步最新 K 线…';
-  try{const result=await jsonFetch('/api/ingest/sync',{method:'POST',headers:{'X-CSRF-Token':document.body.dataset.csrf}});$('ingestMessage').textContent=result.message;await refreshStatus();}
+  try{const result=await jsonFetch(api('/api/ingest/sync'),{method:'POST',headers:{'X-CSRF-Token':document.body.dataset.csrf}});$('ingestMessage').textContent=result.message;await refreshStatus();}
   catch(err){$('ingestMessage').textContent='同步未完成：'+err.message;}
   finally{button.disabled=false;}
 });
@@ -426,7 +428,7 @@ $('backtestForm').addEventListener('submit',async event=>{
     }
     if(data.strategy==='turtle')Object.assign(data,turtleRequestParams());
     if(RESEARCH[data.strategy])Object.assign(data,researchRequestParams());
-    const job=await jsonFetch('/api/backtests',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':document.body.dataset.csrf},body:JSON.stringify(data)});
+    const job=await jsonFetch(api('/api/backtests'),{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':document.body.dataset.csrf},body:JSON.stringify(data)});
     showResult({state:'queued'});await loadHistory();await pollJob(job.id);
   }catch(err){$('results').innerHTML=`<p class="error-box">${esc(err.message)}</p>`;}
   finally{button.disabled=false;}
