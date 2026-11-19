@@ -76,3 +76,7 @@ Web 服务由用户 crontab 中的 `flock` 守护项启动：进程退出后下�
 名单统一在 `market_config.py`：BTC、ETH、SOL、AAVE、HYPE、ENA、XRP、LINK、ASTER、PIEVERSE、NEAR、MNT、WLD、XAUT、BNB、VVV、GRAM、LIT、ZRO、HOODX（均为 USDT 现货）。前端选项来自服务端模板；API、分钟采集和受限计算进程使用同一配置。历史对照币种（DOGE、PEPE、SUI、ADA、AVAX、TRUMP、UNI、FIL、ATOM、SHIB）仍可用于单币持有对照，但不出现在 Top20 选币列表。
 
 所有策略、单币持有对照和行情查询均支持这些币种。新增币种可用区间取决于分钟回溯进度，最长5年的参数上限不代表已有5年数据。最多20币的组合仍受统一运行时间和内存限制，不补缺失价格。修改名单时必须先取得相应真实分钟数据，并与相关性快照更新同步发布。
+
+## 操作台模块路径
+
+作为 Bybit 个人交易操作台的“现货行情与回测”模块部署时，由 Tailscale Serve 将 `/spot-lab` 转发到本服务，并给 gunicorn 设置 `BYBIT_WEB_PREFIX=/spot-lab`。`app.py` 使用 `APPLICATION_ROOT` 与前缀中间件剥离路径，因此页面、静态资源和 API 的内部 URL 保持原样。根目录部署（本地测试）不设置该变量即可。

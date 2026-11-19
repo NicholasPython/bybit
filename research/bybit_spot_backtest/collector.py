@@ -27,6 +27,8 @@ import sqlite3
 import subprocess
 import sys
 import time
+import urllib.parse
+import urllib.request
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import NamedTuple
@@ -37,7 +39,7 @@ BASE_URL = "https://api.bybit.com"
 BAR_MS = 60_000
 PAGE_LIMIT = 1000
 DEFAULT_DB = Path(__file__).resolve().parent / "bybit_spot_1m.sqlite3"
-DEFAULT_SSH_HOST = "nas"
+DEFAULT_SSH_HOST = os.environ.get("BYBIT_COLLECTOR_SSH_HOST", "nas")
 ALLOWED = {
     "/v5/market/time": frozenset(),
     "/v5/market/instruments-info": frozenset({"category", "limit", "cursor"}),
@@ -141,6 +143,9 @@ class BybitPublic:
         self.timeout = timeout
         self.next_request = 0.0
         self.process = None
+        # The NAS can reach Bybit directly; the SSH hop exists only for hosts
+        # that cannot. An empty host selects direct stdlib urllib requests.
+        self.direct = ssh_host == ""
 
     def __enter__(self):
         return self
@@ -149,6 +154,9 @@ class BybitPublic:
         self.close()
 
     def _start(self):
+        if self.direct:
+            return
+
         # ssh joins arguments into a shell command, so the fixed remote script
         # is base64-encoded and decoded there; the validated jobs go over stdin.
         encoded = base64.b64encode(_REMOTE.encode()).decode("ascii")
@@ -160,6 +168,8 @@ class BybitPublic:
                 "BatchMode=yes",
                 "-o",
                 "ConnectTimeout=10",
+                "-o",
+                "StrictHostKeyChecking=accept-new",
                 self.ssh_host,
                 remote_cmd,
             ],
@@ -170,6 +180,8 @@ class BybitPublic:
         )
 
     def close(self):
+        if self.direct:
+            return
         process, self.process = self.process, None
         if process is None:
             return
@@ -197,8 +209,41 @@ class BybitPublic:
             buffer += chunk
         return buffer
 
+    def _exchange_direct(self, line):
+        """Local stdlib urllib execution of already-validated public GETs."""
+        prepared = json.loads(line)
+        records = []
+        for path, params in prepared:
+            url = BASE_URL + path + "?" + urllib.parse.urlencode(params)
+            request = urllib.request.Request(  # noqa: S310 -- allowlisted https path
+                url, headers={"User-Agent": "curl/8.0", "Accept": "application/json"}
+            )
+            error = None
+            payload = None
+            for attempt in range(4):
+                try:
+                    with urllib.request.urlopen(request, timeout=60) as response:  # noqa: S310
+                        payload = json.load(response)
+                    if payload.get("retCode") != 0 or not isinstance(payload.get("result"), dict):
+                        raise RuntimeError("Bybit API error " + str(payload.get("retCode")))
+                    break
+                except Exception as exc:  # noqa: BLE001 -- remote-equivalent retry path
+                    error = type(exc).__name__ + ": " + str(exc)
+                    payload = None
+                    time.sleep(2 * (attempt + 1))
+            record = {"path": path, "params": params}
+            if payload is not None:
+                record["payload"] = payload
+            else:
+                record["error"] = error
+            records.append(record)
+            time.sleep(0.05)
+        return json.dumps({"records": records}, separators=(",", ":")).encode("utf-8")
+
     def _exchange(self, line):
         """Send one request line and read one answer line, reconnecting once if the link drops."""
+        if self.direct:
+            return self._exchange_direct(line)
         last = None
         for _attempt in range(2):
             try:

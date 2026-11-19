@@ -54,6 +54,32 @@ RESEARCH_DIR = Path(
 os.umask(0o077)
 JOB_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
 app = Flask(__name__, static_folder="static", template_folder="templates")
+
+# Serve under a Tailscale Serve path prefix when deployed as a platform module.
+# Local/root deployments leave BYBIT_WEB_PREFIX unset and keep the original URLs.
+WEB_PREFIX = os.environ.get("BYBIT_WEB_PREFIX", "").strip().rstrip("/")
+if WEB_PREFIX:
+    if not WEB_PREFIX.startswith("/"):
+        raise RuntimeError("BYBIT_WEB_PREFIX must start with /")
+    app.config["APPLICATION_ROOT"] = WEB_PREFIX
+
+    class _PrefixMiddleware:
+        """Strip the proxy path so Flask's existing routes and JS URLs keep working."""
+
+        def __init__(self, wrapped, prefix):
+            self.wrapped = wrapped
+            self.prefix = prefix
+
+        def __call__(self, environ, start_response):
+            path = environ.get("PATH_INFO", "")
+            if path == self.prefix:
+                environ["PATH_INFO"] = "/"
+            elif path.startswith(self.prefix + "/"):
+                environ["PATH_INFO"] = path[len(self.prefix):]
+            return self.wrapped(environ, start_response)
+
+    app.wsgi_app = _PrefixMiddleware(app.wsgi_app, WEB_PREFIX)
+
 app.config["MAX_CONTENT_LENGTH"] = 8 * 1024
 app.config["TRUSTED_HOSTS"] = ["nicholas-4.tail068b64.ts.net", "127.0.0.1", "localhost"]
 csrf_token = secrets.token_urlsafe(32)

@@ -73,3 +73,15 @@ node --test research/bybit_spot_backtest/tests/test_ui.cjs
 ```
 
 回测台的 Web 依赖只有 Flask 与 gunicorn，固定在 `web/requirements.txt`；仓库的 `dev` 附加依赖已包含 Flask，便于在 CI 中直接跑这套测试。测试不需要网络，也不需要任何交易所凭据。
+
+## 作为操作台模块部署
+
+平台控制台侧栏的“现货行情与回测”链接指向 `/spot-lab/`。Tailscale Serve 将该路径转发到本模块的独立 Flask 进程；交易服务的容器与端口保持不变。
+
+```bash
+# Tailscale Serve：根路径仍指向操作台，研究模块走独立路径
+tailscale serve --bg http://127.0.0.1:18080/
+tailscale serve --bg /spot-lab http://127.0.0.1:18083/
+```
+
+启动模块时设置 `BYBIT_WEB_PREFIX=/spot-lab`，Flask 会自动剥离该路径前缀，模板、静态资源和 API 的现有 URL 无需修改。模块拥有独立的数据库、回测任务目录与身份校验，不共享交易服务的登录会话。
