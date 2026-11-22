@@ -248,8 +248,12 @@ class ShadowEngine:
         books=None,
         now_ms=None,
     ) -> ShadowResult | None:
-        """采样一次、生成纯模拟结果；不产生真实订单或账户变更。"""
-        if not self.settings.shadow.enabled or not config.enabled:
+        """采样一次、生成纯模拟结果；不产生真实订单或账户变更。
+
+        配对开关（``config.enabled``）只控制真实执行面；影子盘只要自身
+        启用就会对 ``spread.pairs`` 里声明的配对持续采样。
+        """
+        if not self.settings.shadow.enabled:
             return None
         auto = self.settings.auto
         now = int(now_ms if now_ms is not None else now_utc().timestamp() * 1000)

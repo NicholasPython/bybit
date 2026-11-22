@@ -15,9 +15,10 @@ from bybitbot.spread.shadow import ENVIRONMENT, ShadowEngine
 
 
 def config(*, enabled=True):
+    """spread.enabled=False 表示套利子系统关闭；影子盘独立于该开关采样。"""
     return SpreadSettings.model_validate(
         {
-            "enabled": enabled,
+            "enabled": False,
             "pairs": [
                 {
                     "pair_key": "BTCUSDT:ETHUSDT",
@@ -29,7 +30,7 @@ def config(*, enabled=True):
                     "z_stop": "3",
                     "max_notional": {"value": "300", "currency": "USDT"},
                     "max_unhedged_notional": {"value": "20", "currency": "USDT"},
-                    "enabled": True,
+                    "enabled": False,
                 }
             ],
             "auto": {
@@ -53,8 +54,14 @@ def config(*, enabled=True):
 def specs():
     return {
         symbol: InstrumentSpec(
-            "linear", symbol, symbol[:-4], "USDT", "Trading",
-            settle_coin="USDT", tick_size=D("0.01"), qty_step=D("0.01"),
+            "linear",
+            symbol,
+            symbol[:-4],
+            "USDT",
+            "Trading",
+            settle_coin="USDT",
+            tick_size=D("0.01"),
+            qty_step=D("0.01"),
         )
         for symbol in ("BTCUSDT", "ETHUSDT")
     }
@@ -79,8 +86,12 @@ class PublicAdapter:
         price = self.prices[symbol]
         stamp = now_utc()
         return Ticker(
-            "linear", symbol, bid_price=price - D("0.01"), ask_price=price + D("0.01"),
-            source_ts=stamp, received_at=stamp,
+            "linear",
+            symbol,
+            bid_price=price - D("0.01"),
+            ask_price=price + D("0.01"),
+            source_ts=stamp,
+            received_at=stamp,
         )
 
     async def get_orderbook(self, category, symbol, limit=50):
@@ -88,9 +99,7 @@ class PublicAdapter:
 
 
 def engine(database, adapter):
-    return ShadowEngine(
-        adapter=adapter, sessionmaker=database.sessionmaker, settings=config()
-    )
+    return ShadowEngine(adapter=adapter, sessionmaker=database.sessionmaker, settings=config())
 
 
 async def rows(database):
@@ -129,9 +138,7 @@ async def test_shadow_rejects_adapter_with_trade_writes(database):
         allow_trade_writes = True
 
     with pytest.raises(ValueError, match="allow_trade_writes"):
-        ShadowEngine(
-            adapter=UnsafeAdapter(), sessionmaker=database.sessionmaker, settings=config()
-        )
+        ShadowEngine(adapter=UnsafeAdapter(), sessionmaker=database.sessionmaker, settings=config())
 
 
 async def test_shadow_accepts_public_rest_adapter(database):
@@ -140,9 +147,7 @@ async def test_shadow_accepts_public_rest_adapter(database):
     class PublicRestAdapter(PublicAdapter):
         allow_trade_writes = False
 
-    ShadowEngine(
-        adapter=PublicRestAdapter(), sessionmaker=database.sessionmaker, settings=config()
-    )
+    ShadowEngine(adapter=PublicRestAdapter(), sessionmaker=database.sessionmaker, settings=config())
 
 
 async def test_shadow_status_is_readonly_and_reports_metrics(database):

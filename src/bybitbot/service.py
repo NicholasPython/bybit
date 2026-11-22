@@ -933,11 +933,21 @@ class TradingService:
             await self._clear_technical(PauseReason.DISK_PRESSURE)
 
     async def _market(self):
+        # 影子盘不占执行租约，但需要 linear 合约目录与盘口样本。
+        shadow_symbols = {
+            ("linear", symbol)
+            for pair in self.config.spread.pairs
+            if self.config.spread.shadow.enabled
+            for symbol in (pair.symbol_a, pair.symbol_b)
+        }
         if (
             not self.specs
+            or shadow_symbols - set(self.specs)
             or time.monotonic() - self._catalog_at > self.config.runtime.catalog_refresh_seconds
         ):
-            categories = ("linear",) if self.config.spread.enabled else ("spot", "option")
+            categories = (
+                ("linear",) if self.config.spread.enabled or shadow_symbols else ("spot", "option")
+            )
             await self.catalog.sync(self.market_adapter, categories=categories)
             self.specs = {
                 (spec.category, spec.symbol): spec
@@ -986,6 +996,10 @@ class TradingService:
                 for pair in self.config.spread.pairs
                 for symbol in (pair.symbol_a, pair.symbol_b)
             }
+        elif shadow_symbols:
+            # 影子盘启用而套利子系统关闭：只读拉取影子配对行情，不影响执行面。
+            needed = shadow_symbols
+        if self.config.spread.enabled or shadow_symbols:
             async with self.database.sessionmaker() as session:
                 pairs = list(
                     await session.scalars(
