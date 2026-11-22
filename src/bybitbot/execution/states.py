@@ -181,7 +181,9 @@ def effective_status(*, exchange_status: str, qty: Decimal, qty_filled: Decimal)
     # V5 官方枚举：未终结 = New / PartiallyFilled / Untriggered（+ Triggered
     # 是 Untriggered→New 的瞬时态）；已终结 = Filled / Cancelled / Rejected /
     # PartiallyFilledCanceled / Deactivated。
-    if normalized in {"new", "created", "untriggered", "triggered"}:
+    # "accepted" 是 REST 下单回执的措辞，与 "New" 同义；显式收录是为了让
+    # 任何适配器说出这个词时都落在 ACCEPTED，而不是掉进 UNKNOWN。
+    if normalized in {"new", "created", "accepted", "untriggered", "triggered"}:
         return PARTIALLY_FILLED if qty_filled > 0 else ACCEPTED
     if normalized == "partiallyfilled":
         return PARTIALLY_FILLED

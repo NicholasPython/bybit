@@ -88,7 +88,7 @@ class InsufficientCapability(AdapterError):
 class InstrumentSpec:
     """合约规格（MKT-01）。字段缺失时上层必须拒绝相关交易。"""
 
-    category: Literal["spot", "option"]
+    category: Literal["spot", "option", "linear"]
     symbol: str
     base_coin: str
     quote_coin: str
@@ -334,7 +334,7 @@ class OrderRequest:
     ``order_link_id`` 是幂等键，必须唯一且符合交易所长度限制（EXE-01）。
     """
 
-    category: Literal["spot", "option"]
+    category: Literal["spot", "option", "linear"]
     symbol: str
     side: OrderSide
     order_type: OrderType

@@ -1,15 +1,16 @@
 :root {
-  --canvas: #f3f6fa;
-  --surface: #fff;
+  --canvas: #f7f6f2;
+  --surface: #fffdf9;
   --navy: #15345c;
-  --slate: #4e6177;
-  --blue: #245cc5;
-  --amber: #945900;
-  --red: #ad2838;
-  --line: #d5dfeb;
-  --pale-blue: #e8effa;
-  --pale-amber: #fff3da;
-  --pale-red: #fff0f2;
+  --slate: #5a6875;
+  --blue: #27548a;
+  --coral: #c4563d;
+  --amber: #8a5b00;
+  --red: #aa3040;
+  --line: #d8dfe3;
+  --pale-blue: #e9f0f5;
+  --pale-amber: #fff3dc;
+  --pale-red: #fbe9e9;
   color: var(--navy);
   background: var(--canvas);
   font: 15px/1.6 -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
@@ -37,8 +38,8 @@ p { max-width: 76ch; }
 .brand { display: block; color: inherit; font-size: 1.7rem; font-weight: 750; line-height: 1.2; text-decoration: none; letter-spacing: -.04em; }
 .brand-sub { display: block; margin-top: .55rem; font-size: .83rem; font-weight: 500; letter-spacing: 0; }
 .button { display: inline-flex; align-items: center; justify-content: center; min-height: 42px; padding: .55rem .95rem; border: 1px solid transparent; border-radius: 6px; font-size: .9rem; font-weight: 600; line-height: 1.4; text-decoration: none; white-space: nowrap; }
-.button.primary { color: white; background: var(--blue); }
-.button.primary:hover:not(:disabled) { background: var(--navy); }
+.button.primary { color: white; background: var(--coral); }
+.button.primary:hover:not(:disabled) { background: #a4412c; }
 .button.secondary { color: var(--navy); border-color: #b9c8dc; background: white; }
 .button.secondary:hover:not(:disabled) { border-color: var(--blue); background: var(--pale-blue); }
 .button.warning { color: var(--amber); border-color: #dcb979; background: var(--pale-amber); }
@@ -61,11 +62,29 @@ p { max-width: 76ch; }
 .module-links p { margin-top: .4rem; color: #d0dcef; font-size: .72rem; line-height: 1.4; }
 .sidebar-foot { margin-top: auto; display: grid; gap: 1rem; font-size: .8rem; color: #d0dcef; }
 .sidebar-foot .text-button { color: white; }
-.workspace { min-width: 0; max-width: 1820px; padding: 2.1rem clamp(1.1rem, 3vw, 3.2rem) 1.4rem; }
-.workspace-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 1.5rem; margin-bottom: 1.7rem; }
+.workspace { min-width: 0; max-width: 1480px; padding: 2.1rem clamp(1.1rem, 3vw, 3.2rem) 1.4rem; }
+.workspace-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 1.5rem; margin-bottom: 1.2rem; }
 .workspace-header p { margin-bottom: .4rem; font-size: .88rem; }
 .header-actions { display: flex; align-items: center; justify-content: flex-end; gap: .8rem; font-size: .78rem; }
-.status-pane { padding: 1.4rem 1.55rem 1.1rem; background: white; border: 1px solid #bdcde1; border-top: 4px solid var(--blue); border-radius: 8px; }
+.hero-card { position: relative; display: grid; grid-template-columns: minmax(0,1fr) auto auto; align-items: center; gap: .5rem 1rem; padding: 1.3rem 1.6rem 1.3rem 2rem; margin-bottom: 1rem; background: var(--surface); border: 1px solid #cbd5db; border-radius: 3px; box-shadow: 0 1px 0 #15345c12; }
+.hero-card::before { content: ""; position: absolute; left: .72rem; top: 1.4rem; width: .38rem; height: .38rem; border-radius: 50%; background: #9ccbb4; box-shadow: 0 0 0 5px #9ccbb42e; }
+.hero-card .eyebrow { grid-column: 1; color: var(--slate); font-size: .78rem; }
+.hero-card .next-title { grid-column: 1; font-size: 1.25rem; line-height: 1.35; overflow-wrap: anywhere; }
+.hero-card > .muted { grid-column: 1; font-size: .86rem; }
+.hero-card .button.primary, .hero-card .button.secondary { grid-row: 1 / span 3; align-self: center; }
+.hero-card .button.secondary { grid-column: 3; }
+.hero-card .button.primary { grid-column: 2; }
+.quick-strip { display: grid; grid-template-columns: repeat(3, 1fr); gap: .7rem; margin-bottom: 1.2rem; }
+.quick-card { display: grid; gap: .2rem; min-height: 72px; padding: .85rem 1rem; border: 1px solid var(--line); border-radius: 3px; background: #fff; color: var(--navy); text-align: left; }
+.quick-card:hover { border-color: var(--blue); background: var(--pale-blue); }
+.quick-card strong { font-size: .95rem; }
+.quick-card span { color: var(--slate); font-size: .78rem; }
+.secondary-tabs { flex-direction: row !important; flex-wrap: wrap; gap: .35rem !important; margin: 0 0 1.4rem !important; }
+.secondary-tabs button { min-height: 36px !important; padding: .4rem .8rem !important; border: 1px solid var(--line) !important; border-radius: 3px !important; background: white !important; color: var(--slate) !important; font-size: .82rem !important; }
+.secondary-tabs button[aria-selected="true"] { border-color: var(--navy) !important; background: var(--navy) !important; color: white !important; }
+.secondary-tabs button:hover { border-color: var(--blue) !important; color: var(--blue) !important; }
+.secondary-tabs button[aria-selected="true"]:hover { color: white !important; }
+.status-pane { padding: 1.15rem 1.4rem; background: white; border: 1px solid #bdcde1; border-radius: 3px; }
 .status-main { display: flex; justify-content: space-between; align-items: flex-start; gap: 1.5rem; }
 .status-main h2 { margin: .3rem 0 .4rem; font-size: 1.5rem; line-height: 1.3; }
 .status-label { color: var(--slate); font-size: .82rem; }
@@ -171,6 +190,11 @@ textarea { resize: vertical; min-height: 76px; }
   .brand-sub { display: inline; margin-left: .7rem; font-size: .75rem; }
   .environment-line { position: absolute; right: 1rem; top: 1rem; padding: 0; border: 0; }
   .environment-line .muted { display: none; }
+  .quick-strip { grid-template-columns: 1fr; }
+  .hero-card { grid-template-columns: 1fr; padding-left: 1.5rem; }
+  .hero-card::before { left: .55rem; top: 1.35rem; }
+  .hero-card .button.primary, .hero-card .button.secondary { grid-row: auto; grid-column: 1; justify-self: start; }
+  .secondary-tabs { overflow-x: auto; flex-wrap: nowrap !important; }
   .nav-tabs { flex-direction: row; gap: .35rem; margin: 0; overflow-x: auto; padding: .2rem; }
   .nav-tabs button { flex-shrink: 0; font-size: .82rem; padding: .55rem .6rem; min-height: 40px; }
   .sidebar-foot { display: flex; justify-content: flex-end; align-items: center; gap: 1rem; font-size: .75rem; }

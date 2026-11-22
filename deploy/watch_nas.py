@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Mac-side heartbeat and encrypted offsite backup fetch; no exchange access."""
+"""Mac-side heartbeat and encrypted offsite backup check; no exchange access."""
 
 from __future__ import annotations
 
@@ -7,11 +7,21 @@ import argparse
 import datetime as dt
 import json
 import os
+import re
 import subprocess
 import time
 from pathlib import Path
 
 DEFAULT_RSYNC_SOURCE = "nas:.local/share/bybitbot/backups/*.dump.gpg"
+#: 要求存在的备份库。实盘库尚未开通时，从这里去掉它。
+DEFAULT_EXPECTED_DATABASES = "bybitbot_paper bybitbot_testnet bybitbot_live"
+#: pg_dump 自定义格式的文件魔数。解密后必须以它开头，才说明这是一份真备份。
+PGDMP_MAGIC = b"PGDMP"
+_BACKUP_NAME = re.compile(
+    r"^bybitbot-(?P<stamp>\d{8}T\d{6}Z)(?:-(?P<database>[A-Za-z0-9_]+))?\.dump\.gpg$"
+)
+#: 校验结果缓存，键为（路径, 大小, mtime）。同一份文件只解密一次。
+_VERIFIED: dict[tuple[str, int, int], bool] = {}
 
 
 def health_ok(url: str) -> bool:
@@ -70,22 +80,103 @@ def sync_backups(destination: Path, source: str = DEFAULT_RSYNC_SOURCE) -> bool:
         return False
 
 
-def newest_backup(destination: Path) -> float | None:
-    stamps = []
-    for path in destination.glob("bybitbot-*.dump.gpg"):
-        try:
-            stamp = path.name.removeprefix("bybitbot-").removesuffix(".dump.gpg")
-            if path.stat().st_size > 0:
-                stamps.append(
-                    dt.datetime.strptime(stamp, "%Y%m%dT%H%M%SZ").replace(tzinfo=dt.UTC).timestamp()
-                )
-        except (OSError, ValueError):
+def parse_backup_name(name: str) -> tuple[dt.datetime | None, str | None]:
+    """解析备份文件名，返回（时间戳, 数据库名）。
+
+    老版本文件名没有库名后缀，数据库名为 ``None``。
+    """
+    match = _BACKUP_NAME.fullmatch(name)
+    if match is None:
+        return None, None
+    try:
+        stamp = dt.datetime.strptime(match.group("stamp"), "%Y%m%dT%H%M%SZ").replace(
+            tzinfo=dt.UTC
+        )
+    except ValueError:
+        return None, None
+    return stamp, match.group("database")
+
+
+def verify_backup(path: Path, gnupg_home: Path | None = None) -> bool:
+    """解密并检查 pg_dump 魔数 —— 证明这份备份真的可以被恢复。
+
+    只看文件大小是不够的：截断或损坏的文件同样非空。解密成功同时说明
+    密文通过了 AEAD 完整性校验；解密后的内容必须是 pg_dump 归档。
+    """
+    command = ["gpg", "--batch", "--quiet", "--decrypt"]
+    if gnupg_home is not None:
+        command += ["--homedir", str(gnupg_home)]
+    command.append(str(path))
+    try:
+        result = subprocess.run(  # noqa: S603
+            command, capture_output=True, check=False, timeout=300
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return result.returncode == 0 and result.stdout[: len(PGDMP_MAGIC)] == PGDMP_MAGIC
+
+
+def backup_inventory(
+    directory: Path, *, gnupg_home: Path | None = None, verify: bool = True
+) -> dict[str, dict]:
+    """每个数据库最新一份备份：库名 -> {at, path, verified}。
+
+    校验结果按（路径, 大小, mtime）缓存，避免每轮检查都重新解密。
+    """
+    inventory: dict[str, dict] = {}
+    if not directory.is_dir():
+        return inventory
+    for path in sorted(directory.glob("bybitbot-*.dump.gpg")):
+        stamp, database = parse_backup_name(path.name)
+        if stamp is None or database is None:
             continue
-    return max(stamps) if stamps else None
+        try:
+            stat = path.stat()
+        except OSError:
+            continue
+        if stat.st_size == 0:
+            continue
+        current = inventory.get(database)
+        if current is not None and current["at"] >= stamp.timestamp():
+            continue
+        if verify:
+            key = (str(path), stat.st_size, stat.st_mtime_ns)
+            if key not in _VERIFIED:
+                if len(_VERIFIED) > 256:
+                    _VERIFIED.clear()
+                _VERIFIED[key] = verify_backup(path, gnupg_home)
+            verified = _VERIFIED[key]
+        else:
+            verified = False
+        inventory[database] = {"at": stamp.timestamp(), "path": path, "verified": verified}
+    return inventory
+
+
+def backup_problems(
+    inventory: dict[str, dict], expected: list[str], now: float, *, max_age: float = 86400
+) -> list[str]:
+    """逐库核对备份：缺失、过期、校验不通过都要报出来。"""
+    problems = []
+    for database in expected:
+        entry = inventory.get(database)
+        if entry is None:
+            problems.append(f"{database} 没有备份")
+            continue
+        if now - entry["at"] > max_age or entry["at"] > now + 300:
+            problems.append(f"{database} 备份已过期")
+        elif not entry["verified"]:
+            problems.append(f"{database} 备份校验不通过")
+    return problems
 
 
 def check_once(
-    state: dict, *, healthy: bool, backup_at: float | None, now: float, send=notify
+    state: dict,
+    *,
+    healthy: bool,
+    inventory: dict[str, dict],
+    expected: list[str],
+    now: float,
+    send=notify,
 ) -> dict:
     state = dict(state)
     failures = 0 if healthy else int(state.get("consecutive_failures", 0)) + 1
@@ -96,19 +187,18 @@ def check_once(
         )
     elif healthy and was_down and send("交易服务心跳已恢复；恢复交易仍需原有对账和暂停解除条件。"):
         state["down_notified"] = False
-    overdue = backup_at is None or now - backup_at > 86400 or backup_at > now + 300
-    if overdue and not state.get("backup_notified"):
+    problems = backup_problems(inventory, expected, now)
+    if problems and not state.get("backup_notified"):
         state["backup_notified"] = send(
-            "Mac 上没有 24 小时内的加密备份，请检查备份定时器和异机复制。"
+            "备份异常：" + "；".join(problems) + "。请检查备份定时器和异机复制。"
         )
-    elif not overdue:
+    elif not problems:
         state["backup_notified"] = False
     state.update(
         checked_at=now,
         healthy=healthy,
         consecutive_failures=failures,
-        newest_backup_at=backup_at,
-        backup_overdue=overdue,
+        backup_problems=problems,
     )
     return state
 
@@ -120,6 +210,8 @@ def main():
     parser.add_argument("--health-url", required=True)
     parser.add_argument("--rsync-source", default=DEFAULT_RSYNC_SOURCE)
     parser.add_argument("--sync-backups", action="store_true")
+    parser.add_argument("--gnupg-home", type=Path, default=None)
+    parser.add_argument("--expected-databases", default=DEFAULT_EXPECTED_DATABASES)
     args = parser.parse_args()
     os.umask(0o077)
     args.state_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -136,7 +228,8 @@ def main():
     state = check_once(
         state,
         healthy=health_ok(args.health_url),
-        backup_at=newest_backup(args.backup_dir),
+        inventory=backup_inventory(args.backup_dir, gnupg_home=args.gnupg_home),
+        expected=[name for name in args.expected_databases.split() if name],
         now=now,
     )
     temporary = path.with_suffix(".tmp")

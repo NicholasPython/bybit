@@ -49,6 +49,8 @@ class ValuationInput:
     settle_rates: dict[str, Decimal] = field(default_factory=dict)
     #: 期权合约乘数（每张对应多少标的）。
     contract_multiplier: dict[str, Decimal] = field(default_factory=dict)
+    #: U 本位单向合约仅计浮盈，保证金冻结不改变现金所有权。
+    linear_positions: list[PositionView] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -142,6 +144,29 @@ def value_account(policy: ValuationPolicy, data: ValuationInput) -> Valuation:
             option_total += value
             details["options"][position.symbol] = str(value)
     total += option_total - liabilities
+    details["linear_unrealised_pnl"] = {}
+    for position in data.linear_positions:
+        if position.size == 0:
+            continue
+        if (
+            position.category != "linear"
+            or position.position_idx != 0
+            or position.side not in {"Buy", "Sell"}
+            or position.settle_coin != policy.currency
+            or position.avg_price is None
+            or position.mark_price is None
+            or any(
+                not value.is_finite() or value <= 0
+                for value in (position.size, position.avg_price, position.mark_price)
+            )
+        ):
+            missing_rate.append(f"{position.symbol}:linear_units_or_mark")
+            continue
+        pnl = position.size * (position.mark_price - position.avg_price)
+        if position.side == "Sell":
+            pnl = -pnl
+        total += pnl
+        details["linear_unrealised_pnl"][position.symbol] = str(pnl)
 
     if missing_rate:
         return Valuation(

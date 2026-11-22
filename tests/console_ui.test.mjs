@@ -560,3 +560,30 @@ test("恢复证据条的证据入口按钮切换到对应工作区", async () =>
   // 假 DOM 没有真实 tab 列表；验证按钮可点击且不抛错即可，
   // 模板里五个 tab 的存在与默认选中由 test_web.py 断言。
 });
+
+test("首页先显示下一步操作，并按当前证据给出入口", async () => {
+  const app = await boot({
+    snapshotPatch: {
+      heartbeat: { at: "2026-11-01T02:43:19Z", age_seconds: 1.5, fresh: true },
+      runtime: { state: "PAUSED_OPEN", lease: "NEEDS_CONFIRMATION" },
+      pauses: [{ id: 12, active: true, locked: true, reason_code: "EXTERNAL_CASH_FLOW", reason_detail: "账户资金变化未解释" }],
+    },
+  });
+  const hero = app.element("next-step");
+  const content = flatten(hero);
+  assert.match(content, /先核查锁定暂停/, "首屏应告诉用户当前第一步");
+  assert.match(content, /打开操作窗口/, "可处置项应提供直接入口");
+  assert.equal(hero.children.some((item) => item.className === "eyebrow"), true);
+});
+
+test("无阻塞且租约就绪时明确提示无需人工处置", async () => {
+  const app = await boot({
+    snapshotPatch: {
+      heartbeat: { at: "2026-11-01T02:43:19Z", age_seconds: 1.5, fresh: true },
+      runtime: { state: "PAUSED_OPEN", lease: "ELIGIBLE" },
+      baseline: { day: "2026-11-01", complete: false, established_at: "2026-11-01T00:00:00Z" },
+      reconciliations: [{ scope: "full", allows_resume: true, difference_count: 0, finished_at: "2026-11-01T02:30:00Z" }],
+    },
+  });
+  assert.match(flatten(app.element("next-step")), /当前无需人工处置/);
+});

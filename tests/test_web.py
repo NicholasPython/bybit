@@ -125,6 +125,9 @@ async def test_console_requires_session_and_serves_local_assets(client):
     assert response.status_code == 200
     assert "首次风险基线" in response.text
     assert "最近行情时效" in response.text
+    assert "现在先做这件事" in response.text
+    assert "查看依据" not in response.text  # 由 JS 在读取状态后填入
+    assert 'data-tab="recovery"' in response.text
 
 
 async def test_login_cookie_and_error_responses_hide_password(client):

@@ -14,6 +14,8 @@
 - 现货－永续价差套利的只读采集与回测（2026-11-18，含真实数据结论）：[docs/cash-futures-spread-2026-11-18.md](docs/cash-futures-spread-2026-11-18.md)
 - 现货－永续价差实盘前风险清单（2026-11-19，含产品侧缺口与验证清单）：[docs/cash-futures-live-risk-checklist-2026-11-19.md](docs/cash-futures-live-risk-checklist-2026-11-19.md)
 - 现货 1 分钟采集与回测子工程（2026-11-19，Bybit 公共接口，只读研究）：[research/bybit_spot_backtest/README.md](research/bybit_spot_backtest/README.md)
+- 双腿价差套利阶段一与 P0 阻断项修复（2026-11-20，含能力边界与下一阶段顺序）：[docs/spread-arbitrage-phase1-2026-11-20.md](docs/spread-arbitrage-phase1-2026-11-20.md)
+- 双腿价差套利阶段二（2026-11-22，独立 paper 持久化执行、线性腿对账与重启恢复）：[docs/spread-arbitrage-phase2-2026-11-22.md](docs/spread-arbitrage-phase2-2026-11-22.md)
 
 ## 组成
 
@@ -33,6 +35,7 @@
 - `ledger.py` / `reconciliation.py` —— 账本事件、去重成交、权益政策与对账修复
 - `fees.py` —— 版本化的手续费估算口径（模拟、预算与止盈判断共用）
 - `strategy/` —— 现货定预算 DCA、期权单腿买入，退出规则
+- `spread/` —— U 本位双腿价差套利：配对状态机、腿订单模型、瘸腿自愈（默认关闭）
 - `ops/` —— 运行状态、暂停管理、告警投递、受限文件注入的通知渠道
 - `web/` —— FastAPI 管理页（模板 + 原生 JS/CSS）
 
@@ -68,7 +71,7 @@ uv run ruff check src tests deploy
 uv run pytest -q
 ```
 
-2026-11-18 最新结果为 **1411 项通过**（一个 Alembic `path_separator` 弃用警告）。测试在 `BYBITBOT_TESTING=1` 下运行；`tests/conftest.py` 阻断 httpx 的默认同步和异步 HTTP transport，交易所 HTTP 响应使用 `httpx.MockTransport`，交易行为使用 `PaperAdapter` 合成。数据库用例各自使用独立 PostgreSQL schema，结束后只删除自己的 schema。这不是操作系统级网络隔离，也不构成真实 Bybit 能力验收。管理页命令提示另有 `node --test tests/console_ui.test.mjs`（6 项）覆盖。
+2026-11-22 最新结果为 **1785 项通过**（Alembic `path_separator` 弃用警告）。测试在 `BYBITBOT_TESTING=1` 下运行；`tests/conftest.py` 阻断 httpx 的默认同步和异步 HTTP transport，交易所 HTTP 响应使用 `httpx.MockTransport`，交易行为使用 `PaperAdapter` 合成。数据库用例各自使用独立 PostgreSQL schema，结束后只删除自己的 schema。这不是操作系统级网络隔离，也不构成真实 Bybit 能力验收。管理页命令提示另有 `node --test tests/console_ui.test.mjs`（6 项）覆盖。
 
 现货采集与回测子工程的测试随同 `pytest` 一起运行（`research` 在 `testpaths` 内，Flask 已在 `dev` 附加依赖中固定为 3.1.3）；它的页面交互另有 `node --test research/bybit_spot_backtest/tests/test_ui.cjs`（7 项）。两者都不需要网络与交易所凭据。
 
@@ -183,8 +186,8 @@ uv run bybitbot sandbox verify --directory var/paper-system
 src/bybitbot/     应用代码
 research/         研究脚本（含现货－永续价差只读采集与回测）
 research/bybit_spot_backtest/  现货 1 分钟采集与回测子工程（独立于交易服务）
-tests/            1411 项 Python 隔离测试、6 项页面提示测试
-alembic/          数据库迁移（当前 head: 8a4d17c2f905）
+tests/            1785 项 Python 隔离测试、6 项页面提示测试
+alembic/          数据库迁移（当前 head: a612e47bc903）
 config/           配置示例（无密钥）
 deploy/           容器、Quadlet、备份、Mac 端监控与安装脚本
 docs/             需求、评审、验收矩阵、NAS 手册

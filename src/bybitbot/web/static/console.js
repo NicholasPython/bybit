@@ -98,7 +98,22 @@
       caveat: "预留额度与逐标的 Delta 明细未由只读 API 提供；此页不臆测当前占用。",
     };
   };
-  const __test = { deriveRecoveryState, deriveHealth, deriveRiskPosture, leaseState, isUnknownOrder };
+  const deriveNextStep = (data = {}) => {
+    const recovery = deriveRecoveryState(data);
+    const pauses = (data.pauses || []).filter(isActivePause);
+    const unknown = (data.orders || []).filter(isUnknownOrder);
+    const locked = pauses.filter((pause) => pause.locked);
+    const lease = typeof data.runtime?.lease === "object" && data.runtime.lease ? data.runtime.lease : null;
+    if (!data.heartbeat?.fresh) return { title: "先确认交易服务是否在线", detail: "页面可以读取历史记录，但不能证明 worker 正在运行。", command: null, tab: "health" };
+    if (locked.length) return { title: "先核查锁定暂停", detail: `有 ${locked.length} 条锁定暂停；按证据核实后再逐条解除。`, command: "RESUME", tab: "recovery", payload: { pause_id: locked[0].id } };
+    if (unknown.length) return { title: "先核实结果未知的订单", detail: `有 ${unknown.length} 笔订单结果未确定；不要重复发单。`, command: null, tab: "trades" };
+    if (!data.baseline) return { title: "建立首次风险基线", detail: "身份、估值与对账通过后，才能设置风险起点。", command: "INITIALIZE_BASELINE", tab: "ops" };
+    if (recovery.lease === "NEEDS_CONFIRMATION" || lease?.takeover_required) return { title: "确认执行者接管", detail: "记录旧进程停止依据；确认后仍需通过恢复检查。", command: "CONFIRM_TAKEOVER", tab: "ops" };
+    if (pauses.length) return { title: "核验后解除剩余暂停", detail: `还有 ${pauses.length} 条活动暂停，每次只处理一条。`, command: "RESUME", tab: "ops", payload: { pause_id: pauses[0].id } };
+    if (recovery.level === "attention") return { title: "核对关注项后继续", detail: "页面发现过期快照或告警等待处理。", command: null, tab: "recovery" };
+    return { title: "当前无需人工处置", detail: "没有发现阻塞项。开仓资格仍由交易服务判定。", command: null, tab: "recovery" };
+  };
+  const __test = { deriveRecoveryState, deriveHealth, deriveRiskPosture, deriveNextStep, leaseState, isUnknownOrder };
   if (typeof window !== "undefined") window.__bybitbotConsole = __test;
 
   const stateNames = {
@@ -412,6 +427,23 @@
 
   function render(data) {
     snapshot = data;
+    const next = deriveNextStep(data);
+    const hero = $("next-step");
+    if (hero) {
+      hero.replaceChildren();
+      hero.append(node("span", "现在先做这件事", "eyebrow"));
+      hero.append(node("strong", next.title, "next-title"));
+      hero.append(node("span", next.detail, "muted"));
+      if (next.command) {
+        const button = action("打开操作窗口", next.command, next.payload || {});
+        button.className = "button primary";
+        hero.append(button);
+      }
+      const details = node("button", "查看依据", "button secondary");
+      details.type = "button";
+      details.addEventListener("click", () => selectTab(next.tab));
+      hero.append(details);
+    }
     const runtime = data.runtime || {};
     const account = data.account;
     const heartbeat = data.heartbeat || {};

@@ -18,7 +18,27 @@
     <div class="sidebar-foot"><p>UTC 时间<br>金额按币种标注</p><span id="operator">验证会话中</span><button id="logout" class="text-button" type="button">退出登录</button></div>
   </aside>
   <main id="main" class="workspace">
-    <header class="workspace-header"><div><p class="muted" id="page-context">对账与恢复</p><h1>系统状态与人工操作台</h1></div><div class="header-actions"><span id="refresh-at" class="muted">尚未读取</span><button id="refresh" class="button secondary" type="button">刷新</button></div></header>
+    <header class="workspace-header">
+      <div><p class="muted" id="page-context">运行总览</p><h1>当前该做什么</h1></div>
+      <div class="header-actions"><span id="refresh-at" class="muted">尚未读取</span><button id="refresh" class="button secondary" type="button">刷新状态</button></div>
+    </header>
+    <section id="next-step" class="hero-card" aria-live="polite">
+      <span class="eyebrow">现在先做这件事</span>
+      <strong class="next-title">正在读取服务状态</strong>
+      <span class="muted">连接数据库后，这里会显示下一步操作。</span>
+    </section>
+    <section class="quick-strip" aria-label="常用入口">
+      <button class="quick-card" type="button" data-tab="recovery"><strong>恢复交易</strong><span>按证据逐条解除暂停</span></button>
+      <button class="quick-card" type="button" data-tab="trades"><strong>查余额与订单</strong><span>核对持仓、成交与订单状态</span></button>
+      <button class="quick-card" type="button" data-tab="ops"><strong>执行人工命令</strong><span>暂停、撤单、减仓与基线</span></button>
+    </section>
+    <nav class="nav-tabs secondary-tabs" role="tablist" aria-label="详细信息" aria-orientation="vertical">
+      <button id="tab-recovery" role="tab" aria-selected="true" aria-controls="panel-recovery" data-tab="recovery" tabindex="0">对账与恢复</button>
+      <button id="tab-health" role="tab" aria-selected="false" aria-controls="panel-health" data-tab="health" tabindex="-1">运行健康</button>
+      <button id="tab-risk" role="tab" aria-selected="false" aria-controls="panel-risk" data-tab="risk" tabindex="-1">风控态势</button>
+      <button id="tab-trades" role="tab" aria-selected="false" aria-controls="panel-trades" data-tab="trades" tabindex="-1">交易明细</button>
+      <button id="tab-ops" role="tab" aria-selected="false" aria-controls="panel-ops" data-tab="ops" tabindex="-1">人工控制</button>
+    </nav>
     <p id="connection-error" class="notice danger" role="alert" hidden></p>
     <noscript><p class="notice danger">请启用浏览器 JavaScript 以查看实时记录及执行操作。</p></noscript>
     <section class="status-pane" aria-labelledby="status-heading">

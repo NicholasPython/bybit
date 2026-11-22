@@ -732,9 +732,9 @@ class RuntimeConfig(BaseModel):
     proxy: str | None = None
     poll_seconds: Annotated[int, Field(ge=2, le=60)] = 5
     catalog_refresh_seconds: Annotated[int, Field(ge=300)] = 3600
-    max_option_candidates: Annotated[
-        int, Field(ge=1, le=FIRST_PHASE_MAX_OPTION_CANDIDATES)
-    ] = FIRST_PHASE_MAX_OPTION_CANDIDATES
+    max_option_candidates: Annotated[int, Field(ge=1, le=FIRST_PHASE_MAX_OPTION_CANDIDATES)] = (
+        FIRST_PHASE_MAX_OPTION_CANDIDATES
+    )
     #: 策略合计每秒最多提交多少个意图（NFR-01 首期容量：1 次/秒）。
     max_intents_per_second: Annotated[int, Field(ge=1, le=100)] = 1
     option_units_verified: bool = False
@@ -770,4 +770,122 @@ class LiveGateConfig(BaseModel):
     def _consistent(self) -> LiveGateConfig:
         if self.live_allowed and not (self.acceptance_record_ref and self.manual_enable_ref):
             raise ValueError("实盘允许开关打开时必须同时提供验收记录与人工启用记录（ENV-03）")
+        return self
+
+
+# --------------------------------------------------------------------------
+# 双腿价差套利（PRD FR-01 / FR-03）
+# --------------------------------------------------------------------------
+
+#: Bybit U 本位合约符号：永续为 ``BTCUSDT``，交割为 ``BTC-26MAR27``。
+_LINEAR_SYMBOL = re.compile(r"^[A-Z0-9]{2,12}USDT$|^[A-Z0-9]{2,12}-\d{1,2}[A-Z]{3}\d{2}$")
+
+
+class SpreadPairSettings(BaseModel):
+    """单个价差套利币对的配置。
+
+    阈值口径全部是**绝对偏离度**：``|Z| ≥ z_entry`` 入场，``|Z| ≤ z_exit``
+    了结，``|Z| ≥ z_stop`` 硬止损。因此必须 ``z_exit < z_entry < z_stop``。
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    #: 稳定标识，必须等于 ``{symbol_a}:{symbol_b}``。
+    pair_key: str
+    #: 被动腿（流动性较差的一腿）。
+    symbol_a: str
+    #: 主动对冲腿。
+    symbol_b: str
+    #: 协整对冲系数 β。
+    hedge_ratio: Decimal
+    z_entry: Decimal
+    z_exit: Decimal
+    z_stop: Decimal
+    #: 单组最大名义资金。
+    max_notional: DecimalAmount
+    #: 单腿裸敞口名义上限。
+    max_unhedged_notional: DecimalAmount
+    #: 被动腿挂单超时（毫秒，PRD FR-02.3：2000）。
+    passive_timeout_ms: int = 2000
+    #: 追单补偿窗口（毫秒，PRD FR-02.3：500）。
+    recovery_window_ms: int = 500
+    #: 追单允许的最大滑点（基点）。
+    max_slippage_bps: Decimal = Decimal("50")
+    enabled: bool = False
+
+    @field_validator("symbol_a", "symbol_b")
+    @classmethod
+    def _linear_symbol(cls, v: str) -> str:
+        value = v.upper()
+        if _LINEAR_SYMBOL.fullmatch(value) is None:
+            raise ValueError(f"不是合法的 U 本位合约符号：{v!r}")
+        return value
+
+    @field_validator("hedge_ratio")
+    @classmethod
+    def _positive_ratio(cls, v: Decimal) -> Decimal:
+        if not v.is_finite() or v <= 0:
+            raise ValueError("对冲系数必须为正的有限数")
+        return v
+
+    @model_validator(mode="after")
+    def _consistent(self) -> SpreadPairSettings:
+        numeric = (self.hedge_ratio, self.z_entry, self.z_exit, self.z_stop, self.max_slippage_bps)
+        if not all(value.is_finite() for value in numeric):
+            raise ValueError("套利阈值必须为有限数")
+        if self.symbol_a == self.symbol_b:
+            raise ValueError("配对的两条腿不能是同一个合约")
+        if self.pair_key != f"{self.symbol_a}:{self.symbol_b}":
+            raise ValueError("pair_key 必须等于 {symbol_a}:{symbol_b}")
+        if self.z_exit < 0 or self.z_entry <= 0 or self.z_stop <= 0:
+            raise ValueError("Z-Score 阈值必须为非负数")
+        if not self.z_exit < self.z_entry < self.z_stop:
+            raise ValueError("必须满足 z_exit < z_entry < z_stop")
+        if self.max_notional.currency != self.max_unhedged_notional.currency:
+            raise ValueError("名义资金与裸敞口上限必须使用同一币种")
+        if self.max_unhedged_notional.value >= self.max_notional.value:
+            raise ValueError("裸敞口上限必须小于单组名义上限")
+        if self.passive_timeout_ms <= 0 or self.recovery_window_ms <= 0:
+            raise ValueError("超时与恢复窗口必须为正")
+        if self.max_slippage_bps < 0:
+            raise ValueError("滑点容忍度不能为负")
+        return self
+
+
+class SpreadSettings(BaseModel):
+    """双腿价差套利子系统配置。
+
+    默认关闭。阶段二可在独立 paper 账户启用；远程交易仍拒绝。
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    enabled: bool = False
+    pairs: tuple[SpreadPairSettings, ...] = ()
+    #: 同时持有的配对数上限。
+    max_concurrent_pairs: int = 3
+    #: 准实时对账间隔（秒，PRD FR-05.1：300）。
+    reconciliation_interval_seconds: int = 300
+    #: 单组最大名义占账户净值的比例（PRD FR-03.3：30%）。
+    max_pair_equity_ratio: Decimal = Decimal("0.30")
+    #: 全账户总名义敞口杠杆上限（PRD FR-03.3：3x）。
+    max_account_leverage: Decimal = Decimal("3")
+
+    @model_validator(mode="after")
+    def _consistent(self) -> SpreadSettings:
+        keys = [pair.pair_key for pair in self.pairs]
+        if len(keys) != len(set(keys)):
+            raise ValueError("pair_key 不能重复")
+        if self.max_concurrent_pairs < 1:
+            raise ValueError("并发配对数上限必须为正")
+        if self.reconciliation_interval_seconds < 60:
+            raise ValueError("对账间隔不得少于 60 秒")
+        if not self.max_pair_equity_ratio.is_finite() or not Decimal(
+            "0"
+        ) < self.max_pair_equity_ratio <= Decimal("1"):
+            raise ValueError("单组名义占净值比例必须在 (0, 1] 之间")
+        if not self.max_account_leverage.is_finite() or self.max_account_leverage <= 1:
+            raise ValueError("总杠杆上限必须大于 1")
+        if self.enabled and not any(pair.enabled for pair in self.pairs):
+            raise ValueError("启用子系统时至少要启用一个配对")
         return self

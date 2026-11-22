@@ -70,6 +70,9 @@ from bybitbot.risk.reservation import ReservationError, ReservationManager
 from bybitbot.scheduler import Scheduler
 from bybitbot.settings.loader import AppConfig, load_config
 from bybitbot.settings.secrets import load_credentials
+from bybitbot.spread.models import SpreadLegOrder, SpreadPairTrade
+from bybitbot.spread.paper import LinearPaperAdapter
+from bybitbot.spread.runner import SpreadExecutor
 from bybitbot.strategy.base import IntentDraft, SignalContext, build_intent
 from bybitbot.strategy.templates import (
     OptionBuyParams,
@@ -181,7 +184,7 @@ class StateStore:
             await session.commit()
 
 
-class DurablePaperAdapter(PaperAdapter):
+class DurablePaperAdapter(LinearPaperAdapter):
     def __init__(self, store: StateStore, **kwargs):
         super().__init__(**kwargs)
         self.store = store
@@ -303,7 +306,35 @@ class TradingService:
             config.runtime.max_intents_per_second, monotonic=time.monotonic
         )
 
+    async def _spread_mode_check(self):
+        """隔离账户边界也在运行时校验，不能通过 model_copy 绕过配置加载器。"""
+        async with self.database.sessionmaker() as session:
+            spread_orders = await session.scalar(
+                select(func.count())
+                .select_from(SpreadLegOrder)
+                .where(SpreadLegOrder.environment == self.environment)
+            )
+            if not self.config.spread.enabled:
+                if spread_orders:
+                    raise RuntimeError("已有套利事实，不能以旧现货/期权模式启动该账户")
+                return
+            if (
+                self.environment != "paper"
+                or any(cfg.enabled for cfg in self.config.strategies)
+                or self.config.ops.valuation.currency != "USDT"
+                or self.config.account.account_mode.value != "unified"
+            ):
+                raise RuntimeError("阶段二套利仅允许独立 USDT unified paper 账户")
+            for model in (Order, Inventory, ValidationStudy):
+                if await session.scalar(
+                    select(func.count())
+                    .select_from(model)
+                    .where(model.environment == self.environment)
+                ):
+                    raise RuntimeError("套利须使用无现货/期权交易历史的独立 paper 数据库")
+
     async def start(self):
+        await self._spread_mode_check()
         if self.environment == "live":
             gates = self.config.live_gates
             if not (gates.live_allowed and gates.acceptance_record_ref and gates.manual_enable_ref):
@@ -330,6 +361,17 @@ class TradingService:
                 account_uid=self.uid,
                 executor=self.executor,
             )
+            if self.config.spread.enabled:
+                self.spread_executor = SpreadExecutor(
+                    adapter=self.adapter,
+                    sessionmaker=self.database.sessionmaker,
+                    environment=self.environment,
+                    account_uid=self.uid,
+                    settings=self.config.spread,
+                    lease=self.lease,
+                )
+                await self.spread_executor.recover()
+                self.reconciler = self.spread_executor.reconciler
             await self._apply_config()
             await self._recover_inflight()
             async with self.database.sessionmaker() as session:
@@ -431,12 +473,22 @@ class TradingService:
     async def _order_count(self) -> int:
         async with self.database.sessionmaker() as session:
             return int(
-                await session.scalar(
-                    select(func.count())
-                    .select_from(Order)
-                    .where(Order.environment == self.environment)
+                (
+                    await session.scalar(
+                        select(func.count())
+                        .select_from(Order)
+                        .where(Order.environment == self.environment)
+                    )
+                    or 0
                 )
-                or 0
+                + (
+                    await session.scalar(
+                        select(func.count())
+                        .select_from(SpreadLegOrder)
+                        .where(SpreadLegOrder.environment == self.environment)
+                    )
+                    or 0
+                )
             )
 
     def _fee_ratio(self, category: str, symbol: str, price: Decimal | None) -> Decimal:
@@ -595,6 +647,7 @@ class TradingService:
                 or updated.runtime.proxy != self.config.runtime.proxy
                 or updated.fees != self.config.fees
                 or updated.paper != self.config.paper
+                or updated.spread != self.config.spread
             ):
                 raise RuntimeError("环境、端点、凭据、代理、模拟行情或费用口径变更需重启")
             if config_fingerprint(updated) != self._config_hash:
@@ -613,7 +666,12 @@ class TradingService:
         target = RunState.PAUSED_OPEN if paused else RunState.RUNNING
         if self.machine.state != target:
             self.machine.transition(target)
-        if self.lease.state is LeaseState.ELIGIBLE:
+        if self.lease.state is LeaseState.ELIGIBLE and self.config.spread.enabled:
+            result = await self.spread_executor.tick(paused=paused)
+            if not result.allows_resume:
+                await self._fault("SPREAD_RECONCILIATION", "套利订单、成交、仓位或现金待核实")
+            await self._account_sync()
+        elif self.lease.state is LeaseState.ELIGIBLE:
             await self._cancel_expired(paused=paused)
             await self._exit_rules()
             await self._schedule()
@@ -626,6 +684,29 @@ class TradingService:
         await self.store.put("latency", self.latency.as_dict())
         await self._status()
         self.latency.record("tick", time.perf_counter() - tick_started)
+
+    async def open_spread(self, signal):
+        """受控信号入口；信号生成与策略寻优属于下一阶段。"""
+        if not self.config.spread.enabled or not hasattr(self, "spread_executor"):
+            raise RuntimeError("套利子系统未启用")
+        if (
+            not self.identity_ok
+            or not self.reconcile_ok
+            or not self.baseline_ok
+            or self.valuation is None
+            or not self.valuation.complete
+            or self.lease.state is not LeaseState.ELIGIBLE
+            or await self.pauses.active_pauses()
+        ):
+            raise RuntimeError("身份、对账、风险基线、执行权或暂停条件不允许套利开仓")
+        if self.account_at is None or (now_utc() - self.account_at).total_seconds() > 30:
+            raise RuntimeError("套利账户快照已过期")
+        return await self.spread_executor.open_pair(signal)
+
+    async def close_spread(self, pair_trade_id, *, reason):
+        if not self.config.spread.enabled or not hasattr(self, "spread_executor"):
+            raise RuntimeError("套利子系统未启用")
+        await self.spread_executor.request_close(pair_trade_id, reason=reason)
 
     async def _fault(self, code, detail, *, locked=None):
         await self.pauses.pause(reason_code=code, reason_detail=detail, locked=locked)
@@ -759,10 +840,11 @@ class TradingService:
             not self.specs
             or time.monotonic() - self._catalog_at > self.config.runtime.catalog_refresh_seconds
         ):
-            await self.catalog.sync(self.market_adapter)
+            categories = ("linear",) if self.config.spread.enabled else ("spot", "option")
+            await self.catalog.sync(self.market_adapter, categories=categories)
             self.specs = {
                 (spec.category, spec.symbol): spec
-                for category in ("spot", "option")
+                for category in categories
                 for spec in await self.catalog.list(category)
             }
             self._catalog_at = time.monotonic()
@@ -801,6 +883,24 @@ class TradingService:
             needed.add(("option" if "-" in item.symbol else "spot", item.symbol))
         for base in option_bases:
             needed.add(("spot", f"{base}{self.config.ops.valuation.currency}"))
+        if self.config.spread.enabled:
+            needed = {
+                ("linear", symbol)
+                for pair in self.config.spread.pairs
+                for symbol in (pair.symbol_a, pair.symbol_b)
+            }
+            async with self.database.sessionmaker() as session:
+                pairs = list(
+                    await session.scalars(
+                        select(SpreadPairTrade).where(
+                            SpreadPairTrade.environment == self.environment,
+                            SpreadPairTrade.closed_at.is_(None),
+                        )
+                    )
+                )
+            needed.update(
+                ("linear", symbol) for pair in pairs for symbol in (pair.symbol_a, pair.symbol_b)
+            )
         for category, symbol in sorted(needed):
             await self._quote(category, symbol, depth=True)
         option_specs = [
@@ -925,7 +1025,9 @@ class TradingService:
             )
         self.account = await self.adapter.get_account()
         self.account_at = now_utc()
-        self.positions = await self.adapter.get_positions("option")
+        self.positions = await self.adapter.get_positions(
+            "linear" if self.config.spread.enabled else "option"
+        )
         key = await self.adapter.get_key_info()
         is_paper = self.environment == "paper"
         self.identity_ok = (
@@ -953,7 +1055,7 @@ class TradingService:
         # 纸面期权空头：仅当它是验证价差已核对的规范事实（覆盖多头充足且库存可信）时，
         # 才允许作为合法开空而非非预期负债。
         authorized_shorts = True
-        if self.environment == "paper":
+        if self.environment == "paper" and not self.config.spread.enabled:
             async with self.database.sessionmaker() as session:
                 authorized_shorts = await covered_paper_account(
                     session,
@@ -999,18 +1101,25 @@ class TradingService:
                     rates[coin] = quote.bid_price
         positions = []
         for position in self.positions:
-            ticker = await self._quote("option", position.symbol)
-            spec = self.specs.get(("option", position.symbol))
-            if not self.quotes.status("option", position.symbol).usable or not spec:
+            category = position.category
+            ticker = await self._quote(category, position.symbol)
+            spec = self.specs.get((category, position.symbol))
+            if not self.quotes.status(category, position.symbol).usable or not spec:
                 positions.append(replace(position, mark_price=None))
             else:
                 # 多头用标记价/买一；空头是负债，按卖一（更保守）计价。
                 source = (
-                    ticker.ask_price
-                    if position.side == "Sell"
-                    else (ticker.mark_price
-                        if self.config.ops.valuation.option_valuation_source == "mark"
-                        else ticker.bid_price)
+                    ticker.mark_price
+                    if category == "linear"
+                    else (
+                        ticker.ask_price
+                        if position.side == "Sell"
+                        else (
+                            ticker.mark_price
+                            if self.config.ops.valuation.option_valuation_source == "mark"
+                            else ticker.bid_price
+                        )
+                    )
                 )
                 positions.append(
                     replace(
@@ -1023,14 +1132,17 @@ class TradingService:
         policy = self.config.ops.valuation
         self.valuation = value_account(
             ValuationPolicy(
-                version=policy.version,
+                version=(
+                    f"{policy.version}:linear-v1" if self.config.spread.enabled else policy.version
+                ),
                 currency=currency,
                 day_boundary_tz=self.config.ops.day_boundary_tz,
             ),
             ValuationInput(
                 account=self.account,
                 cash_rates=rates,
-                option_positions=positions,
+                option_positions=[p for p in positions if p.category == "option"],
+                linear_positions=[p for p in positions if p.category == "linear"],
                 settle_rates=rates,
             ),
         )
@@ -1349,6 +1461,18 @@ class TradingService:
                     Order.status.in_(["UNKNOWN", "SUBMITTING"]),
                 )
             )
+            if self.config.spread.enabled:
+                unknown += (
+                    await session.scalar(
+                        select(func.count())
+                        .select_from(SpreadLegOrder)
+                        .where(
+                            SpreadLegOrder.environment == self.environment,
+                            SpreadLegOrder.sync_state.in_(["PENDING", "UNCERTAIN"]),
+                        )
+                    )
+                    or 0
+                )
             pause = await session.get(RiskPause, int(command.payload["pause_id"]))
         if pause is None or pause.environment != self.environment:
             raise ValueError("暂停记录不存在")
@@ -1897,9 +2021,8 @@ class TradingService:
                     boundary += dt.timedelta(days=1)
                 ttl = min(ttl, boundary)
         # 验证价差开空/回补是覆盖操作，不进入 reduceOnly；期权买多才是单向持仓。
-        reduce_only = (
-            draft.action in REDUCE_ONLY_ACTIONS
-            or (draft.category == "option" and not new_exposure)
+        reduce_only = draft.action in REDUCE_ONLY_ACTIONS or (
+            draft.category == "option" and not new_exposure
         )
         outcome = await self.executor.submit(
             OrderPlan(
@@ -1944,8 +2067,8 @@ class TradingService:
 
     async def _validation_start(self, command):
         """冻结并启动一次验证运行；只接受 paper 与受控协议字段。"""
-        if self.environment != "paper":
-            raise RuntimeError("验证运行只允许 paper 环境")
+        if self.environment != "paper" or self.config.spread.enabled:
+            raise RuntimeError("期权验证仅允许独立的非套利 paper 账户")
         payload = command.payload or {}
         protocol = SpreadProtocol.from_mapping(payload["protocol"])
         protocol_data = json_value(asdict(protocol))
