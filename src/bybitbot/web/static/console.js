@@ -550,6 +550,7 @@
     renderValidation(data.validation, data.environment);
     renderLimits(data.configuration);
     renderGoalSummaries(data);
+    void loadShadow();
     table("pauses-body", data.pauses, [
       (r) => stacked(`#${r.id}`, `${r.scope}${r.scope_key ? ` ${r.scope_key}` : ""}`),
       { value: (r) => stacked(r.reason_code, r.reason_detail), className: "wrap" },
@@ -577,6 +578,46 @@
     }
     const tracked = noticeCommandId ? commandRows.find((row) => row.command_id === noticeCommandId) : null;
     if (tracked) $("command-notice").textContent = commandNotice(tracked);
+  }
+
+  // Shadow mode is read-only: the UI never submits an order or a promotion command.
+  async function loadShadow() {
+    try {
+      const shadow = await request("/api/shadow");
+      const summary = $("shadow-summary");
+      if (summary) {
+        summary.replaceChildren();
+        for (const [label, value] of [
+          ["启用状态", shadow.enabled ? "运行中" : "关闭"],
+          ["观察窗", `${shadow.observation_days} 天`],
+          ["模拟决策", shadow.decisions],
+          ["完整闭环", shadow.closed_trades],
+          ["模拟 Sharpe", amount(shadow.sharpe)],
+          ["最大回撤", amount(shadow.max_drawdown)],
+          ["累计模拟盈亏 (USDT)", amount(shadow.cumulative_pnl)],
+          ["晋升候选", shadow.promotion_candidate ? "待人工审阅" : "未达标"],
+        ]) {
+          const cell = node("div");
+          cell.append(node("dt", label));
+          cell.append(node("dd", value));
+          summary.append(cell);
+        }
+      }
+      showError($("shadow-note"), shadow.promotion_note || "");
+      table("shadow-decisions-body", shadow.last_decisions, [
+        (r) => r.pair_key, (r) => state(r.action), (r) => r.reason,
+        { value: (r) => amount(r.net_pnl, "USDT"), className: "numeric" },
+        (r) => r.depth_ok ? "深度足够" : "深度不足",
+        (r) => stamp(new Date(r.at_ms).toISOString()),
+      ], "暂无影子盘模拟决策。启用 spread.shadow.enabled 后才会采样。");
+      const daily = Object.entries(shadow.daily_pnl || {}).map(([day, value]) => ({ day, value }));
+      table("shadow-daily-body", daily, [
+        (r) => r.day,
+        { value: (r) => amount(r.value, "USDT"), className: "numeric" },
+      ], "暂无逐日模拟盈亏。");
+    } catch (error) {
+      showError($("shadow-note"), error.status ? error.message : "无法读取影子盘状态。");
+    }
   }
 
   const PARAM_LABELS = {

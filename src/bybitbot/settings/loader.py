@@ -38,6 +38,7 @@ from bybitbot.settings.models import (
     RuntimeConfig,
     SpreadAutoSettings,
     SpreadSettings,
+    SpreadShadowSettings,
     StrategyConfig,
 )
 
@@ -205,6 +206,8 @@ def load_config(
         spread_raw = dict(raw.get("spread") or {})
         spread_auto = SpreadAutoSettings.model_validate(spread_raw.get("auto") or {})
         spread_raw["auto"] = spread_auto
+        spread_shadow = SpreadShadowSettings.model_validate(spread_raw.get("shadow") or {})
+        spread_raw["shadow"] = spread_shadow
         spread = SpreadSettings.model_validate(spread_raw)
         strategies = tuple(StrategyConfig.model_validate(s) for s in (raw.get("strategies") or []))
     except ValidationError as exc:

@@ -251,6 +251,17 @@ spread:
     max_signal_age_ms: 30000
     stop_cooldown_seconds: 86400
     target_notional: "100"
+  # FR-07.3 影子盘：只用公开行情与真实盘口深度模拟成交，不加载凭据、不下真单。
+  # 默认关闭；观察窗默认 7 天，晋升候选仅供人工审阅，绝不自动改参数或灰度放量。
+  shadow:
+    enabled: false
+    public_market_url: https://api.bybit.com
+    observation_days: 7
+    min_depth_notional: "500"
+    impact_bps_per_depth: "2"
+    min_sharpe: "2"
+    max_drawdown: "0.03"
+    max_signal_age_ms: 30000
   pairs:
     - pair_key: "BTCUSDT:BTC-26MAR27"
       symbol_a: BTCUSDT

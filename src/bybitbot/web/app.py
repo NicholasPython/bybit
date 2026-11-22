@@ -67,6 +67,7 @@ from bybitbot.db.models import (
 from bybitbot.db.session import Database
 from bybitbot.ops.control import ControlCommandManager
 from bybitbot.settings.loader import AppConfig
+from bybitbot.spread.shadow import ShadowEngine
 
 SESSION_COOKIE = "bybitbot_session"
 SESSION_SECONDS = 30 * 60
@@ -649,10 +650,7 @@ def _runtime(row: Any) -> dict[str, Any]:
     public["clock_checked"] = data.get("clock_checked") is True
     capabilities = data.get("capabilities")
     public["capabilities"] = (
-        {
-            key: capabilities.get(key) is True
-            for key in ("option_units", "option_reduce_only")
-        }
+        {key: capabilities.get(key) is True for key in ("option_units", "option_reduce_only")}
         if isinstance(capabilities, dict)
         else {}
     )
@@ -757,9 +755,7 @@ async def _validation_status(
     environment, account_uid = _validation_scope(config)
     lifecycle_cls = get_validation_lifecycle()
     lifecycle = lifecycle_cls(database)
-    raw = await lifecycle.status(
-        database, environment=environment, account_uid=account_uid
-    )
+    raw = await lifecycle.status(database, environment=environment, account_uid=account_uid)
     studies = raw.get("studies", []) if isinstance(raw, dict) else []
     views = [
         view
@@ -1264,6 +1260,16 @@ async def _parse(request: Request, model: type[BaseModel]) -> Any:
         raise HTTPException(422, "请求格式、操作范围或确认文字无效。") from None
 
 
+class _NoMarketAdapter:
+    """仅供只读投影使用；没有任何交易写方法，也不发网络请求。"""
+
+    async def get_ticker(self, category: str, symbol: str) -> Any:
+        raise RuntimeError("影子盘投影不读取行情")
+
+    async def get_orderbook(self, category: str, symbol: str, limit: int = 50) -> Any:
+        raise RuntimeError("影子盘投影不读取行情")
+
+
 def create_app(
     config: AppConfig,
     database: Database,
@@ -1414,6 +1420,19 @@ def create_app(
             return await _status(database, config, now())
         except SQLAlchemyError:
             raise HTTPException(503, "暂时无法读取数据库；请检查服务与数据库连接。") from None
+
+    @app.get("/api/shadow", dependencies=[Depends(authenticated)])
+    async def shadow_view() -> dict[str, Any]:
+        """FR-07.3 影子盘只读投影；不做任何订单写操作。"""
+        try:
+            engine = ShadowEngine(
+                adapter=_NoMarketAdapter(),
+                sessionmaker=database.sessionmaker,
+                settings=config.spread,
+            )
+            return await engine.status()
+        except SQLAlchemyError:
+            raise HTTPException(503, "暂时无法读取影子盘记录；请检查数据库。") from None
 
     @app.get("/api/validation/{run_id}/export", dependencies=[Depends(authenticated)])
     async def validation_export(run_id: str) -> Response:

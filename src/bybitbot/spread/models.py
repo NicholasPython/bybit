@@ -380,5 +380,65 @@ __all__ = [
     "SpreadPairConfig",
     "SpreadPairTrade",
     "SpreadReconciliationLog",
+    "ShadowTrade",
     "SpreadSignalSample",
 ]
+
+
+class ShadowTrade(Base):
+    """FR-07.3 影子盘模拟交易：来自公开行情与可见深度，无真实订单。
+
+    环境固定为 ``shadow``，配对编号与真实 paper 执行器隔离；资金费按
+    采样快照估算，不读取账户或私有流。所有 PnL 都标记为 simulated。
+    """
+
+    __tablename__ = "shadow_trade"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    environment: Mapped[str] = mapped_column(String(32), nullable=False)
+    pair_trade_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    pair_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    decision_at_ms: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    action: Mapped[str] = mapped_column(String(16), nullable=False)
+    reason: Mapped[str] = mapped_column(String(64), nullable=False)
+    direction: Mapped[str] = mapped_column(String(32), nullable=False)
+    symbol_a: Mapped[str] = mapped_column(String(64), nullable=False)
+    symbol_b: Mapped[str] = mapped_column(String(64), nullable=False)
+    side_a: Mapped[str] = mapped_column(
+        String(8),
+        nullable=False,
+    )
+    side_b: Mapped[str] = mapped_column(String(8), nullable=False, server_default="")
+    qty_a: Mapped[Decimal] = mapped_column(Numeric(38, 18), nullable=False, server_default="0")
+    qty_b: Mapped[Decimal] = mapped_column(Numeric(38, 18), nullable=False, server_default="0")
+    price_a: Mapped[Decimal] = mapped_column(Numeric(38, 18), nullable=False, server_default="0")
+    price_b: Mapped[Decimal] = mapped_column(Numeric(38, 18), nullable=False, server_default="0")
+    notional: Mapped[Decimal] = mapped_column(Numeric(38, 18), nullable=False, server_default="0")
+    z: Mapped[Decimal] = mapped_column(Numeric(38, 18), nullable=False, server_default="0")
+    spread_pnl: Mapped[Decimal] = mapped_column(Numeric(38, 18), nullable=False, server_default="0")
+    fee_cost: Mapped[Decimal] = mapped_column(Numeric(38, 18), nullable=False, server_default="0")
+    slippage_cost: Mapped[Decimal] = mapped_column(
+        Numeric(38, 18), nullable=False, server_default="0"
+    )
+    funding_pnl: Mapped[Decimal] = mapped_column(
+        Numeric(38, 18), nullable=False, server_default="0"
+    )
+    net_pnl: Mapped[Decimal] = mapped_column(Numeric(38, 18), nullable=False, server_default="0")
+    cumulative_pnl: Mapped[Decimal] = mapped_column(
+        Numeric(38, 18), nullable=False, server_default="0"
+    )
+    depth_ok: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
+    context: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}")
+    created_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, nullable=False
+    )
+
+    __table_args__ = (
+        UniqueConstraint("environment", "pair_trade_id", name="uq_shadow_trade"),
+        CheckConstraint("environment = 'shadow'", name="ck_shadow_environment"),
+        CheckConstraint("action in ('OPEN', 'CLOSE', 'STOP', 'NONE')", name="ck_shadow_action"),
+        CheckConstraint("decision_at_ms >= 0", name="ck_shadow_time"),
+        CheckConstraint("qty_a >= 0 AND qty_b >= 0 AND notional >= 0", name="ck_shadow_qty"),
+        Index("ix_shadow_trade_time", "environment", "decision_at_ms"),
+        Index("ix_shadow_trade_pair", "environment", "pair_key", "decision_at_ms"),
+    )

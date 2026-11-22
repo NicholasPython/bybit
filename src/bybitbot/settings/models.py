@@ -891,6 +891,41 @@ class SpreadAutoSettings(BaseModel):
         return self
 
 
+class SpreadShadowSettings(BaseModel):
+    """FR-07.3 影子盘：真实公开行情、模拟撮合，不加载交易凭据。
+
+    影子盘是离线演化平面的只读验证，不占执行租约，不做实盘晋升，也不得
+    修改运行中的策略参数。观察窗按自然日滚动，默认 7 天。
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    enabled: bool = False
+    #: 样本与判定必须来自 get_ticker/get_orderbook 的公开只读接口。
+    public_market_url: Literal["https://api.bybit.com"] = "https://api.bybit.com"
+    observation_days: Annotated[int, Field(ge=1, le=30)] = 7
+    #: 最小成交深度（USDT），不足时不做模拟开仓。
+    min_depth_notional: Annotated[Decimal, Field(gt=0)] = Decimal("500")
+    #: 每腿冲击成本估计（基点），按可见深度逐档消耗。
+    impact_bps_per_depth: Annotated[Decimal, Field(ge=0)] = Decimal("2")
+    #: 晋升门槛；仅生成候选供人工审阅，绝不自动生效。
+    min_sharpe: Annotated[Decimal, Field(ge=0)] = Decimal("2")
+    max_drawdown: Annotated[Decimal, Field(ge=0, le=1)] = Decimal("0.03")
+    max_signal_age_ms: Annotated[int, Field(ge=1000)] = 30000
+
+    @model_validator(mode="after")
+    def _consistent(self) -> SpreadShadowSettings:
+        values = (
+            self.min_depth_notional,
+            self.impact_bps_per_depth,
+            self.min_sharpe,
+            self.max_drawdown,
+        )
+        if not all(value.is_finite() for value in values):
+            raise ValueError("影子盘阈值必须为有限数")
+        return self
+
+
 class SpreadSettings(BaseModel):
     """双腿价差套利子系统配置。
 
@@ -911,6 +946,8 @@ class SpreadSettings(BaseModel):
     max_account_leverage: Decimal = Decimal("3")
     #: 阶段三滚动价差信号；默认关闭。
     auto: SpreadAutoSettings = SpreadAutoSettings()
+    #: 影子盘只消费公开行情并模拟成交，默认关闭，不产生任何真实订单。
+    shadow: SpreadShadowSettings = SpreadShadowSettings()
 
     @model_validator(mode="after")
     def _consistent(self) -> SpreadSettings:

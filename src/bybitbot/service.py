@@ -74,6 +74,7 @@ from bybitbot.spread.auto import SpreadAutoSignal
 from bybitbot.spread.models import SpreadLegOrder, SpreadPairTrade
 from bybitbot.spread.paper import LinearPaperAdapter
 from bybitbot.spread.runner import SpreadExecutor
+from bybitbot.spread.shadow import ShadowEngine
 from bybitbot.strategy.base import IntentDraft, SignalContext, build_intent
 from bybitbot.strategy.templates import (
     OptionBuyParams,
@@ -676,6 +677,8 @@ class TradingService:
                 await self._account_sync()
             if result is not None and result.allows_resume and not paused:
                 await self._spread_auto_tick()
+        if self.config.spread.shadow.enabled:
+            await self._shadow_tick()
         elif self.lease.state is LeaseState.ELIGIBLE:
             await self._cancel_expired(paused=paused)
             await self._exit_rules()
@@ -754,6 +757,43 @@ class TradingService:
                     )
                 except Exception:  # noqa: BLE001 -- 平仓失败由阶段二重启恢复与对账接管。
                     logger.warning("自动套利平仓失败：%s", config.pair_key, exc_info=True)
+
+    async def _shadow_tick(self):
+        """FR-07.3 影子盘：公共行情、模拟撮合，绝不进入订单执行路径。"""
+        engine = ShadowEngine(
+            adapter=self.market_adapter,
+            sessionmaker=self.database.sessionmaker,
+            settings=self.config.spread,
+        )
+        now_ms = int(now_utc().timestamp() * 1000)
+        for config in self.config.spread.pairs:
+            if not config.enabled:
+                continue
+            symbols = (config.symbol_a, config.symbol_b)
+            specs = {
+                symbol: self.specs.get(("linear", symbol))
+                for symbol in symbols
+                if self.specs.get(("linear", symbol)) is not None
+            }
+            quote_status = {
+                symbol: self.quotes.status("linear", symbol).usable for symbol in symbols
+            }
+            books = {
+                symbol: self.quotes.get_book("linear", symbol)
+                for symbol in symbols
+                if self.quotes.get_book("linear", symbol) is not None
+            }
+            try:
+                await engine.evaluate_pair(
+                    config,
+                    quotes=self.quotes,
+                    specs=specs,
+                    quote_status=quote_status,
+                    books=books,
+                    now_ms=now_ms,
+                )
+            except Exception:  # noqa: BLE001 -- 影子盘异常只跳过当前币对，不影响 worker 主循环。
+                logger.warning("影子盘计算失败：%s", config.pair_key, exc_info=True)
 
     async def close_spread(self, pair_trade_id, *, reason):
         if not self.config.spread.enabled or not hasattr(self, "spread_executor"):

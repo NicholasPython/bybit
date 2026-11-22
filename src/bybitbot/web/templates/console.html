@@ -10,6 +10,7 @@
       <button id="tab-risk" role="tab" aria-selected="false" aria-controls="panel-risk" data-tab="risk" tabindex="-1">风控态势</button>
       <button id="tab-trades" role="tab" aria-selected="false" aria-controls="panel-trades" data-tab="trades" tabindex="-1">交易明细</button>
       <button id="tab-ops" role="tab" aria-selected="false" aria-controls="panel-ops" data-tab="ops" tabindex="-1">人工控制</button>
+      <button id="tab-shadow" role="tab" aria-selected="false" aria-controls="panel-shadow" data-tab="shadow" tabindex="-1">影子盘</button>
     </nav>
     <div class="module-links" aria-label="研究模块">
       <a href="/spot-lab/" title="独立的只读行情采集与策略回测研究模块">现货行情与回测 ↗</a>
@@ -38,6 +39,7 @@
       <button id="tab-risk" role="tab" aria-selected="false" aria-controls="panel-risk" data-tab="risk" tabindex="-1">风控态势</button>
       <button id="tab-trades" role="tab" aria-selected="false" aria-controls="panel-trades" data-tab="trades" tabindex="-1">交易明细</button>
       <button id="tab-ops" role="tab" aria-selected="false" aria-controls="panel-ops" data-tab="ops" tabindex="-1">人工控制</button>
+      <button id="tab-shadow" role="tab" aria-selected="false" aria-controls="panel-shadow" data-tab="shadow" tabindex="-1">影子盘</button>
     </nav>
     <p id="connection-error" class="notice danger" role="alert" hidden></p>
     <noscript><p class="notice danger">请启用浏览器 JavaScript 以查看实时记录及执行操作。</p></noscript>
@@ -47,6 +49,24 @@
       <div id="pause-summary" class="pause-summary"><p class="muted">正在读取暂停原因。</p></div>
     </section>
     <div class="section-meta"><span id="row-limit">每表显示最近 100 条记录</span><span>自动刷新 15 秒</span></div>
+
+    <!-- FR-07.3 影子盘：只读公开行情模拟结果，不产生真实订单 -->
+    <section id="panel-shadow" role="tabpanel" aria-labelledby="tab-shadow" tabindex="0" hidden data-panel="shadow">
+      <section class="data-section goal-summary">
+        <div class="section-heading"><h2>影子盘验证（FR-07.3）</h2><span class="muted">真实公开行情 · 可见深度模拟 · 无交易凭据</span></div>
+        <p class="section-caption">影子盘来自公开只读行情与盘口，用模拟成交检验参数与标的。这里只展示模拟结果和人工审阅候选；不会自动修改配置、不会灰度放量、也不构成真实资金验收。</p>
+        <dl id="shadow-summary" class="evidence-grid" aria-live="polite"></dl>
+        <p id="shadow-note" class="notice">正在读取影子盘状态。</p>
+      </section>
+      <section class="data-section">
+        <div class="section-heading"><h2>最近模拟决策</h2><span class="muted">最近 20 条 · 均为 simulated</span></div>
+        <div class="table-scroll" tabindex="0" aria-label="影子盘最近模拟决策"><table><thead><tr><th>配对</th><th>动作</th><th>理由</th><th class="numeric">模拟净盈亏 (USDT)</th><th>深度</th><th>时间 (UTC)</th></tr></thead><tbody id="shadow-decisions-body"></tbody></table></div>
+      </section>
+      <section class="data-section">
+        <div class="section-heading"><h2>逐日模拟盈亏</h2><span class="muted">观察窗按自然日累计</span></div>
+        <div class="table-scroll" tabindex="0" aria-label="影子盘逐日模拟盈亏"><table><thead><tr><th>日期 (UTC)</th><th class="numeric">模拟盈亏 (USDT)</th></tr></thead><tbody id="shadow-daily-body"></tbody></table></div>
+      </section>
+    </section>
 
     <!-- 目标一：对账与恢复（默认首屏） -->
     <section id="panel-recovery" role="tabpanel" aria-labelledby="tab-recovery" tabindex="0" data-panel="recovery">
