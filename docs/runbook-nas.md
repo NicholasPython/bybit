@@ -250,6 +250,12 @@ CCA09EDDB905C807F03D697A1D9AEFAD85C1BB92
 
 当前仍保持 `state=PAUSED_OPEN`、`lease=NEEDS_CONFIRMATION`、`baseline_available=false`，四条活动暂停未解除，两条旧策略均禁用；物理订单、成交、意图、非零库存及套利配对/腿单/逐笔成交/信号样本均为零，`shadow_trade` 为空表。`spread.shadow.enabled` 默认关闭（NAS 配置未加 `spread.shadow` 段，走默认值），影子盘未采集任何样本，管理页「影子盘」标签上线并显示关闭状态。回滚到 `d1b98c8d3b20` 前必须先把 schema 降回 `b7c9e1f4a2d8` 并删除 `shadow_trade`，否则旧镜像的启动前迁移无法识别新 revision；仅切换镜像标签不足够。影子盘启用需另行在配置中打开 `spread.shadow.enabled`，且仅消费公开行情，不影响交易凭据边界。
 
+2026-11-22 影子盘启用与采样修复发布已核验：代码提交 `4b9408b` 已推送至 `origin/feat/spot-lab-module`；发布标签 `release-20261122-shadow-v10`（已移动为 `0.1.0`），schema 仍为 `c9d3f7a2b6e4`（无新迁移）。提交前完整 Python 回归 1845 项通过，Ruff 通过。
+
+本轮首先在 NAS 配置启用 `spread.shadow.enabled=true`（配对 `BTCUSDT:ETHUSDT` 保持 `enabled=false`，仅作影子盘采样对象），随后连发 v5–v10 排障版本定位「影子盘开启但样本始终为 0」的根因链：中间价落在半档被 tick 对齐误拒（`2e8763d`）、采样拒绝静默无痕（限频警告，`85236fc`）、单腿行情失败拖垮整轮缓存（逐符号容错，`f543ee1`），最终 v10 确认真因——worker tick 后段耗时约 33 秒（p50），`_shadow_tick` 排在末尾时 `_market()` 拉的行情已超过 `max_quote_age_seconds=15`，缓存有数据但永远判过期。修复：`_shadow_tick` 提前到 `_market()` 之后，且缓存过期腿用公共只读适配器（`allow_trade_writes=False`）当场刷新（`4b9408b`）。
+
+启用后影子盘仅消费公开行情（REST ticker/orderbook），不加载交易凭据、不发私有请求、不产生真实订单，样本与模拟交易仅落 `spread_signal_sample`/`shadow_trade` 的 `environment='shadow'` 命名空间，管理页「影子盘」标签只读展示，不自动改参数、不推进 canary 或实盘。worker/web 保持 active，`last_error` 为空，四条活动暂停与禁用策略不变。
+
 ### Bybit API 凭据
 
 先暂停新增风险并核对所有在途订单；需要撤单时，必须取得终态及累计成交证据。未知结果期间不能靠换 key 清空预留。准备只含必要权限、关闭提现、绑定固定出口 IP 的新凭据，以 0600 文件注入，核对实际环境、UID、权限和账户模式后再重启。重启后重新对账及接管确认，逐条满足恢复条件。
