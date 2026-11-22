@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import datetime as dt
 import itertools
+import logging
 from collections.abc import Mapping
 from dataclasses import dataclass
 from decimal import Decimal
@@ -42,6 +43,20 @@ ZERO = Decimal(0)
 TWO = Decimal(2)
 ENVIRONMENT = "shadow"
 _SHADOW_SEQUENCE = itertools.count(1)
+
+logger = logging.getLogger(__name__)
+_WARN_AT: dict[str, int] = {}
+_WARN_EVERY_MS = 10 * 60 * 1000
+
+
+def _warn_throttled(pair_key: str, detail: str) -> None:
+    """同一配对的采样拒绝日志每 10 分钟最多一条，避免刷屏。"""
+    now_ms = int(now_utc().timestamp() * 1000)
+    last = _WARN_AT.get(pair_key, 0)
+    if now_ms - last < _WARN_EVERY_MS:
+        return
+    _WARN_AT[pair_key] = now_ms
+    logger.warning("影子盘采样被拒：%s：%s", pair_key, detail)
 
 
 def _finite(value: object, name: str) -> Decimal:
@@ -125,6 +140,8 @@ class ShadowEngine:
     async def _record_sample(self, config, *, at_ms, ticker_a, ticker_b, specs, quote_status):
         price_a, price_b = self._mid(ticker_a), self._mid(ticker_b)
         spec_a, spec_b = specs.get(config.symbol_a), specs.get(config.symbol_b)
+        # 中间价是推导值，落在半档（如 bid=97000.0/ask=97000.1 → mid=97000.05）是
+        # 正常现象，不作为订单价格下发；此处只要求双边报价有效，不做 tick 对齐。
         if (
             price_a is None
             or price_b is None
@@ -134,8 +151,6 @@ class ShadowEngine:
             or not spec_b.tick_size
             or not spec_a.is_tradable
             or not spec_b.is_tradable
-            or price_a % spec_a.tick_size
-            or price_b % spec_b.tick_size
             or not quote_status.get(config.symbol_a, False)
             or not quote_status.get(config.symbol_b, False)
         ):
@@ -282,7 +297,9 @@ class ShadowEngine:
                 notional=auto.target_notional,
                 now_ms=now,
             )
-        except SignalUnavailable:
+        except SignalUnavailable as exc:
+            # 采样被拒必须留痕：静默吞掉会表现为「影子盘开启但永远 0 条样本」。
+            _warn_throttled(config.pair_key, str(exc))
             return None
         active = await self._active(config)
         direction = decision.direction or (active.direction if active else "")

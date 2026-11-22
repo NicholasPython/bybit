@@ -198,6 +198,42 @@ async def test_invalid_quote_does_not_pollute_window(database):
     assert await rows(database, SpreadSignalSample) == []
 
 
+async def test_half_tick_mid_is_accepted(database):
+    """真实盘口中间价经常落在半档（tick=0.01 时 bid=100.0/ask=100.01 → 100.005）。
+
+    中间价是推导值而非订单价格，tick 对齐检查会把它全部拒掉，表现为
+    「信号开启但样本永远为 0」；回归确保半档中间价正常落库。
+    """
+    from bybitbot.spread import auto as auto_module
+
+    auto_module._WARN_AT.clear()
+    try:
+        signal_engine = await engine(database)
+        config = settings().pairs[0]
+        half_tick = Ticker(
+            "linear",
+            "BTCUSDT",
+            bid_price=D("100.00"),
+            ask_price=D("100.01"),
+            source_ts=now_utc(),
+            received_at=now_utc(),
+        )
+        quotes = {"BTCUSDT": half_tick, "ETHUSDT": ticker("ETHUSDT", 100)}
+        for index in range(5):
+            await signal_engine.evaluate_pair(
+                config,
+                quotes=quotes,
+                specs=specs(),
+                quote_status=status(),
+                now_ms=1000 * (index + 1),
+            )
+        saved = await rows(database, SpreadSignalSample)
+        assert saved, "半档中间价不应触发 SignalUnavailable"
+        assert {row.price_a for row in saved} == {D("100.005")}
+    finally:
+        auto_module._WARN_AT.clear()
+
+
 async def test_entry_does_not_fire_without_authority(database, monkeypatch):
     config = settings()
     config = config.model_copy(

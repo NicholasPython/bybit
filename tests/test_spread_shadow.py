@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from decimal import Decimal as D
 from pathlib import Path
 
@@ -206,3 +207,81 @@ async def test_shadow_tick_samples_disabled_pairs(database):
     finally:
         service_module.ShadowEngine = original
     assert sampled == ["BTCUSDT:ETHUSDT"], "影子盘必须采样禁用配对"
+
+
+async def test_shadow_samples_half_tick_mids(database):
+    """真实盘口中间价经常落在半档（bid=100.0/ask=100.1 → mid=100.05）。
+
+    中间价是推导值而非订单价格，tick 对齐检查会把它全部拒掉，表现为
+    「影子盘开启但样本永远为 0」；回归确保半档中间价正常落库。
+    """
+    adapter = PublicAdapter()
+    adapter.prices = {"BTCUSDT": D("100"), "ETHUSDT": D("100")}
+    shadow = engine(database, adapter)
+    pair = config().pairs[0]
+    # tick_size=0.01、bid=99.99/ask=100.01 → mid=100.00 恰好整档；
+    # 改成 bid=100.00/ask=100.01 → mid=100.005 是半档，修复前会被拒。
+    half_tick_ticker = Ticker(
+        "linear",
+        "BTCUSDT",
+        bid_price=D("100.00"),
+        ask_price=D("100.01"),
+        source_ts=now_utc(),
+        received_at=now_utc(),
+    )
+    sampled = []
+    original_record = shadow._record_sample
+
+    async def recording(config, **kwargs):
+        sampled.append(kwargs["ticker_a"])
+        return await original_record(config, **kwargs)
+
+    shadow._record_sample = recording
+    await shadow.evaluate_pair(
+        pair,
+        quotes={"BTCUSDT": half_tick_ticker, "ETHUSDT": None},
+        specs=specs(),
+        quote_status={"BTCUSDT": True, "ETHUSDT": True},
+        books={},
+        now_ms=1_700_000_000_000,
+    )
+    assert sampled, "半档中间价不应触发 SignalUnavailable"
+    assert shadow._mid(sampled[0]) == D("100.005")
+
+
+async def test_shadow_warns_throttled_when_sampling_rejected(database, monkeypatch):
+    """采样被拒必须留痕（限频），静默吞掉会掩盖「永远 0 条样本」的故障。"""
+    from bybitbot.spread import shadow as shadow_module
+
+    shadow_module._WARN_AT.clear()
+    warnings: list[tuple[str, str, str]] = []
+    monkeypatch.setattr(
+        shadow_module, "logger", logging.getLogger("shadow-test-probe"), raising=True
+    )
+    probe = logging.getLogger("shadow-test-probe")
+    monkeypatch.setattr(
+        shadow_module.logger,
+        "warning",
+        lambda msg, *args: warnings.append((msg % args) if args else msg),
+        raising=True,
+    )
+    probe.setLevel(logging.WARNING)
+    try:
+        shadow = engine(database, PublicAdapter())
+        pair = config().pairs[0]
+        stale_specs = dict(specs())
+        stale_specs["ETHUSDT"] = None
+        for _ in range(3):
+            await shadow.evaluate_pair(
+                pair,
+                quotes={},
+                specs=stale_specs,
+                quote_status={"BTCUSDT": True, "ETHUSDT": True},
+                books={},
+                now_ms=1_700_000_000_000,
+            )
+        assert len(warnings) == 1, "同一配对 10 分钟内只允许一条拒绝日志"
+        assert "影子盘采样被拒" in warnings[0]
+        assert "BTCUSDT:ETHUSDT" in warnings[0]
+    finally:
+        shadow_module._WARN_AT.clear()
