@@ -17,7 +17,7 @@
 | 应用镜像 | `localhost/bybitbot:0.1.0`；发布前记录完整 image ID |
 | 基础运行时镜像 | `localhost/bybitbot-runtime:0.1.0` |
 | 数据库镜像 | 复用已有 `localhost/artex-postgres:16` 镜像，使用独立的 Bybit 命名卷 |
-| 数据库 schema head | `b7c9e1f4a2d8` |
+| 数据库 schema head | `c9d3f7a2b6e4` |
 | Quadlet 源文件 | `~/.config/containers/systemd/bybitbot-*.container` 和 `.volume` |
 | 运行配置、数据库环境变量、管理身份 | `~/.config/bybitbot/{config.yaml,postgres.env,admin.json}`，0600 |
 | 备份加密公钥 | `~/.config/bybitbot/backup-public.asc` |
@@ -243,6 +243,12 @@ CCA09EDDB905C807F03D697A1D9AEFAD85C1BB92
 发布前使用既有 `backup.sh` 生成 `bybitbot-20261122T090632Z-bybitbot_paper.dump.gpg`（8,920,926 字节），脚本已通过 `pg_restore --list` 验证归档可恢复。发布先停 worker，再将数据库从 `a612e47bc903` 升至 `b7c9e1f4a2d8`（新增 `spread_signal_sample`），随后切换镜像并重启。最终 worker/web/postgres 均 active，`NRestarts=0`，心跳持续推进，`last_error` 为空，NAS 本机与 Tailscale `/health` 均返回 `{"status":"ok"}`。
 
 当前仍保持 `state=PAUSED_OPEN`、`lease=NEEDS_CONFIRMATION`、`baseline_available=false`，活动暂停为 `CONFIG_CHANGED`（锁定）、`MANUAL`、`NOTIFICATION_FAILURE`、`VALUATION_UNAVAILABLE`，两条旧策略均禁用；物理订单、成交、意图、非零库存、套利配对/腿单/逐笔成交及信号样本均为零。阶段三自动信号配置默认关闭，未确认接管、未建立风险基线，也未使用任何交易凭据。回滚到 `297fdf917162` 前必须先把 schema 降回 `a612e47bc903` 并删除 `spread_signal_sample`，否则旧镜像的启动前迁移无法识别新 revision；仅切换镜像标签不足够。
+
+2026-11-22 影子盘与管理页发布已核验：代码提交 `c9da8f4`；镜像 `2e956ebac8df451e913e579be1f78eecbdc13faf987a10b315ffffca42b00841`，发布标签 `localhost/bybitbot:release-20261122-shadow`（已移动为 `0.1.0`），回滚点 `localhost/bybitbot:rollback-before-release-20261122-shadow`（`d1b98c8d3b2035e4168c1907a1b087f3c4870131cff3f3e5acd4959a16ab4483`，即阶段三发布镜像）。提交前完整 Python 回归 1839 项通过（新增影子盘 6 项），Ruff、`git diff --check` 与迁移收敛检查通过。
+
+发布先停 worker，再把数据库从 `b7c9e1f4a2d8` 升至 `c9d3f7a2b6e4`（新增 `shadow_trade`），随后切换镜像并重启。最终 worker/web/postgres 均 active，`NRestarts=0`，tick 从 `10:12:50` 起正常推进，`last_error` 为空，NAS 本机与 Tailscale `/health` 均返回 `{"status":"ok"}`。
+
+当前仍保持 `state=PAUSED_OPEN`、`lease=NEEDS_CONFIRMATION`、`baseline_available=false`，四条活动暂停未解除，两条旧策略均禁用；物理订单、成交、意图、非零库存及套利配对/腿单/逐笔成交/信号样本均为零，`shadow_trade` 为空表。`spread.shadow.enabled` 默认关闭（NAS 配置未加 `spread.shadow` 段，走默认值），影子盘未采集任何样本，管理页「影子盘」标签上线并显示关闭状态。回滚到 `d1b98c8d3b20` 前必须先把 schema 降回 `b7c9e1f4a2d8` 并删除 `shadow_trade`，否则旧镜像的启动前迁移无法识别新 revision；仅切换镜像标签不足够。影子盘启用需另行在配置中打开 `spread.shadow.enabled`，且仅消费公开行情，不影响交易凭据边界。
 
 ### Bybit API 凭据
 
