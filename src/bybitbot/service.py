@@ -1012,7 +1012,14 @@ class TradingService:
                 ("linear", symbol) for pair in pairs for symbol in (pair.symbol_a, pair.symbol_b)
             )
         for category, symbol in sorted(needed):
-            await self._quote(category, symbol, depth=True)
+            # 单腿行情失败只跳过该腿，不让一对 REST 瞬断把整轮 _quote 循环
+            # 打断 —— 否则影子盘/自动信号的缓存整轮为空，表现为样本为 0。
+            try:
+                await self._quote(category, symbol, depth=True)
+            except Exception as exc:  # noqa: BLE001 -- 下一轮重试；只读行情失败不打死主循环。
+                logger.warning(
+                    "行情拉取失败，本轮跳过 %s %s：%s", category, symbol, type(exc).__name__
+                )
         option_specs = [
             spec
             for (kind, _), spec in self.specs.items()
