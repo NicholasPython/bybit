@@ -782,6 +782,22 @@ class TradingService:
             quote_status = {
                 symbol: self.quotes.status("linear", symbol).usable for symbol in symbols
             }
+            if not all(quote_status.values()):
+                # 诊断：采样被拒时把缓存里这两个符号的实际内容打进日志，
+                # 区分「从未拉到」与「拉到了但时间戳过期」。
+                cached = {
+                    symbol: (
+                        self.quotes.get_ticker("linear", symbol) is not None,
+                        self.quotes.get_book("linear", symbol) is not None,
+                    )
+                    for symbol in symbols
+                }
+                logger.warning(
+                    "影子盘行情缓存快照 %s：ticker/book 存在性=%s，quote_status=%s",
+                    config.pair_key,
+                    cached,
+                    quote_status,
+                )
             books = {
                 symbol: self.quotes.get_book("linear", symbol)
                 for symbol in symbols
