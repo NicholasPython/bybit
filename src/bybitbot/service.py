@@ -657,6 +657,12 @@ class TradingService:
                 await self._apply_config()
         await self._clock_and_disk()
         await self._market()
+        if self.config.spread.shadow.enabled:
+            # 影子盘是只读观察，不占执行租约；暂停期间也持续采样。
+            # 必须紧跟 _market()：tick 后段（账户同步、验证采样、期权撮合等）
+            # 可能耗时数十秒，等跑到 tick 末尾时 _market() 拉的行情已超过
+            # max_quote_age_seconds，表现为「缓存有数据但永远判定过期」。
+            await self._shadow_tick()
         await self._account_sync()
         # Read-only observations continue while new trading exposure is paused.
         await self._validation_lifecycle_tick()
@@ -677,9 +683,6 @@ class TradingService:
                 await self._account_sync()
             if result is not None and result.allows_resume and not paused:
                 await self._spread_auto_tick()
-        if self.config.spread.shadow.enabled:
-            # 影子盘是只读观察，不占执行租约；暂停期间也持续采样。
-            await self._shadow_tick()
         if self.lease.state is LeaseState.ELIGIBLE:
             await self._cancel_expired(paused=paused)
             await self._exit_rules()
@@ -770,7 +773,6 @@ class TradingService:
         except Exception:  # noqa: BLE001 -- 构造失败只关闭本轮影子盘，不打死主循环。
             logger.warning("影子盘引擎不可用，本轮跳过", exc_info=True)
             return
-        now_ms = int(now_utc().timestamp() * 1000)
         for config in self.config.spread.pairs:
             # 配对开关只控制真实执行面；影子盘对声明的配对全部采样。
             symbols = (config.symbol_a, config.symbol_b)
@@ -782,31 +784,29 @@ class TradingService:
             quote_status = {
                 symbol: self.quotes.status("linear", symbol).usable for symbol in symbols
             }
-            if not all(quote_status.values()):
-                # 诊断：采样被拒时把缓存里这两个符号的实际内容与年龄打进日志，
-                # 区分「从未拉到」「拉到了但时间戳过期」以及具体过期的时间戳。
-                now = now_utc()
-                cached = {}
-                for symbol in symbols:
-                    ticker = self.quotes.get_ticker("linear", symbol)
-                    book = self.quotes.get_book("linear", symbol)
-                    ages = {}
-                    for name, stamp in (
-                        ("t_src", ticker.source_ts if ticker else None),
-                        ("t_recv", ticker.received_at if ticker else None),
-                        ("b_src", book.source_ts if book else None),
-                        ("b_recv", book.received_at if book else None),
-                    ):
-                        ages[name] = (
-                            None if stamp is None else round((now - stamp).total_seconds(), 1)
+            stale = [symbol for symbol, usable in quote_status.items() if not usable]
+            if stale:
+                # 缓存行情过期（tick 后段耗时或上轮拉取失败）时，影子盘用公共
+                # 只读适配器自行刷新两条腿，而不是依赖主循环的拉取节奏。
+                # 仍然只读：market_adapter 显式 allow_trade_writes=False。
+                refreshed = []
+                for symbol in stale:
+                    try:
+                        ticker = await self.market_adapter.get_ticker("linear", symbol)
+                        book = await self.market_adapter.get_orderbook("linear", symbol)
+                    except Exception as exc:  # noqa: BLE001 -- 刷新失败按原状态采样，下一轮重试。
+                        logger.warning(
+                            "影子盘行情刷新失败 %s：%s", symbol, type(exc).__name__
                         )
-                    cached[symbol] = ages
-                logger.warning(
-                    "影子盘行情缓存快照 %s：时间戳年龄秒=%s，quote_status=%s",
-                    config.pair_key,
-                    cached,
-                    quote_status,
-                )
+                    else:
+                        self.quotes.put_ticker(ticker)
+                        self.quotes.put_book(book)
+                        refreshed.append(symbol)
+                if refreshed:
+                    quote_status = {
+                        symbol: self.quotes.status("linear", symbol).usable
+                        for symbol in symbols
+                    }
             books = {
                 symbol: self.quotes.get_book("linear", symbol)
                 for symbol in symbols
@@ -819,7 +819,7 @@ class TradingService:
                     specs=specs,
                     quote_status=quote_status,
                     books=books,
-                    now_ms=now_ms,
+                    now_ms=None,
                 )
             except Exception:  # noqa: BLE001 -- 影子盘异常只跳过当前币对，不影响 worker 主循环。
                 logger.warning("影子盘计算失败：%s", config.pair_key, exc_info=True)

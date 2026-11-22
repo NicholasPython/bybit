@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import timedelta
 from decimal import Decimal as D
 from pathlib import Path
 
@@ -13,7 +14,7 @@ from bybitbot.adapters.base import InstrumentSpec, OrderBook, Ticker
 from bybitbot.clock import now_utc
 from bybitbot.settings.loader import load_config
 from bybitbot.settings.models import SpreadSettings
-from bybitbot.spread.models import ShadowTrade
+from bybitbot.spread.models import ShadowTrade, SpreadSignalSample
 from bybitbot.spread.shadow import ENVIRONMENT, ShadowEngine
 
 CONFIG_PATH = Path(__file__).resolve().parents[1] / "config/config.example.yaml"
@@ -285,3 +286,111 @@ async def test_shadow_warns_throttled_when_sampling_rejected(database, monkeypat
         assert "BTCUSDT:ETHUSDT" in warnings[0]
     finally:
         shadow_module._WARN_AT.clear()
+
+
+async def test_shadow_tick_refreshes_stale_cache_legs(database):
+    """缓存行情过期时影子盘用公共只读适配器自行刷新，而不是拒绝采样。
+
+    worker tick 后段（账户同步、验证采样等）可能耗时数十秒；等 _shadow_tick
+    跑到时 _market() 拉的行情已超过 max_quote_age_seconds，此前表现为
+    「缓存有数据但永远判定过期、样本为 0」。
+    """
+    from bybitbot.service import TradingService
+
+    base = load_config(CONFIG_PATH)
+    shadow_cfg = SpreadSettings.model_validate(
+        {
+            "enabled": False,
+            "pairs": [
+                {
+                    "pair_key": "BTCUSDT:ETHUSDT",
+                    "symbol_a": "BTCUSDT",
+                    "symbol_b": "ETHUSDT",
+                    "hedge_ratio": "1",
+                    "z_entry": "2",
+                    "z_exit": "0.5",
+                    "z_stop": "3.5",
+                    "max_notional": {"value": "100", "currency": "USDT"},
+                    "max_unhedged_notional": {"value": "20", "currency": "USDT"},
+                    "enabled": False,
+                }
+            ],
+            "auto": {
+                "enabled": True,
+                "window": 5,
+                "sample_interval_seconds": 2,
+                "fee_rate": "0",
+                "slippage_bps": "0",
+                "target_notional": "100",
+            },
+            "shadow": {"enabled": True, "min_depth_notional": "10"},
+        }
+    )
+    cfg = base.model_copy(update={"spread": shadow_cfg})
+    adapter = PublicAdapter()
+    service = TradingService(cfg, database, market_adapter=adapter)
+    # 预填过期缓存：时间戳远超 max_quote_age_seconds（默认 15 秒）。
+    stale_stamp = now_utc() - timedelta(seconds=120)
+    for symbol in ("BTCUSDT", "ETHUSDT"):
+        service.quotes.put_ticker(
+            Ticker(
+                "linear",
+                symbol,
+                bid_price=D("1"),
+                ask_price=D("1.01"),
+                source_ts=stale_stamp,
+                received_at=stale_stamp,
+            )
+        )
+        service.quotes.put_book(
+            OrderBook(
+                "linear",
+                symbol,
+                bids=((D("1"), D("10")),),
+                asks=((D("1.01"), D("10")),),
+                source_ts=stale_stamp,
+                received_at=stale_stamp,
+            )
+        )
+        service.specs[("linear", symbol)] = specs()[symbol]
+    refreshed_symbols: list[str] = []
+    original_get_ticker = adapter.get_ticker
+
+    async def recording_get_ticker(category, symbol):
+        refreshed_symbols.append(symbol)
+        return await original_get_ticker(category, symbol)
+
+    adapter.prices["BTCUSDT"] = D("101")  # 刷新后 mid=101.00，与历史样本可区分
+    adapter.get_ticker = recording_get_ticker
+    # 预填 4 条历史样本（间隔 2 秒、各占独立 at_ms 桶）：样本窗口=5，
+    # 影子盘刷新后记录第 5 条即可通过信号判定的样本量门槛。
+    now_ms = int(now_utc().timestamp() * 1000)
+    async with database.sessionmaker() as session:
+        for offset in range(4):
+            session.add(
+                SpreadSignalSample(
+                    environment=ENVIRONMENT,
+                    pair_key="BTCUSDT:ETHUSDT",
+                    at_ms=now_ms - (8 - offset * 2) * 1000,
+                    price_a=D("100") + D(offset) * D("0.01"),
+                    price_b=D("100"),
+                    funding_a=D("0"),
+                    funding_b=D("0"),
+                    raw={"source": "test_baseline"},
+                )
+            )
+        await session.commit()
+    await service._shadow_tick()
+    assert set(refreshed_symbols) == {"BTCUSDT", "ETHUSDT"}, "过期腿必须刷新"
+    async with database.sessionmaker() as session:
+        latest = await session.scalar(
+            select(SpreadSignalSample)
+            .where(
+                SpreadSignalSample.environment == ENVIRONMENT,
+                SpreadSignalSample.pair_key == "BTCUSDT:ETHUSDT",
+            )
+            .order_by(SpreadSignalSample.id.desc())
+            .limit(1)
+        )
+    assert latest is not None, "刷新后影子盘样本必须落库，而不是永远 0 条"
+    assert latest.price_a == D("101.00"), "落库样本必须来自刷新后的新行情"
