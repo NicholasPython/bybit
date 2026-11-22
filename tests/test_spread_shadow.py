@@ -126,13 +126,23 @@ async def test_shadow_samples_and_simulates_without_trade_writes(database):
 
 async def test_shadow_rejects_adapter_with_trade_writes(database):
     class UnsafeAdapter(PublicAdapter):
-        async def create_order(self, request):
-            raise AssertionError("影子盘不得调用交易写接口")
+        allow_trade_writes = True
 
-    with pytest.raises(ValueError, match="公开行情适配器"):
+    with pytest.raises(ValueError, match="allow_trade_writes"):
         ShadowEngine(
             adapter=UnsafeAdapter(), sessionmaker=database.sessionmaker, settings=config()
         )
+
+
+async def test_shadow_accepts_public_rest_adapter(database):
+    """公开只读 REST 适配器（allow_trade_writes=False）必须被接受。"""
+
+    class PublicRestAdapter(PublicAdapter):
+        allow_trade_writes = False
+
+    ShadowEngine(
+        adapter=PublicRestAdapter(), sessionmaker=database.sessionmaker, settings=config()
+    )
 
 
 async def test_shadow_status_is_readonly_and_reports_metrics(database):

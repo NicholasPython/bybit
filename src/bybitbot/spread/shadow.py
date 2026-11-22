@@ -76,8 +76,11 @@ class ShadowEngine:
         if environment != ENVIRONMENT:
             raise ValueError("影子盘只能使用 shadow 环境")
         methods = tuple(getattr(adapter, name, None) for name in ("get_ticker", "get_orderbook"))
-        if not all(callable(method) for method in methods) or hasattr(adapter, "create_order"):
-            raise ValueError("影子盘只接受无交易写能力的公开行情适配器")
+        if not all(callable(method) for method in methods):
+            raise ValueError("影子盘只接受提供公开行情只读接口的适配器")
+        write = getattr(adapter, "allow_trade_writes", None)
+        if write is not None and write is not False:
+            raise ValueError("影子盘适配器必须显式禁用交易写（allow_trade_writes=False）")
         self.adapter = adapter
         self.sessionmaker = sessionmaker
         self.settings = settings

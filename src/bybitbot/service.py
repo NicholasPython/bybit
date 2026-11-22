@@ -761,11 +761,15 @@ class TradingService:
 
     async def _shadow_tick(self):
         """FR-07.3 影子盘：公共行情、模拟撮合，绝不进入订单执行路径。"""
-        engine = ShadowEngine(
-            adapter=self.market_adapter,
-            sessionmaker=self.database.sessionmaker,
-            settings=self.config.spread,
-        )
+        try:
+            engine = ShadowEngine(
+                adapter=self.market_adapter,
+                sessionmaker=self.database.sessionmaker,
+                settings=self.config.spread,
+            )
+        except Exception:  # noqa: BLE001 -- 构造失败只关闭本轮影子盘，不打死主循环。
+            logger.warning("影子盘引擎不可用，本轮跳过", exc_info=True)
+            return
         now_ms = int(now_utc().timestamp() * 1000)
         for config in self.config.spread.pairs:
             if not config.enabled:
