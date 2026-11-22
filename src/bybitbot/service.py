@@ -772,8 +772,7 @@ class TradingService:
             return
         now_ms = int(now_utc().timestamp() * 1000)
         for config in self.config.spread.pairs:
-            if not config.enabled:
-                continue
+            # 配对开关只控制真实执行面；影子盘对声明的配对全部采样。
             symbols = (config.symbol_a, config.symbol_b)
             specs = {
                 symbol: self.specs.get(("linear", symbol))

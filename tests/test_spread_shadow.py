@@ -3,15 +3,19 @@
 from __future__ import annotations
 
 from decimal import Decimal as D
+from pathlib import Path
 
 import pytest
 from sqlalchemy import select
 
 from bybitbot.adapters.base import InstrumentSpec, OrderBook, Ticker
 from bybitbot.clock import now_utc
+from bybitbot.settings.loader import load_config
 from bybitbot.settings.models import SpreadSettings
 from bybitbot.spread.models import ShadowTrade
 from bybitbot.spread.shadow import ENVIRONMENT, ShadowEngine
+
+CONFIG_PATH = Path(__file__).resolve().parents[1] / "config/config.example.yaml"
 
 
 def config(*, enabled=True):
@@ -158,3 +162,47 @@ async def test_shadow_status_is_readonly_and_reports_metrics(database):
     assert status["promotion_candidate"] is False
     assert "不自动改参数" in status["promotion_note"]
     assert await rows(database) == []
+
+
+async def test_shadow_tick_samples_disabled_pairs(database):
+    """影子盘对声明的配对全部采样；配对开关只控制真实执行面。"""
+    import bybitbot.service as service_module
+    from bybitbot.service import TradingService
+
+    base = load_config(CONFIG_PATH)
+    shadow_cfg = SpreadSettings.model_validate(
+        {
+            "enabled": False,
+            "pairs": [
+                {
+                    "pair_key": "BTCUSDT:ETHUSDT",
+                    "symbol_a": "BTCUSDT",
+                    "symbol_b": "ETHUSDT",
+                    "hedge_ratio": "1",
+                    "z_entry": "2",
+                    "z_exit": "0.5",
+                    "z_stop": "3.5",
+                    "max_notional": {"value": "100", "currency": "USDT"},
+                    "max_unhedged_notional": {"value": "20", "currency": "USDT"},
+                    "enabled": False,
+                }
+            ],
+            "shadow": {"enabled": True, "min_depth_notional": "10"},
+        }
+    )
+    cfg = base.model_copy(update={"spread": shadow_cfg})
+    service = TradingService(cfg, database, market_adapter=PublicAdapter())
+    sampled = []
+
+    class RecordingEngine(ShadowEngine):
+        async def evaluate_pair(self, config, **kwargs):
+            sampled.append(config.pair_key)
+            return
+
+    original = service_module.ShadowEngine
+    service_module.ShadowEngine = RecordingEngine
+    try:
+        await service._shadow_tick()
+    finally:
+        service_module.ShadowEngine = original
+    assert sampled == ["BTCUSDT:ETHUSDT"], "影子盘必须采样禁用配对"
