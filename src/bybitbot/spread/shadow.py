@@ -142,19 +142,32 @@ class ShadowEngine:
         spec_a, spec_b = specs.get(config.symbol_a), specs.get(config.symbol_b)
         # 中间价是推导值，落在半档（如 bid=97000.0/ask=97000.1 → mid=97000.05）是
         # 正常现象，不作为订单价格下发；此处只要求双边报价有效，不做 tick 对齐。
-        if (
-            price_a is None
-            or price_b is None
-            or spec_a is None
-            or spec_b is None
-            or not spec_a.tick_size
-            or not spec_b.tick_size
-            or not spec_a.is_tradable
-            or not spec_b.is_tradable
-            or not quote_status.get(config.symbol_a, False)
-            or not quote_status.get(config.symbol_b, False)
-        ):
-            raise SignalUnavailable("影子盘缺少有效双腿公开报价")
+        # 拒绝时逐项给出原因，避免「0 条样本」只能靠猜。
+        problems = []
+        if price_a is None:
+            problems.append(f"{config.symbol_a}:无有效中间价")
+        if price_b is None:
+            problems.append(f"{config.symbol_b}:无有效中间价")
+        if spec_a is None:
+            problems.append(f"{config.symbol_a}:缺合约规格")
+        else:
+            if not spec_a.tick_size:
+                problems.append(f"{config.symbol_a}:tick_size为空")
+            if not spec_a.is_tradable:
+                problems.append(f"{config.symbol_a}:不可交易({spec_a.status})")
+        if spec_b is None:
+            problems.append(f"{config.symbol_b}:缺合约规格")
+        else:
+            if not spec_b.tick_size:
+                problems.append(f"{config.symbol_b}:tick_size为空")
+            if not spec_b.is_tradable:
+                problems.append(f"{config.symbol_b}:不可交易({spec_b.status})")
+        if not quote_status.get(config.symbol_a, False):
+            problems.append(f"{config.symbol_a}:行情过期或缺失")
+        if not quote_status.get(config.symbol_b, False):
+            problems.append(f"{config.symbol_b}:行情过期或缺失")
+        if problems:
+            raise SignalUnavailable("；".join(problems))
         statement = insert(SpreadSignalSample).values(
             environment=self.environment,
             pair_key=config.pair_key,
