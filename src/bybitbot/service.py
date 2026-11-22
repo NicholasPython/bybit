@@ -783,17 +783,26 @@ class TradingService:
                 symbol: self.quotes.status("linear", symbol).usable for symbol in symbols
             }
             if not all(quote_status.values()):
-                # 诊断：采样被拒时把缓存里这两个符号的实际内容打进日志，
-                # 区分「从未拉到」与「拉到了但时间戳过期」。
-                cached = {
-                    symbol: (
-                        self.quotes.get_ticker("linear", symbol) is not None,
-                        self.quotes.get_book("linear", symbol) is not None,
-                    )
-                    for symbol in symbols
-                }
+                # 诊断：采样被拒时把缓存里这两个符号的实际内容与年龄打进日志，
+                # 区分「从未拉到」「拉到了但时间戳过期」以及具体过期的时间戳。
+                now = now_utc()
+                cached = {}
+                for symbol in symbols:
+                    ticker = self.quotes.get_ticker("linear", symbol)
+                    book = self.quotes.get_book("linear", symbol)
+                    ages = {}
+                    for name, stamp in (
+                        ("t_src", ticker.source_ts if ticker else None),
+                        ("t_recv", ticker.received_at if ticker else None),
+                        ("b_src", book.source_ts if book else None),
+                        ("b_recv", book.received_at if book else None),
+                    ):
+                        ages[name] = (
+                            None if stamp is None else round((now - stamp).total_seconds(), 1)
+                        )
+                    cached[symbol] = ages
                 logger.warning(
-                    "影子盘行情缓存快照 %s：ticker/book 存在性=%s，quote_status=%s",
+                    "影子盘行情缓存快照 %s：时间戳年龄秒=%s，quote_status=%s",
                     config.pair_key,
                     cached,
                     quote_status,
