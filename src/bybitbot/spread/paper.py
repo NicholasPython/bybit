@@ -36,10 +36,9 @@ from bybitbot.adapters.paper import ACTIVE_STATUSES, FeeModelMismatch, PaperAdap
 from bybitbot.clock import now_utc
 from bybitbot.fees import FeeModel
 from bybitbot.money import dec
-from bybitbot.settings.models import OrderSide, OrderType, TimeInForce
+from bybitbot.settings.models import LINEAR_TAKER_RATE, OrderSide, OrderType, TimeInForce
 
 ZERO = Decimal("0")
-LINEAR_TAKER_RATE = Decimal("0.00055")
 LINEAR_FEE_VERSION = "linear-paper-fee-v1"
 # Informational only; this never triggers simulated liquidation.
 SYNTHETIC_MAINTENANCE_RATE = Decimal("0.005")

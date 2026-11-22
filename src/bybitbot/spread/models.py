@@ -39,6 +39,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
@@ -343,10 +344,41 @@ class SpreadReconciliationLog(Base):
     )
 
 
+class SpreadSignalSample(Base):
+    """阶段三滚动价差窗口样本；独立于公共行情快照，重启后仍可复算。"""
+
+    __tablename__ = "spread_signal_sample"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    environment: Mapped[str] = mapped_column(String(32), nullable=False)
+    pair_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    at_ms: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    price_a: Mapped[Decimal] = mapped_column(Numeric(38, 18), nullable=False)
+    price_b: Mapped[Decimal] = mapped_column(Numeric(38, 18), nullable=False)
+    funding_a: Mapped[Decimal] = mapped_column(
+        Numeric(38, 18), nullable=False, server_default=text("0")
+    )
+    funding_b: Mapped[Decimal] = mapped_column(
+        Numeric(38, 18), nullable=False, server_default=text("0")
+    )
+    raw: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}")
+    created_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True), default=_now, nullable=False
+    )
+
+    __table_args__ = (
+        UniqueConstraint("environment", "pair_key", "at_ms", name="uq_spread_signal_sample"),
+        CheckConstraint("price_a > 0 AND price_b > 0", name="ck_spread_signal_price"),
+        CheckConstraint("at_ms >= 0", name="ck_spread_signal_time"),
+        Index("ix_spread_signal_window", "environment", "pair_key", "at_ms"),
+    )
+
+
 __all__ = [
     "SpreadExecution",
     "SpreadLegOrder",
     "SpreadPairConfig",
     "SpreadPairTrade",
     "SpreadReconciliationLog",
+    "SpreadSignalSample",
 ]

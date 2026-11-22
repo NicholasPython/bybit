@@ -239,6 +239,18 @@ spread:
   max_pair_equity_ratio: "0.30"
   # 全账户总名义敞口杠杆上限 3x（PRD FR-03.3）。
   max_account_leverage: "3"
+  # 阶段三自动滚动价差信号，默认关闭。启用后仍只允许隔离 USDT paper 账户。
+  # 样本来自 spread_signal_sample；重启不丢失窗口和硬止损冷却。
+  auto:
+    enabled: false
+    window: 60
+    sample_interval_seconds: 60
+    fee_rate: "0.00055"
+    slippage_bps: "5"
+    funding_buffer: "0"
+    max_signal_age_ms: 30000
+    stop_cooldown_seconds: 86400
+    target_notional: "100"
   pairs:
     - pair_key: "BTCUSDT:BTC-26MAR27"
       symbol_a: BTCUSDT

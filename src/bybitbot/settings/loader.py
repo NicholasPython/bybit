@@ -36,6 +36,7 @@ from bybitbot.settings.models import (
     PaperConfig,
     RiskLimits,
     RuntimeConfig,
+    SpreadAutoSettings,
     SpreadSettings,
     StrategyConfig,
 )
@@ -201,7 +202,10 @@ def load_config(
         paper = PaperConfig.model_validate(raw.get("paper") or {})
         fees = FeeEstimationConfig.model_validate(raw.get("fees") or {})
         runtime = RuntimeConfig.model_validate(raw.get("runtime") or {})
-        spread = SpreadSettings.model_validate(raw.get("spread") or {})
+        spread_raw = dict(raw.get("spread") or {})
+        spread_auto = SpreadAutoSettings.model_validate(spread_raw.get("auto") or {})
+        spread_raw["auto"] = spread_auto
+        spread = SpreadSettings.model_validate(spread_raw)
         strategies = tuple(StrategyConfig.model_validate(s) for s in (raw.get("strategies") or []))
     except ValidationError as exc:
         raise ConfigError(f"配置校验失败：\n{exc}") from exc
@@ -243,6 +247,11 @@ def _cross_validate(cfg: AppConfig) -> None:
             coin != "USDT" and value != 0 for coin, value in cfg.paper.initial_balances.items()
         ):
             raise ConfigError("阶段二套利只允许 USDT 资金与估值")
+        if (
+            cfg.spread.auto.enabled
+            and cfg.spread.auto.sample_interval_seconds < cfg.runtime.poll_seconds
+        ):
+            raise ConfigError("自动信号采样间隔不能短于 worker 轮询间隔")
     if cfg.active_environment is not Environment.PAPER and cfg.paper.market_source == "synthetic":
         raise ConfigError("合成行情只允许用于 paper 环境")
 

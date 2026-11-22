@@ -852,6 +852,45 @@ class SpreadPairSettings(BaseModel):
         return self
 
 
+#: Bybit 线性合约非 VIP taker 费率（阶段三成本过滤默认值）。
+LINEAR_TAKER_RATE = Decimal("0.00055")
+
+
+class SpreadAutoSettings(BaseModel):
+    """阶段三自动价差信号配置。
+
+    默认不启用；启用后仍只限独立 paper 账户。窗口样本来自持久化
+    ``spread_signal_sample``，不读取或覆盖既有公共行情快照。
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    enabled: bool = False
+    #: 滚动窗口必须大于 2，至少保存同样数量的样本。
+    window: Annotated[int, Field(ge=5, le=500)] = 60
+    #: 采样间隔秒数；必须不小于 worker 轮询间隔。
+    sample_interval_seconds: Annotated[int, Field(ge=2, le=3600)] = 60
+    #: 单腿 taker 费率（按成交额计收），用于预期成本过滤。
+    fee_rate: Annotated[Decimal, Field(ge=0, le=1)] = LINEAR_TAKER_RATE
+    #: 单边滑点估计（基点），双腿均计入成本。
+    slippage_bps: Annotated[Decimal, Field(ge=0)] = Decimal("5")
+    #: 资金费率逆风缓冲金额（USDT）。
+    funding_buffer: Annotated[Decimal, Field(ge=0)] = Decimal("0")
+    #: 样本最大年龄（毫秒），超过后拒绝产生新信号。
+    max_signal_age_ms: Annotated[int, Field(ge=1000)] = 30000
+    #: 硬止损后的配对冷却时间（秒）。
+    stop_cooldown_seconds: Annotated[int, Field(ge=60)] = 86400
+    #: 入场信号使用的目标名义价值（每腿 USDT）。
+    target_notional: Annotated[Decimal, Field(gt=0)] = Decimal("100")
+
+    @model_validator(mode="after")
+    def _consistent(self) -> SpreadAutoSettings:
+        values = (self.fee_rate, self.slippage_bps, self.funding_buffer, self.target_notional)
+        if not all(value.is_finite() for value in values):
+            raise ValueError("自动信号阈值必须为有限数")
+        return self
+
+
 class SpreadSettings(BaseModel):
     """双腿价差套利子系统配置。
 
@@ -870,6 +909,8 @@ class SpreadSettings(BaseModel):
     max_pair_equity_ratio: Decimal = Decimal("0.30")
     #: 全账户总名义敞口杠杆上限（PRD FR-03.3：3x）。
     max_account_leverage: Decimal = Decimal("3")
+    #: 阶段三滚动价差信号；默认关闭。
+    auto: SpreadAutoSettings = SpreadAutoSettings()
 
     @model_validator(mode="after")
     def _consistent(self) -> SpreadSettings:

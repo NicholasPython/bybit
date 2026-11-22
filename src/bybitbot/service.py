@@ -70,6 +70,7 @@ from bybitbot.risk.reservation import ReservationError, ReservationManager
 from bybitbot.scheduler import Scheduler
 from bybitbot.settings.loader import AppConfig, load_config
 from bybitbot.settings.secrets import load_credentials
+from bybitbot.spread.auto import SpreadAutoSignal
 from bybitbot.spread.models import SpreadLegOrder, SpreadPairTrade
 from bybitbot.spread.paper import LinearPaperAdapter
 from bybitbot.spread.runner import SpreadExecutor
@@ -670,7 +671,11 @@ class TradingService:
             result = await self.spread_executor.tick(paused=paused)
             if not result.allows_resume:
                 await self._fault("SPREAD_RECONCILIATION", "套利订单、成交、仓位或现金待核实")
-            await self._account_sync()
+                result = None
+            else:
+                await self._account_sync()
+            if result is not None and result.allows_resume and not paused:
+                await self._spread_auto_tick()
         elif self.lease.state is LeaseState.ELIGIBLE:
             await self._cancel_expired(paused=paused)
             await self._exit_rules()
@@ -702,6 +707,53 @@ class TradingService:
         if self.account_at is None or (now_utc() - self.account_at).total_seconds() > 30:
             raise RuntimeError("套利账户快照已过期")
         return await self.spread_executor.open_pair(signal)
+
+    async def _spread_auto_tick(self):
+        """阶段三滚动价差信号；所有动作仍走阶段二的受控开/平仓入口。"""
+        if not self.config.spread.auto.enabled:
+            return
+        signal_engine = SpreadAutoSignal(
+            adapter=self.adapter,
+            sessionmaker=self.database.sessionmaker,
+            environment=self.environment,
+            account_uid=self.uid,
+            settings=self.config.spread,
+        )
+        now_ms = int(now_utc().timestamp() * 1000)
+        for config in self.config.spread.pairs:
+            if not config.enabled:
+                continue
+            symbols = (config.symbol_a, config.symbol_b)
+            specs = {
+                symbol: self.specs.get(("linear", symbol))
+                for symbol in symbols
+                if self.specs.get(("linear", symbol)) is not None
+            }
+            quote_status = {symbol: self.quotes.status("linear", symbol) for symbol in symbols}
+            try:
+                result = await signal_engine.evaluate_pair(
+                    config,
+                    quotes=self.quotes,
+                    specs=specs,
+                    quote_status=quote_status,
+                    now_ms=now_ms,
+                )
+            except Exception:  # noqa: BLE001 -- 信号异常只跳过当前币对，不污染主循环。
+                logger.warning("套利信号计算失败：%s", config.pair_key, exc_info=True)
+                continue
+            if result.signal is not None:
+                try:
+                    await self.open_spread(result.signal)
+                except Exception:  # noqa: BLE001 -- 阶段二权限校验的拒绝不影响其他币对。
+                    logger.warning("自动套利开仓被拒绝：%s", config.pair_key, exc_info=True)
+            elif result.close_pair_id and result.decision is not None:
+                try:
+                    await self.close_spread(
+                        result.close_pair_id,
+                        reason=f"auto:{result.decision.reason}:{result.decision.action}",
+                    )
+                except Exception:  # noqa: BLE001 -- 平仓失败由阶段二重启恢复与对账接管。
+                    logger.warning("自动套利平仓失败：%s", config.pair_key, exc_info=True)
 
     async def close_spread(self, pair_trade_id, *, reason):
         if not self.config.spread.enabled or not hasattr(self, "spread_executor"):
