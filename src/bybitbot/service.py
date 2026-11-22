@@ -678,8 +678,9 @@ class TradingService:
             if result is not None and result.allows_resume and not paused:
                 await self._spread_auto_tick()
         if self.config.spread.shadow.enabled:
+            # 影子盘是只读观察，不占执行租约；暂停期间也持续采样。
             await self._shadow_tick()
-        elif self.lease.state is LeaseState.ELIGIBLE:
+        if self.lease.state is LeaseState.ELIGIBLE:
             await self._cancel_expired(paused=paused)
             await self._exit_rules()
             await self._schedule()
