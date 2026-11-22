@@ -17,7 +17,7 @@
 | 应用镜像 | `localhost/bybitbot:0.1.0`；发布前记录完整 image ID |
 | 基础运行时镜像 | `localhost/bybitbot-runtime:0.1.0` |
 | 数据库镜像 | 复用已有 `localhost/artex-postgres:16` 镜像，使用独立的 Bybit 命名卷 |
-| 数据库 schema head | `d438b9a83a10` |
+| 数据库 schema head | `a612e47bc903` |
 | Quadlet 源文件 | `~/.config/containers/systemd/bybitbot-*.container` 和 `.volume` |
 | 运行配置、数据库环境变量、管理身份 | `~/.config/bybitbot/{config.yaml,postgres.env,admin.json}`，0600 |
 | 备份加密公钥 | `~/.config/bybitbot/backup-public.asc` |
@@ -231,6 +231,12 @@ CCA09EDDB905C807F03D697A1D9AEFAD85C1BB92
 这是空成交 paper 数据的恢复演练；尚未覆盖“备份后真实成交回填”、只读服务启动耗时或完整 RTO/RPO 测量。恢复数据库不得启动第二个能发单的 worker。正式恢复后核对完整历史、身份、在途订单、持仓、现金与预留，保留已有基线及历史高点；历史无法证实时保持暂停，不能通过重新初始化基线消除差异。
 
 ## 6. 密钥轮换
+
+2026-11-22 双腿套利阶段二发布已核验：代码提交 `bcd5d92` 已推送至 `origin/feat/spot-lab-module`；镜像 `297fdf917162172b3284333a9830098b71ce7f3dce1959b96848ef4e67f6d482`，发布标签 `localhost/bybitbot:release-20261122-spread-v1`（已移动为 `0.1.0`），回滚点 `localhost/bybitbot:rollback-before-release-20261122-spread-v1`（`cd8448e1b1cb1ea622c86d00a693a0011485488697ff54e4df974999da6d8557`）。依赖锁未变，基础层未重建。提交前完整 Python 回归 1788 项通过、页面测试 24 项通过。
+
+发布前使用新版 `backup.sh` 生成 `bybitbot-20261122T071709Z-bybitbot_paper.dump.gpg`（8,879,642 字节），脚本已在容器内通过 `pg_restore --list` 验证归档可恢复，随后复制到 NAS 的 `~/.local/share/bybitbot/bin/backup.sh`。发布过程先把数据库从 `d438b9a83a10` 升至 `a612e47bc903`（两级事务性 DDL），再切换服务镜像。切换瞬间旧镜像 worker 的 `ExecStartPre` 迁移无法识别新 head，容器以 137 退出；已先将 `0.1.0` 暂时指回旧镜像恢复心跳，再重新指向新镜像并重启。最终 worker 持续运行、无自动重启，`NRestarts=0`；心跳从 `07:22:16Z` 持续推进，`last_error` 为空， NAS 本机与 Tailscale `/health` 均 HTTP 200。
+
+当前仍保持 `state=PAUSED_OPEN`、`lease=NEEDS_CONFIRMATION`、`baseline_available=false`，活动暂停为 `CONFIG_CHANGED`（锁定）、`MANUAL`、`NOTIFICATION_FAILURE`、`VALUATION_UNAVAILABLE`，两条旧策略均禁用；物理订单、成交、意图、非零库存及套利配对/腿单/逐笔成交均为零。套利配置默认关闭，未确认接管、未建立风险基线、未启用策略，也未使用任何交易凭据。回滚到 `cd8448e1b1cb` 前必须先把 schema 降回 `d438b9a83a10`，否则旧镜像的启动前迁移无法识别新 revision；仅切换镜像标签不足够。
 
 ### Bybit API 凭据
 
