@@ -73,7 +73,7 @@ uv run ruff check src tests deploy
 uv run pytest -q
 ```
 
-2026-11-22 影子盘后最新结果为 **1839 项通过**（Alembic `path_separator` 弃用警告）。测试在 `BYBITBOT_TESTING=1` 下运行；`tests/conftest.py` 阻断 httpx 的默认同步和异步 HTTP transport，交易所 HTTP 响应使用 `httpx.MockTransport`，交易行为使用 `PaperAdapter` 合成。数据库用例各自使用独立 PostgreSQL schema，结束后只删除自己的 schema。这不是操作系统级网络隔离，也不构成真实 Bybit 能力验收。管理页脚本另有 `node --test tests/console_ui.test.mjs`（16 项）覆盖。
+2026-11-22 影子盘后最新结果为 **1841 项通过**（Alembic `path_separator` 弃用警告）。测试在 `BYBITBOT_TESTING=1` 下运行；`tests/conftest.py` 阻断 httpx 的默认同步和异步 HTTP transport，交易所 HTTP 响应使用 `httpx.MockTransport`，交易行为使用 `PaperAdapter` 合成。数据库用例各自使用独立 PostgreSQL schema，结束后只删除自己的 schema。这不是操作系统级网络隔离，也不构成真实 Bybit 能力验收。管理页脚本另有 `node --test tests/console_ui.test.mjs`（16 项）覆盖。
 
 现货采集与回测子工程的测试随同 `pytest` 一起运行（`research` 在 `testpaths` 内，Flask 已在 `dev` 附加依赖中固定为 3.1.3）；它的页面交互另有 `node --test research/bybit_spot_backtest/tests/test_ui.cjs`（7 项）。两者都不需要网络与交易所凭据。
 
@@ -188,7 +188,7 @@ uv run bybitbot sandbox verify --directory var/paper-system
 src/bybitbot/     应用代码
 research/         研究脚本（含现货－永续价差只读采集与回测）
 research/bybit_spot_backtest/  现货 1 分钟采集与回测子工程（独立于交易服务）
-tests/            1839 项 Python 隔离测试、16 项页面脚本测试
+tests/            1841 项 Python 隔离测试、16 项页面脚本测试
 alembic/          数据库迁移（当前 head: c9d3f7a2b6e4）
 config/           配置示例（无密钥）
 deploy/           容器、Quadlet、备份、Mac 端监控与安装脚本
