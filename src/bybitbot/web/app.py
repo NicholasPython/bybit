@@ -33,6 +33,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from itsdangerous import BadData, URLSafeSerializer
 from pydantic import (
+    AfterValidator,
     BaseModel,
     ConfigDict,
     Field,
@@ -67,6 +68,15 @@ from bybitbot.db.models import (
 from bybitbot.db.session import Database
 from bybitbot.ops.control import ControlCommandManager
 from bybitbot.settings.loader import AppConfig
+from bybitbot.settings.models import Environment
+from bybitbot.settings.writer import (
+    ReadOnlyConfig,
+    RevisionConflict,
+    ShadowConfigError,
+    field_errors,
+    read_shadow_config,
+    write_spread,
+)
 from bybitbot.spread.shadow import ShadowEngine
 
 SESSION_COOKIE = "bybitbot_session"
@@ -136,6 +146,72 @@ class ResumePayload(_RequestModel):
 class TakeoverPayload(_RequestModel):
     evidence: Reason
     reason: Reason
+
+
+ShadowDecimal = Annotated[
+    str,
+    StringConstraints(pattern=r"^[+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$", max_length=64),
+]
+BoundedInt = Annotated[int, Field(strict=True)]
+
+
+def _int_range(lower: int, upper: int | None = None) -> Any:
+    range_text = f"{lower}–{upper}" if upper is not None else f"≥{lower}"
+
+    def check(value: int) -> int:
+        if value < lower or (upper is not None and value > upper):
+            raise ValueError(f"必须在 {range_text} 之间" if upper else f"必须 {range_text}")
+        return value
+
+    return Annotated[BoundedInt, AfterValidator(check)]
+
+
+class ShadowAmountPayload(_RequestModel):
+    value: ShadowDecimal
+    currency: Literal["USDT"]
+
+
+class ShadowPairPayload(_RequestModel):
+    """Only editable research fields; execution controls stay on disk."""
+
+    pair_key: str = Field(min_length=3, max_length=64)
+    symbol_a: Symbol
+    symbol_b: Symbol
+    hedge_ratio: ShadowDecimal
+    z_entry: ShadowDecimal
+    z_exit: ShadowDecimal
+    z_stop: ShadowDecimal
+    max_notional: ShadowAmountPayload
+    max_unhedged_notional: ShadowAmountPayload
+
+
+class ShadowAutoPayload(_RequestModel):
+    window: _int_range(5, 500)
+    sample_interval_seconds: _int_range(2, 3600)
+    fee_rate: ShadowDecimal
+    slippage_bps: ShadowDecimal
+    funding_buffer: ShadowDecimal
+    max_signal_age_ms: _int_range(1000)
+    stop_cooldown_seconds: _int_range(60)
+    target_notional: ShadowDecimal
+
+
+class ShadowSettingsPayload(_RequestModel):
+    enabled: bool = Field(strict=True)
+    public_market_url: Literal["https://api.bybit.com"]
+    observation_days: _int_range(1, 30)
+    min_depth_notional: ShadowDecimal
+    impact_bps_per_depth: ShadowDecimal
+    min_sharpe: ShadowDecimal
+    max_drawdown: ShadowDecimal
+    max_signal_age_ms: _int_range(1000)
+
+
+class ShadowConfigPayload(_RequestModel):
+    revision: str = Field(pattern=r"^[a-f0-9]{64}$")
+    shadow: ShadowSettingsPayload
+    auto: ShadowAutoPayload
+    pairs: list[ShadowPairPayload] = Field(max_length=20)
 
 
 class ValidationStartPayload(_RequestModel):
@@ -1254,10 +1330,40 @@ async def _parse(request: Request, model: type[BaseModel]) -> Any:
         if len(body) > BODY_LIMIT:
             raise HTTPException(413, "请求内容过长。")
     try:
+        if model is ShadowConfigPayload:
+
+            def unique_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+                result = {}
+                for key, value in pairs:
+                    if key in result:
+                        raise ValueError("duplicate JSON key")
+                    result[key] = value
+                return result
+
+            return model.model_validate(json.loads(body, object_pairs_hook=unique_keys))
         return model.model_validate_json(body)
-    except ValidationError:
-        # Pydantic's normal error response echoes input, which can contain a password or raw params.
+    except ValidationError as exc:
+        if model is ShadowConfigPayload:
+            # Locations are allowlisted, since extra-field names can themselves
+            # contain secrets. Never echo validator messages or rejected inputs.
+            allowed = set().union(
+                *(
+                    schema.model_fields.keys()
+                    for schema in (
+                        ShadowConfigPayload,
+                        ShadowSettingsPayload,
+                        ShadowAutoPayload,
+                        ShadowPairPayload,
+                        ShadowAmountPayload,
+                    )
+                )
+            )
+            problems = field_errors(exc, allowed=allowed)
+            detail = "配置参数无效：" + "；".join(problems[:6])
+            raise HTTPException(422, detail) from None
         raise HTTPException(422, "请求格式、操作范围或确认文字无效。") from None
+    except (ValueError, UnicodeError):
+        raise HTTPException(422, "JSON 格式无效或含重复字段。") from None
 
 
 class _NoMarketAdapter:
@@ -1277,8 +1383,14 @@ def create_app(
     secure_cookies: bool = True,
     *,
     clock: Callable[[], dt.datetime] | None = None,
+    config_path: Path | str | None = None,
 ) -> FastAPI:
-    """Build the console without owning the database lifecycle or launching a worker."""
+    """Build the console without owning the database lifecycle or launching a worker.
+
+    ``config_path`` 是配置文件路径；提供后启用影子盘配置页的受控写入
+    （GET/PUT ``/api/shadow/config``）。不提供则相关端点返回 404，页面仍可
+    只读展示。
+    """
     admin = _load_admin(auth_path)
     sessions = _Sessions(admin.session_secret)
     limits = _LoginLimits()
@@ -1421,18 +1533,87 @@ def create_app(
         except SQLAlchemyError:
             raise HTTPException(503, "暂时无法读取数据库；请检查服务与数据库连接。") from None
 
+    async def saved_shadow_config():
+        if config_path is None:
+            raise HTTPException(404, "当前部署未启用配置写入；请在服务器侧维护配置。")
+        try:
+            return await run_in_threadpool(read_shadow_config, config_path)
+        except OSError:
+            raise HTTPException(503, "无法读取配置；请在服务器侧核对权限与磁盘。") from None
+        except ShadowConfigError as exc:
+            raise HTTPException(422, str(exc)) from None
+
     @app.get("/api/shadow", dependencies=[Depends(authenticated)])
     async def shadow_view() -> dict[str, Any]:
-        """FR-07.3 影子盘只读投影；不做任何订单写操作。"""
+        """Metrics use the explicitly labeled web-start configuration, not a worker claim."""
         try:
             engine = ShadowEngine(
                 adapter=_NoMarketAdapter(),
                 sessionmaker=database.sessionmaker,
                 settings=config.spread,
             )
-            return await engine.status()
+            result = await engine.status()
+            result.update(configuration_source="web_start", runtime_verified=False)
+            if config_path is not None:
+                saved = await saved_shadow_config()
+                result.update(
+                    saved_enabled=saved.config.spread.shadow.enabled,
+                    saved_revision=saved.revision,
+                    pending_restart=saved.config.spread != config.spread,
+                )
+            return result
         except SQLAlchemyError:
             raise HTTPException(503, "暂时无法读取影子盘记录；请检查数据库。") from None
+
+    @app.get("/api/shadow/config", dependencies=[Depends(authenticated)])
+    async def shadow_config_view() -> dict[str, Any]:
+        """Read the saved file afresh; expose only research settings and safe metadata."""
+        result = (await saved_shadow_config()).public()
+        if config.active_environment is not Environment.PAPER:
+            result.update(writable=False, read_only_reason="仅 paper 环境允许编辑影子盘配置。")
+        elif config.spread.enabled or config.spread.auto.enabled:
+            result.update(
+                writable=False,
+                read_only_reason="执行面已在 web 启动配置中启用；关闭并重启服务后再编辑。",
+            )
+        return result
+
+    @app.put("/api/shadow/config")
+    async def shadow_config_write(
+        request: Request, session: dict[str, Any] = Depends(write_session)
+    ) -> Response:
+        if config_path is None:
+            raise HTTPException(404, "当前部署未启用配置写入；请在服务器侧维护配置。")
+        body: ShadowConfigPayload = await _parse(request, ShadowConfigPayload)
+        # A running paper execution process might still use the startup settings
+        # even after someone manually disables execution in the saved file.
+        if config.active_environment is not Environment.PAPER:
+            raise HTTPException(403, "仅 paper 环境允许编辑影子盘配置。")
+        if config.spread.enabled or config.spread.auto.enabled:
+            raise HTTPException(403, "执行面已在 web 启动配置中启用；关闭并重启服务后再编辑。")
+        try:
+            result = await run_in_threadpool(
+                write_spread,
+                config_path,
+                body.model_dump(mode="json", exclude={"revision"}),
+                revision=body.revision,
+            )
+        except RevisionConflict as exc:
+            raise HTTPException(409, str(exc)) from None
+        except ReadOnlyConfig as exc:
+            raise HTTPException(403, str(exc)) from None
+        except ShadowConfigError as exc:
+            raise HTTPException(422, str(exc)) from None
+        except OSError:
+            raise HTTPException(503, "配置文件写入失败；请在服务器侧核对权限与磁盘。") from None
+        return JSONResponse(
+            {
+                "written": True,
+                **result,
+                "restart_required": True,
+                "note": "配置已校验并保存；请手动重启 worker 后生效，未自动重启任何服务。",
+            }
+        )
 
     @app.get("/api/validation/{run_id}/export", dependencies=[Depends(authenticated)])
     async def validation_export(run_id: str) -> Response:

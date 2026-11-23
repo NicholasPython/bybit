@@ -58,6 +58,28 @@
         <dl id="shadow-summary" class="evidence-grid" aria-live="polite"></dl>
         <p id="shadow-note" class="notice">正在读取影子盘状态。</p>
       </section>
+      <section class="data-section shadow-editor" aria-labelledby="shadow-config-heading">
+        <div class="section-heading"><h2 id="shadow-config-heading">影子盘配置</h2><span class="muted">保存到服务器 · 重启 worker 与 web 后生效</span></div>
+        <p class="section-caption">这里编辑的是已保存配置。保存时自动备份旧文件；页面不会重启服务或启用交易执行。上方统计来自历史模拟记录，不能据此确认新参数已生效。</p>
+        <p id="shadow-config-status" class="notice" role="status" aria-live="polite">正在读取已保存配置。</p>
+        <p id="shadow-config-error" class="error-message" role="alert" hidden></p>
+        <form id="shadow-config-form">
+          <fieldset id="shadow-config-fields" class="shadow-config-fields" disabled>
+            <legend class="sr-only">影子盘配置参数</legend>
+            <label class="shadow-switch" for="shadow-setting-enabled"><input id="shadow-setting-enabled" type="checkbox"><span><strong>启用影子盘观察</strong><small>仅公开行情与模拟成交，不产生真实订单。</small></span></label>
+            <div class="shadow-config-group"><h3>采样与观察</h3><p class="section-caption">滚动窗口攒满后才计算信号；采样间隔不得短于 worker 轮询间隔。</p><div id="shadow-sampling-fields" class="shadow-field-grid"></div></div>
+            <div class="shadow-config-group"><h3>模拟成交</h3><p class="section-caption">名义金额按每条腿计算。费用与冲击成本纳入模拟盈亏。</p><div id="shadow-execution-fields" class="shadow-field-grid"></div></div>
+            <div class="shadow-config-group"><h3>人工审阅门槛</h3><p class="section-caption">达到门槛只标记候选，仍需人工审阅，不会自动晋升实盘。</p><div id="shadow-review-fields" class="shadow-field-grid"></div></div>
+            <div class="shadow-config-group">
+              <div class="section-heading"><h3>观察配对</h3><button id="shadow-add-pair" class="button secondary small" type="button">添加配对</button></div>
+              <p class="section-caption">使用 U 本位合约符号，例如 BTCUSDT。阈值按绝对偏离度计算，必须满足退出 &lt; 入场 &lt; 止损；影子盘观察这里的所有配对。</p>
+              <div id="shadow-pair-fields" class="shadow-pair-list"></div>
+              <p id="shadow-pairs-empty" class="muted" hidden>还没有观察配对。添加至少一个配对后才能启用影子盘。</p>
+            </div>
+          </fieldset>
+          <div class="shadow-config-actions"><button id="shadow-config-save" class="button primary" type="submit" disabled>保存配置</button><button id="shadow-config-reload" class="button secondary" type="button">重新读取配置</button><span id="shadow-config-dirty" class="muted">尚未读取</span></div>
+        </form>
+      </section>
       <section class="data-section">
         <div class="section-heading"><h2>最近模拟决策</h2><span class="muted">最近 20 条 · 均为 simulated</span></div>
         <div class="table-scroll" tabindex="0" aria-label="影子盘最近模拟决策"><table><thead><tr><th>配对</th><th>动作</th><th>理由</th><th class="numeric">模拟净盈亏 (USDT)</th><th>深度</th><th>时间 (UTC)</th></tr></thead><tbody id="shadow-decisions-body"></tbody></table></div>

@@ -580,7 +580,187 @@
     if (tracked) $("command-notice").textContent = commandNotice(tracked);
   }
 
-  // Shadow mode is read-only: the UI never submits an order or a promotion command.
+  // Configuration is loaded once, independently of the 15-second status refresh.
+  const shadowFields = [
+    ["shadow", "observation_days", "观察天数", "sampling", "1–30 天", 1, 30, 1],
+    ["auto", "window", "滚动窗口（样本数）", "sampling", "5–500 个样本", 5, 500, 1],
+    ["auto", "sample_interval_seconds", "采样间隔（秒）", "sampling", "2–3600 秒，实际频率受 worker 轮询影响", 2, 3600, 1],
+    ["shadow", "max_signal_age_ms", "行情最大年龄（毫秒）", "sampling", "至少 1000 毫秒", 1000, null, 1],
+    ["auto", "max_signal_age_ms", "信号最大年龄（毫秒）", "sampling", "至少 1000 毫秒", 1000, null, 1],
+    ["auto", "stop_cooldown_seconds", "止损冷却（秒）", "sampling", "至少 60 秒", 60, null, 1],
+    ["auto", "target_notional", "每腿目标名义金额（USDT）", "execution", "必须大于 0", 0, null, "any"],
+    ["shadow", "min_depth_notional", "最小盘口深度（USDT）", "execution", "必须大于 0；深度不足时不模拟开仓", 0, null, "any"],
+    ["auto", "fee_rate", "单腿 taker 费率", "execution", "小数比例：0.00055 = 0.055%", 0, 1, "any"],
+    ["auto", "slippage_bps", "单边滑点估计（基点）", "execution", "1 基点 = 0.01%", 0, null, "any"],
+    ["shadow", "impact_bps_per_depth", "每腿深度冲击（基点）", "execution", "按可见盘口深度估算", 0, null, "any"],
+    ["auto", "funding_buffer", "资金费率缓冲（USDT）", "execution", "非负金额", 0, null, "any"],
+    ["shadow", "min_sharpe", "最低模拟 Sharpe", "review", "超过该值才具备候选资格", 0, null, "any"],
+    ["shadow", "max_drawdown", "最大模拟回撤", "review", "小数比例：0.03 = 3%", 0, 1, "any"],
+  ];
+  const pairFields = [
+    ["symbol_a", "合约 A", "例如 BTCUSDT", "text"],
+    ["symbol_b", "合约 B", "例如 ETHUSDT", "text"],
+    ["hedge_ratio", "对冲系数 β", "必须大于 0", "number"],
+    ["z_entry", "入场阈值 |Z|", "大于退出阈值", "number"],
+    ["z_exit", "退出阈值 |Z|", "非负，且小于入场阈值", "number"],
+    ["z_stop", "止损阈值 |Z|", "大于入场阈值", "number"],
+    ["max_notional", "单组名义上限（USDT）", "必须大于裸敞口上限", "number"],
+    ["max_unhedged_notional", "裸敞口上限（USDT）", "必须小于单组名义上限", "number"],
+  ];
+  let shadowConfig = null;
+  let shadowPairs = [];
+  let shadowBusy = false;
+  let shadowDirty = false;
+  const configField = (container, id, label, help, type = "number", min = 0, max = null, step = "any") => {
+    const wrapper = node("div", undefined, "shadow-field");
+    const caption = node("label", label);
+    caption.htmlFor = id;
+    const input = node("input");
+    input.id = id; input.type = type; input.required = true;
+    input.autocomplete = "off";
+    if (type === "number") {
+      input.min = String(min); input.step = String(step);
+      if (max !== null) input.max = String(max);
+    } else { input.maxLength = 32; input.spellcheck = false; }
+    const hint = node("small", help); hint.id = `${id}-help`;
+    input.setAttribute("aria-describedby", hint.id);
+    wrapper.append(caption, input, hint); container.append(wrapper);
+    return input;
+  };
+  const updateShadowControls = () => {
+    const editable = !!shadowConfig?.writable;
+    $("shadow-config-fields").disabled = shadowBusy || !editable;
+    $("shadow-config-save").disabled = shadowBusy || !editable || !shadowDirty;
+    $("shadow-config-save").textContent = shadowBusy ? "正在处理…" : "保存配置";
+    $("shadow-config-reload").disabled = shadowBusy;
+    $("shadow-config-reload").textContent = shadowDirty ? "放弃修改并重新读取" : "重新读取配置";
+    $("shadow-config-dirty").textContent = shadowDirty ? "有未保存的修改" : shadowConfig ? "已读取服务器配置" : "尚未读取";
+    $("shadow-add-pair").disabled = shadowPairs.length >= 20;
+    $("shadow-pairs-empty").hidden = shadowPairs.length > 0;
+  };
+  const markShadowDirty = () => {
+    if (!shadowConfig?.writable || shadowBusy) return;
+    shadowDirty = true;
+    showError($("shadow-config-error"), "");
+    updateShadowControls();
+  };
+  const addShadowPair = (pair) => {
+    shadowPairs.push({
+      values: Object.fromEntries(pairFields.map(([key]) => [key, text(pair[key]?.value ?? pair[key], "")])),
+      inputs: {},
+      currency: pair.max_notional?.currency || "USDT",
+      unhedgedCurrency: pair.max_unhedged_notional?.currency || "USDT",
+    });
+    renderShadowPairs();
+  };
+  // 配对按数据重建 DOM：字段 id 跟随下标，重新读取后仍然稳定。
+  const renderShadowPairs = () => {
+    const container = $("shadow-pair-fields");
+    container.replaceChildren();
+    shadowPairs.forEach((entry, index) => {
+      const card = node("div", undefined, "shadow-pair");
+      const heading = node("div", undefined, "section-heading");
+      const title = node("strong", `${entry.values.symbol_a.toUpperCase() || "合约 A"}:${entry.values.symbol_b.toUpperCase() || "合约 B"}`);
+      const remove = node("button", "移除配对", "button secondary small"); remove.type = "button";
+      heading.append(title, remove);
+      const grid = node("div", undefined, "shadow-field-grid");
+      card.append(heading, grid);
+      for (const [key, label, help, type] of pairFields) {
+        const currency = key === "max_notional" ? entry.currency : entry.unhedgedCurrency;
+        const input = configField(grid, `shadow-pair-${index}-${key}`, label.replace("USDT", currency), help, type);
+        input.value = entry.values[key];
+        entry.inputs[key] = input;
+        input.addEventListener("input", () => {
+          entry.values[key] = input.value;
+          if (key === "symbol_a" || key === "symbol_b") {
+            title.textContent = `${entry.values.symbol_a.toUpperCase() || "合约 A"}:${entry.values.symbol_b.toUpperCase() || "合约 B"}`;
+          }
+        });
+      }
+      remove.addEventListener("click", () => {
+        if (shadowBusy || !shadowConfig?.writable) return;
+        shadowPairs.splice(index, 1);
+        renderShadowPairs();
+        markShadowDirty();
+      });
+      container.append(card);
+    });
+    $("shadow-pairs-empty").hidden = shadowPairs.length > 0;
+  };
+  async function loadShadowConfig() {
+    if (shadowBusy) return;
+    shadowBusy = true; updateShadowControls();
+    showError($("shadow-config-error"), "");
+    try {
+      const data = await request("/api/shadow/config");
+      shadowConfig = data;
+      $("shadow-setting-enabled").checked = data.shadow.enabled;
+      for (const [group, key] of shadowFields) $("shadow-setting-" + group + "-" + key).value = String(data[group][key]);
+      shadowPairs = []; renderShadowPairs();
+      for (const pair of data.pairs) addShadowPair(pair);
+      shadowDirty = false;
+      $("shadow-config-status").textContent = data.writable
+        ? "已读取服务器上的已保存配置。修改后点击保存，再手动重启 worker；这里不确认运行中参数。"
+        : data.read_only_reason || "当前部署仅允许查看配置，请在服务器侧维护。";
+    } catch (error) {
+      // Retain draft values on failed reload; retrying is an explicit user action.
+      showError($("shadow-config-error"), error.status ? error.message : "无法读取配置；已保留输入，请重试读取。");
+      $("shadow-config-status").textContent = "尚未取得最新配置。";
+    } finally { shadowBusy = false; updateShadowControls(); }
+  }
+  const shadowForm = $("shadow-config-form");
+  if (shadowForm) {
+    for (const [group, key, label, section, help, min, max, step] of shadowFields) {
+      configField($("shadow-" + section + "-fields"), "shadow-setting-" + group + "-" + key, label, help, "number", min, max, step);
+    }
+    shadowForm.addEventListener("input", markShadowDirty);
+    shadowForm.addEventListener("change", markShadowDirty);
+    $("shadow-add-pair").addEventListener("click", () => {
+      if (shadowBusy || !shadowConfig?.writable || shadowPairs.length >= 20) return;
+      addShadowPair({ symbol_a: "", symbol_b: "", hedge_ratio: "1", z_entry: "2", z_exit: "0.5", z_stop: "3", max_notional: { value: "1000", currency: "USDT" }, max_unhedged_notional: { value: "25", currency: "USDT" } });
+      markShadowDirty();
+      document.getElementById(`shadow-pair-${shadowPairs.length - 1}-symbol_a`)?.focus();
+    });
+    $("shadow-config-reload").addEventListener("click", loadShadowConfig);
+    shadowForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (shadowBusy || !shadowConfig?.writable || !shadowDirty || !session) return;
+      if (shadowForm.reportValidity && !shadowForm.reportValidity()) return;
+      if ($("shadow-setting-enabled").checked && !shadowPairs.length) {
+        showError($("shadow-config-error"), "请添加至少一个观察配对后再启用影子盘。"); return;
+      }
+      const body = { revision: shadowConfig.revision, shadow: { ...shadowConfig.shadow, enabled: $("shadow-setting-enabled").checked }, auto: {}, pairs: [] };
+      for (const [group, key, , , , , , step] of shadowFields) {
+        const value = $("shadow-setting-" + group + "-" + key).value.trim();
+        body[group][key] = step === 1 ? Number(value) : value;
+      }
+      for (const entry of shadowPairs) {
+        const pair = {};
+        // 读取输入框当前值：模型只是缓存，页面上的值才是操作者看到的。
+        for (const [key] of pairFields) pair[key] = (entry.inputs[key]?.value ?? entry.values[key]).trim();
+        pair.symbol_a = pair.symbol_a.toUpperCase(); pair.symbol_b = pair.symbol_b.toUpperCase();
+        pair.pair_key = `${pair.symbol_a}:${pair.symbol_b}`;
+        pair.max_notional = { value: pair.max_notional, currency: entry.currency };
+        pair.max_unhedged_notional = { value: pair.max_unhedged_notional, currency: entry.unhedgedCurrency };
+        body.pairs.push(pair);
+      }
+      shadowBusy = true; updateShadowControls(); showError($("shadow-config-error"), "");
+      try {
+        const result = await request("/api/shadow/config", {
+          method: "PUT", headers: { "Content-Type": "application/json", "X-CSRF-Token": session.csrf_token }, body: JSON.stringify(body),
+        });
+        shadowConfig = { ...shadowConfig, ...body, revision: result.revision };
+        shadowDirty = false;
+        $("shadow-config-status").textContent = `配置已保存，旧文件已备份${result.backup ? `（${result.backup}）` : ""}。请手动重启 worker 与 web 后生效；当前运行参数尚未确认。`;
+      } catch (error) {
+        showError($("shadow-config-error"), error.status
+          ? `${error.message} 输入已保留。`
+          : "保存结果未确认，输入已保留。请重新读取服务器配置核对后再修改。");
+      } finally { shadowBusy = false; updateShadowControls(); }
+    });
+  }
+
+  // Shadow results never submit an order or a promotion command.
   async function loadShadow() {
     try {
       const shadow = await request("/api/shadow");
@@ -588,8 +768,8 @@
       if (summary) {
         summary.replaceChildren();
         for (const [label, value] of [
-          ["启用状态", shadow.enabled ? "运行中" : "关闭"],
-          ["观察窗", `${shadow.observation_days} 天`],
+          ["Web 启动时配置", shadow.enabled ? "已启用（运行状态未核实）" : "关闭"],
+          ["统计观察窗", `${shadow.observation_days} 天`],
           ["模拟决策", shadow.decisions],
           ["完整闭环", shadow.closed_trades],
           ["模拟 Sharpe", amount(shadow.sharpe)],
@@ -603,7 +783,8 @@
           summary.append(cell);
         }
       }
-      showError($("shadow-note"), shadow.promotion_note || "");
+      const configNote = shadow.pending_restart ? "已保存参数已变更；统计仍按 Web 启动时口径显示。请重启 worker 与 web 后核对采样。" : "";
+      showError($("shadow-note"), [shadow.promotion_note, configNote].filter(Boolean).join(" "));
       table("shadow-decisions-body", shadow.last_decisions, [
         (r) => r.pair_key, (r) => state(r.action), (r) => r.reason,
         { value: (r) => amount(r.net_pnl, "USDT"), className: "numeric" },
@@ -1033,6 +1214,7 @@
           showError($("connection-error"), "管理会话即将到期；请保存核对结果并重新登录。");
         }
       }
+      if (shadowForm) void loadShadowConfig();
       await refresh();
       setInterval(() => { if (!document.hidden) refresh(); }, 15000);
       document.addEventListener("visibilitychange", () => { if (!document.hidden) refresh(); });

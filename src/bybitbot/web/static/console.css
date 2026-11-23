@@ -174,6 +174,31 @@ textarea { resize: vertical; min-height: 76px; }
 #login-form label { margin: 1rem 0 .4rem; }
 .login-button { width: 100%; margin-top: 1.5rem; }
 .login-help { margin: 1rem .3rem 0; color: var(--slate); font-size: .78rem; overflow-wrap: anywhere; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+.shadow-editor { padding: 1.35rem; background: white; border: 1px solid var(--line); border-radius: 6px; }
+.shadow-config-fields { min-width: 0; margin: 0; padding: 0; border: 0; }
+.shadow-config-fields:disabled { opacity: .65; }
+.shadow-switch { display: flex; align-items: center; gap: .75rem; padding: .8rem 0; }
+.shadow-switch input { width: 20px; min-height: 20px; height: 20px; flex: 0 0 auto; accent-color: var(--blue); }
+.shadow-switch small { display: block; color: var(--slate); margin-top: .15rem; }
+.shadow-config-group { padding-top: 1.1rem; margin-top: 1rem; border-top: 1px solid var(--line); }
+.shadow-config-group > h3 { margin-bottom: .45rem; }
+.shadow-field-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr)); gap: 1rem 1.4rem; }
+.shadow-field { display: grid; align-content: start; gap: .3rem; min-width: 0; }
+.shadow-field label { font-size: .85rem; font-weight: 600; }
+.shadow-field small { color: var(--slate); font-size: .76rem; }
+.shadow-field input { min-width: 0; font-variant-numeric: tabular-nums; }
+.shadow-pair-list { display: grid; gap: 1.1rem; }
+.shadow-pair { min-width: 0; padding: 1rem; border: 1px solid var(--line); border-radius: 5px; background: var(--surface); }
+.shadow-pair .section-heading strong { overflow-wrap: anywhere; }
+.shadow-config-actions { display: flex; align-items: center; flex-wrap: wrap; gap: .75rem; padding-top: 1.25rem; margin-top: 1.25rem; border-top: 1px solid var(--line); }
+.shadow-config-actions .muted { font-size: .82rem; }
+.shadow-editor .notice { overflow-wrap: anywhere; }
+@media (max-width: 700px) {
+  .shadow-editor { padding: 1rem .8rem; }
+  .shadow-editor > .section-heading { flex-direction: column; }
+  .shadow-config-actions .button { white-space: normal; }
+}
 @media (max-width: 1050px) {
   .app-layout { grid-template-columns: 185px minmax(0, 1fr); }
   .sidebar { padding-inline: 1rem; }

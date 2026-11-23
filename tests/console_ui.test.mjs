@@ -587,3 +587,124 @@ test("无阻塞且租约就绪时明确提示无需人工处置", async () => {
   });
   assert.match(flatten(app.element("next-step")), /当前无需人工处置/);
 });
+
+const shadowConfigFixture = (overrides = {}) => ({
+  revision: "revision-one", writable: true,
+  shadow: { enabled: true, public_market_url: "https://api.bybit.com", observation_days: 7, min_depth_notional: "500", impact_bps_per_depth: "2", min_sharpe: "2", max_drawdown: "0.03", max_signal_age_ms: 30000 },
+  auto: { enabled: false, window: 60, sample_interval_seconds: 60, fee_rate: "0.00055", slippage_bps: "5", funding_buffer: "0", max_signal_age_ms: 30000, stop_cooldown_seconds: 86400, target_notional: "100" },
+  pairs: [{ pair_key: "BTCUSDT:ETHUSDT", symbol_a: "BTCUSDT", symbol_b: "ETHUSDT", hedge_ratio: "1.1234567890123456789", z_entry: "2", z_exit: "0.5", z_stop: "3", max_notional: { value: "1000", currency: "USDT" }, max_unhedged_notional: { value: "25", currency: "USDT" }, enabled: false, passive_timeout_ms: 2345 }],
+  ...overrides,
+});
+const shadowResponder = (config = shadowConfigFixture(), put = null) => async (path, options) => {
+  if (path !== "/api/shadow/config") return null;
+  return options.method === "PUT"
+    ? put ? put(options) : jsonResponse(200, { written: true, revision: "revision-two", backup: "config.yaml.bak-shadow-test", restart_required: true })
+    : jsonResponse(200, config);
+};
+
+test("影子盘配置：预填已保存参数，自动刷新不覆盖未保存输入", async () => {
+  const app = await boot({ fetchResponder: shadowResponder() });
+  assert.equal(app.element("shadow-setting-auto-window").value, "60");
+  assert.equal(app.element("shadow-pair-0-hedge_ratio").value, "1.1234567890123456789");
+  assert.equal(app.element("shadow-config-save").disabled, true);
+  app.element("shadow-setting-auto-window").value = "90";
+  await app.element("shadow-config-form").dispatch("input");
+  await app.element("refresh").dispatch("click");
+  assert.equal(app.element("shadow-setting-auto-window").value, "90");
+  assert.equal(app.element("shadow-config-save").disabled, false);
+  assert.equal(app.requests.filter((r) => r.path === "/api/shadow/config").length, 1);
+});
+
+test("影子盘配置：带 CSRF 和版本保存，保留小数精度且不发送执行开关", async () => {
+  let headers;
+  const app = await boot({ fetchResponder: shadowResponder(undefined, (options) => {
+    headers = options.headers;
+    return jsonResponse(200, { written: true, revision: "revision-two", backup: "config.yaml.bak-shadow-test", restart_required: true });
+  }) });
+  app.element("shadow-setting-shadow-observation_days").value = "14";
+  await app.element("shadow-config-form").dispatch("input");
+  await app.element("shadow-config-form").dispatch("submit");
+  const saved = app.requests.find((r) => r.method === "PUT").body;
+  assert.equal(headers["X-CSRF-Token"], "csrf-token");
+  assert.equal(saved.revision, "revision-one");
+  assert.equal(saved.shadow.observation_days, 14);
+  assert.equal(saved.auto.fee_rate, "0.00055");
+  assert.equal(saved.pairs[0].hedge_ratio, "1.1234567890123456789");
+  assert.equal("enabled" in saved.auto, false);
+  assert.equal("enabled" in saved.pairs[0], false);
+  assert.equal("spread_enabled" in saved, false);
+  assert.match(app.element("shadow-config-status").textContent, /旧文件已备份.*重启 worker/);
+  assert.equal(app.element("shadow-config-save").disabled, true);
+  await app.element("shadow-config-form").dispatch("input");
+  await app.element("shadow-config-form").dispatch("submit");
+  assert.equal(app.requests.filter((r) => r.method === "PUT")[1].body.revision, "revision-two");
+});
+
+test("影子盘配置：版本冲突保留草稿，显式重读后更新版本", async () => {
+  const fresh = shadowConfigFixture();
+  const app = await boot({ fetchResponder: shadowResponder(fresh, () => jsonResponse(409, { detail: "配置已变化，请重新读取。" })) });
+  app.element("shadow-setting-auto-window").value = "90";
+  await app.element("shadow-config-form").dispatch("input");
+  await app.element("shadow-config-form").dispatch("submit");
+  assert.equal(app.element("shadow-setting-auto-window").value, "90");
+  assert.match(app.element("shadow-config-error").textContent, /配置已变化.*输入已保留/);
+  assert.equal(app.element("shadow-config-reload").textContent, "放弃修改并重新读取");
+  fresh.auto.window = 80;
+  fresh.revision = "revision-three";
+  await app.element("shadow-config-reload").dispatch("click");
+  assert.equal(app.element("shadow-setting-auto-window").value, "80");
+  assert.equal(app.element("shadow-config-save").disabled, true);
+});
+
+test("影子盘配置：添加移除配对并阻止无配对启用", async () => {
+  const app = await boot({ fetchResponder: shadowResponder() });
+  const first = app.element("shadow-pair-fields").children[0];
+  await first.children[0].children[1].dispatch("click");
+  await app.element("shadow-config-form").dispatch("submit");
+  assert.match(app.element("shadow-config-error").textContent, /至少一个观察配对/);
+  assert.equal(app.requests.some((r) => r.method === "PUT"), false);
+  await app.element("shadow-add-pair").dispatch("click");
+  app.element("shadow-pair-0-symbol_a").value = " solusdt ";
+  app.element("shadow-pair-0-symbol_b").value = "ethusdt";
+  await app.element("shadow-config-form").dispatch("input");
+  await app.element("shadow-config-form").dispatch("submit");
+  const pair = app.requests.find((r) => r.method === "PUT").body.pairs[0];
+  assert.equal(pair.pair_key, "SOLUSDT:ETHUSDT");
+  assert.equal(pair.max_unhedged_notional.currency, "USDT");
+});
+
+test("影子盘配置：只读部署禁用编辑与保存", async () => {
+  const app = await boot({ fetchResponder: shadowResponder(shadowConfigFixture({ writable: false, read_only_reason: "执行面已启用，请在服务器维护。" })) });
+  assert.equal(app.element("shadow-config-fields").disabled, true);
+  assert.match(app.element("shadow-config-status").textContent, /执行面已启用/);
+  await app.element("shadow-config-form").dispatch("input");
+  await app.element("shadow-config-form").dispatch("submit");
+  await app.element("shadow-add-pair").dispatch("click");
+  assert.equal(app.requests.some((r) => r.method === "PUT"), false);
+  assert.equal(app.element("shadow-pair-fields").children.length, 1);
+});
+
+test("影子盘配置：保存网络中断保留输入且不声称保存成功", async () => {
+  const app = await boot({ fetchResponder: shadowResponder(undefined, () => { throw new TypeError("offline"); }) });
+  app.element("shadow-setting-auto-target_notional").value = "125.123456789";
+  await app.element("shadow-config-form").dispatch("input");
+  await app.element("shadow-config-form").dispatch("submit");
+  assert.match(app.element("shadow-config-error").textContent, /保存结果未确认/);
+  assert.equal(app.element("shadow-setting-auto-target_notional").value, "125.123456789");
+  assert.doesNotMatch(app.element("shadow-config-status").textContent, /配置已保存/);
+});
+
+test("影子盘配置：保存期间禁用重读与重复提交", async () => {
+  let finish;
+  const app = await boot({ fetchResponder: shadowResponder(undefined, () => new Promise((resolve) => { finish = resolve; })) });
+  await app.element("shadow-config-form").dispatch("input");
+  const pendingSave = app.element("shadow-config-form").dispatch("submit");
+  await flush();
+  assert.equal(app.element("shadow-config-fields").disabled, true);
+  assert.equal(app.element("shadow-config-reload").disabled, true);
+  await app.element("shadow-config-form").dispatch("submit");
+  assert.equal(app.requests.filter((r) => r.method === "PUT").length, 1);
+  finish(jsonResponse(200, { written: true, revision: "revision-two", restart_required: true }));
+  await pendingSave;
+  assert.equal(app.element("shadow-config-fields").disabled, false);
+});

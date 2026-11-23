@@ -256,6 +256,34 @@ CCA09EDDB905C807F03D697A1D9AEFAD85C1BB92
 
 启用后影子盘仅消费公开行情（REST ticker/orderbook），不加载交易凭据、不发私有请求、不产生真实订单，样本与模拟交易仅落 `spread_signal_sample`/`shadow_trade` 的 `environment='shadow'` 命名空间，管理页「影子盘」标签只读展示，不自动改参数、不推进 canary 或实盘。worker/web 保持 active，`last_error` 为空，四条活动暂停与禁用策略不变。
 
+### 影子盘配置页（部署新版本后可用）
+
+登录操作台，进入「影子盘 → 影子盘配置」。可修改影子盘开关、观察窗、采样间隔与窗口、模拟金额和成本、审阅门槛，并添加、移除或调整观察配对。费率和回撤使用小数比例（`0.00055 = 0.055%`、`0.03 = 3%`）；配对阈值必须满足 `z_exit < z_entry < z_stop`。
+
+该页面仅在 paper 环境、`spread.enabled=false` 且 `spread.auto.enabled=false` 时允许写入。它不能启用交易执行开关，也不会自动重启 worker、确认接管或修改实盘门槛。共享配对的未展示参数、其他价差设置和其他顶层配置会保留。
+
+保存使用带认证、同源检查与 CSRF 的 `PUT /api/shadow/config`。服务先校验完整候选配置，再在同目录写入 0600 备份并原子替换；备份名为 `config.yaml.bak-shadow-*`。备份含原始配置，应与配置文件同样受限保管，不能上传 Git。并发编辑会通过版本检查返回冲突，保留页面草稿；核对后点击「放弃修改并重新读取」。15 秒状态刷新不会覆盖输入。
+
+Web 必须对配置目录有写权限，才能创建备份与原子替换文件；只把 `config.yaml` 单文件挂载成可写不够。仓库中的 `bybitbot-web.container` 已将该目录设为 `rw,z`，worker 仍保持 `ro,z`，容器根文件系统仍只读。此权限覆盖目录内文件，认证、数据库口令与交易凭据文件继续保持 0600，目录保持 0700；页面只开放影子盘配置字段。
+
+发布脚本只同步镜像构建上下文，不会安装更新后的 Quadlet。首次发布配置页时，在本地执行：
+
+```bash
+scp deploy/quadlet/bybitbot-web.container nas:.config/containers/systemd/bybitbot-web.container
+```
+
+```bash
+ssh nas 'systemctl --user daemon-reload && systemctl --user restart bybitbot-web.service'
+```
+
+每次保存后需手动重启 worker 才加载新参数；同时重启 web 可更新其统计门槛口径：
+
+```bash
+ssh nas 'systemctl --user restart bybitbot-worker.service bybitbot-web.service'
+```
+
+随后检查 worker 心跳、`last_error` 和新影子盘样本。页面中的已保存参数与 Web 启动时的统计配置有明确区分；保存成功不代表 worker 已采用参数。重启不会自动恢复人工发单资格或解除活动暂停。配置回滚需先停 worker，在受限目录选择相应备份恢复为 `config.yaml`，运行 `bybitbot check` 通过后再启动；镜像回滚不会自动回滚配置。
+
 ### Bybit API 凭据
 
 先暂停新增风险并核对所有在途订单；需要撤单时，必须取得终态及累计成交证据。未知结果期间不能靠换 key 清空预留。准备只含必要权限、关闭提现、绑定固定出口 IP 的新凭据，以 0600 文件注入，核对实际环境、UID、权限和账户模式后再重启。重启后重新对账及接管确认，逐条满足恢复条件。
