@@ -100,6 +100,8 @@ python research/cointegration/check_pairs.py \
 - 半衰期 183.6 小时（约 7.6 天），即使做也远慢于当前 `z_entry=2.0` 的假设；
 - 前后半段只有 1 段通过，关系在窗口内并不稳定。
 
+**稳健性复算**：用 `--adf-lag auto`（按 BIC 在 0～12 阶中选滞后）对同一份缓存数据复算，在册配对的结论不变（残差 ADF t = -1.611，p ≈ 0.673，两腿仍为 I(1)，半段仍 1/2）；10 个提名里有 8 个两口径共同入榜，固定 2 阶独有 `ACEUSDT:ADAUSDT` 与 `BLESSUSDT:SUIUSDT`，BIC 口径独有 `NEARUSDT:WLDUSDT` 与 `XAUUSDT:XAUTUSDT`。**在册配对的剔除结论不依赖滞后阶数选择**；提名清单对口径更敏感，这本身也是需要人工审阅的理由。
+
 **处理方式**：这是人工审阅项，本阶段不动配置。要不要把 `BTCUSDT:ETHUSDT` 从在册配对里拿掉、换成提名里的某个配对，需要结合影子盘 7 天验证（FR-07.3）一起决定；只凭一次离线检验就换标的，正是 PRD 明确禁止的"自动晋级"。
 
 ### 5.2 提名清单（待人工审阅）
@@ -141,5 +143,5 @@ python research/cointegration/check_pairs.py \
 ## 九、复现与证据
 
 - 自检：`python research/test_cointegration.py`（12 项）与 `uv run pytest -q`（含 `research/test_cointegration.py`）。
-- 报告产物：`var/cointegration/2026-11-23-top50/cointegration.json`、`cointegration.md`（`var/` 不进 Git）。
+- 报告产物：`var/cointegration/2026-11-23-top50/cointegration.json`、`cointegration.md`（固定 2 阶）与 `var/cointegration/2026-11-23-top50-bic/`（BIC 口径复算；`var/` 不进 Git）。
 - 代码：`research/cointegration/`，提交见本阶段对应的提交。
