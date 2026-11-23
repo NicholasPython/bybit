@@ -128,6 +128,16 @@ def test_cost_filter_blocks_even_threshold_crossing():
     assert decision.expected_cost > 0
 
 
+def test_cost_filter_does_not_block_close_or_stop():
+    """成本闸门只用于开仓；已有仓位的退出不能被交易成本挡住。"""
+    expensive = policy(fee_rate=D("1"))
+    close = evaluate(samples(["100", "99", "100", "101", "100"]), current_policy=expensive)
+    assert close.action == ACTION_CLOSE
+    # 极端跳升达到 stop_z；此前成本闸门排在止损之前，会错误地返回 NONE。
+    stopped = evaluate(samples(["100", "100", "100", "100", "103"]), current_policy=expensive)
+    assert stopped.action == ACTION_STOP
+
+
 def test_cost_filter_boundary_is_inclusive():
     # 零成本、零波动没有可用信号。
     zero_cost = policy(fee_rate=D(0), slippage_bps=D(0))

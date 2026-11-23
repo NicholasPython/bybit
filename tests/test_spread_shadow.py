@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import timedelta
 from decimal import Decimal as D
@@ -15,7 +16,8 @@ from bybitbot.clock import now_utc
 from bybitbot.settings.loader import load_config
 from bybitbot.settings.models import SpreadSettings
 from bybitbot.spread.models import ShadowTrade, SpreadSignalSample
-from bybitbot.spread.shadow import ENVIRONMENT, ShadowEngine
+from bybitbot.spread.shadow import ENVIRONMENT, LEDGER_VERSION, ShadowEngine
+from bybitbot.spread.signals import ACTION_CLOSE, ACTION_OPEN, ACTION_STOP
 
 CONFIG_PATH = Path(__file__).resolve().parents[1] / "config/config.example.yaml"
 
@@ -139,6 +141,106 @@ async def test_shadow_samples_and_simulates_without_trade_writes(database):
     assert saved[-1].context["trade_writes"] is False
 
 
+async def test_shadow_ledger_posts_only_fills_and_linked_exits(database):
+    adapter = PublicAdapter()
+    settings = config()
+    pair = settings.pairs[0].model_copy(update={"z_stop": D("1.95")})
+    settings = settings.model_copy(
+        update={
+            "pairs": (pair,),
+            "auto": settings.auto.model_copy(update={"fee_rate": D("0.001")}),
+            "shadow": settings.shadow.model_copy(update={"min_depth_notional": D("120")}),
+        }
+    )
+    shadow = ShadowEngine(adapter=adapter, sessionmaker=database.sessionmaker, settings=settings)
+    base_ms = int(now_utc().timestamp()) // 2 * 2000 - 40_000
+    async with database.sessionmaker() as session:
+        session.add(
+            ShadowTrade(
+                environment=ENVIRONMENT,
+                pair_trade_id="shadow-legacy-open",
+                pair_key=pair.pair_key,
+                decision_at_ms=base_ms - 2000,
+                action=ACTION_OPEN,
+                reason="ENTRY_THRESHOLD_REACHED",
+                direction="SHORT_A_LONG_B",
+                symbol_a=pair.symbol_a,
+                symbol_b=pair.symbol_b,
+                side_a="Sell",
+                side_b="Buy",
+                qty_a=D("1"),
+                qty_b=D("1"),
+                depth_ok=True,
+                cumulative_pnl=D("999"),
+                context={"simulated": True},
+            )
+        )
+        await session.commit()
+
+    async def evaluate(index, price, *, books=None):
+        adapter.prices[pair.symbol_a] = D(price)
+        return await shadow.evaluate_pair(
+            pair,
+            quotes={},
+            specs=specs(),
+            quote_status=dict.fromkeys(adapter.prices, True),
+            books=books,
+            now_ms=base_ms + index * 2000,
+        )
+
+    for index, price in enumerate(("100", "100", "100", "101")):
+        assert await evaluate(index, price) is None
+    # A 腿可成交约 112 USDT，足够目标 100，但低于配置的最小深度 120。
+    thin_book = OrderBook(
+        "linear",
+        pair.symbol_a,
+        bids=((D("101.99"), D("1.1")),),
+        asks=((D("102.01"), D("1.1")),),
+        source_ts=now_utc(),
+        received_at=now_utc(),
+    )
+    assert await evaluate(4, "102", books={pair.symbol_a: thin_book}) is None
+    assert [row.pair_trade_id for row in await rows(database)] == ["shadow-legacy-open"]
+
+    opened = await asyncio.gather(evaluate(5, "103"), evaluate(5, "103"))
+    assert sum(result is not None for result in opened) == 1
+    for index, price in enumerate(("102", "101", "103", "104", "104", "104", "104"), start=6):
+        assert await evaluate(index, price) is None
+    stopped = await asyncio.gather(evaluate(13, "120"), evaluate(13, "120"))
+    assert sum(result is not None for result in stopped) == 1
+    for index, price in enumerate(("119", "119", "118", "119", "119", "120"), start=14):
+        await evaluate(index, price)
+
+    legacy, first, stop, second, close, third = await rows(database)
+    assert legacy.cumulative_pnl == D("999")
+    assert [row.action for row in (first, stop, second, close, third)] == [
+        ACTION_OPEN,
+        ACTION_STOP,
+        ACTION_OPEN,
+        ACTION_CLOSE,
+        ACTION_OPEN,
+    ]
+    assert first.fee_cost > 0 and first.slippage_cost > 0
+    assert first.net_pnl == first.cumulative_pnl == second.net_pnl == third.net_pnl == 0
+    assert stop.context["pair_trade_id"] == first.pair_trade_id
+    assert close.context["pair_trade_id"] == second.pair_trade_id
+    gross = (D("103") / D("120")).ln() * first.notional
+    assert stop.net_pnl == pytest.approx(
+        gross - first.fee_cost - first.slippage_cost, abs=D("1e-18")
+    )
+    assert close.net_pnl == -second.fee_cost - second.slippage_cost
+    assert stop.cumulative_pnl == second.cumulative_pnl == stop.net_pnl < 0
+    total = stop.net_pnl + close.net_pnl
+    assert close.cumulative_pnl == third.cumulative_pnl == total
+
+    status = await shadow.status()
+    assert status["decisions"] == 5
+    assert status["closed_trades"] == 2
+    assert status["last_decisions"][0]["net_pnl"] == "0.000000000000000000"
+    assert D(status["cumulative_pnl"]) == pytest.approx(total, abs=D("1e-8"))
+    assert sum(map(D, status["daily_pnl"].values())) == pytest.approx(total, abs=D("1e-8"))
+
+
 async def test_shadow_rejects_adapter_with_trade_writes(database):
     class UnsafeAdapter(PublicAdapter):
         allow_trade_writes = True
@@ -202,7 +304,7 @@ async def test_shadow_pair_review_requires_gate_and_stays_readonly(database):
                     notional=D("100"),
                     net_pnl=D("0.1"),
                     cumulative_pnl=D("0.1") * (index + 1),
-                    context={"simulated": True},
+                    context={"simulated": True, "ledger_version": LEDGER_VERSION},
                 )
             )
         await session.commit()
@@ -274,7 +376,7 @@ async def test_shadow_candidate_decides_per_pair_not_on_mixed_portfolio(database
                     notional=D("100"),
                     net_pnl=pnl,
                     cumulative_pnl=sum(good[: index + 1]),
-                    context={"simulated": True},
+                    context={"simulated": True, "ledger_version": LEDGER_VERSION},
                 )
             )
         for index, pnl in enumerate(bad):
@@ -298,7 +400,7 @@ async def test_shadow_candidate_decides_per_pair_not_on_mixed_portfolio(database
                     notional=D("100"),
                     net_pnl=pnl,
                     cumulative_pnl=sum(bad[: index + 1]),
-                    context={"simulated": True},
+                    context={"simulated": True, "ledger_version": LEDGER_VERSION},
                 )
             )
         await session.commit()

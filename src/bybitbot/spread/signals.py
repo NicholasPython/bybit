@@ -7,10 +7,9 @@
 判定顺序：
 
     样本有效性 → 窗口长度 → 时间单调性 → 数据新鲜度 → 价差与统计量
-    → 成本过滤 → 硬止损 → 开仓 → 平仓 → 无信号
+    → 硬止损 → 开仓阈值与成本过滤 → 平仓 → 无信号
 
-成本过滤刻意放在阈值判定之前：即使偏离达到阈值，预期回归收益不足以覆盖
-双边费用、滑点与资金费率缓冲时，也不产生交易动作。
+仅在开仓时要求预期回归收益覆盖双边费用、滑点与资金费率缓冲。
 """
 
 from __future__ import annotations
@@ -284,24 +283,23 @@ def evaluate_signal(
     z_value = (current - mean) / stdev
 
     cost = expected_cost(principal, policy.fee_rate, policy.slippage_bps, policy.funding_buffer)
-    convergence_gain = abs(current - mean) * principal
-    if convergence_gain <= cost:
-        return SignalDecision(
-            ACTION_NONE,
-            z_value,
-            current,
-            mean,
-            stdev,
-            cost,
-            REASON_COST_FILTER_NOT_PASSED,
-        )
-
     magnitude = abs(z_value)
     if magnitude >= policy.stop_z:
         return SignalDecision(
             ACTION_STOP, z_value, current, mean, stdev, cost, REASON_STOP_LOSS_TRIGGERED
         )
     if magnitude >= policy.entry_z:
+        convergence_gain = abs(current - mean) * principal
+        if convergence_gain <= cost:
+            return SignalDecision(
+                ACTION_NONE,
+                z_value,
+                current,
+                mean,
+                stdev,
+                cost,
+                REASON_COST_FILTER_NOT_PASSED,
+            )
         direction = DIRECTION_SHORT_A_LONG_B if z_value > _ZERO else DIRECTION_LONG_A_SHORT_B
         return SignalDecision(
             ACTION_OPEN,

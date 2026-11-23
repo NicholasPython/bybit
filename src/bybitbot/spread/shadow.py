@@ -13,13 +13,13 @@
 from __future__ import annotations
 
 import datetime as dt
-import itertools
 import logging
 from collections.abc import Mapping
 from dataclasses import dataclass
 from decimal import ROUND_HALF_UP, Decimal
+from uuid import uuid4
 
-from sqlalchemy import func, select
+from sqlalchemy import select, text
 from sqlalchemy.dialects.postgresql import insert
 
 from bybitbot.adapters.base import OrderBook, Ticker
@@ -28,7 +28,6 @@ from bybitbot.money import Rounding, quantize_qty, round_to_step
 from bybitbot.spread.models import ShadowTrade, SpreadSignalSample
 from bybitbot.spread.signals import (
     ACTION_CLOSE,
-    ACTION_NONE,
     ACTION_OPEN,
     ACTION_STOP,
     PriceSample,
@@ -42,11 +41,14 @@ from bybitbot.spread.states import log_spread
 ZERO = Decimal(0)
 TWO = Decimal(2)
 ENVIRONMENT = "shadow"
-_SHADOW_SEQUENCE = itertools.count(1)
+LEDGER_VERSION = 1
 
 logger = logging.getLogger(__name__)
 _WARN_AT: dict[str, int] = {}
 _WARN_EVERY_MS = 10 * 60 * 1000
+
+_EXIT_ACTIONS = frozenset({ACTION_CLOSE, ACTION_STOP})
+_LEDGER_ACTIONS = _EXIT_ACTIONS | {ACTION_OPEN}
 
 
 def _warn_throttled(pair_key: str, detail: str) -> None:
@@ -94,16 +96,19 @@ _PNL_DISPLAY_EXPONENT = Decimal("1E-8")
 def _display(value: Decimal | int, exponent: Decimal = _DISPLAY_EXPONENT) -> str:
     """把指标压成固定小数位，避免页面出现几十位小数的噪声。"""
     amount = value if isinstance(value, Decimal) else Decimal(value)
-    return str(amount.quantize(exponent, rounding=ROUND_HALF_UP))
+    return format(amount.quantize(exponent, rounding=ROUND_HALF_UP), "f")
 
 
 def _decision_metrics(rows: list[ShadowTrade]) -> dict[str, object]:
     """计算观察窗内的只读指标；所有金额都是模拟值。"""
-    pnls = [row.net_pnl for row in rows if row.action in (ACTION_CLOSE, ACTION_STOP)]
+    pnls: list[Decimal] = []
     peak, max_dd = _ZERO, _ZERO
     equity = _ZERO
     daily: dict[str, Decimal] = {}
     for row in rows:
+        if row.action not in _EXIT_ACTIONS:
+            continue
+        pnls.append(row.net_pnl)
         equity += row.net_pnl
         peak = max(peak, equity)
         max_dd = max(max_dd, (peak - equity) / peak if peak > 0 else _ZERO)
@@ -294,14 +299,16 @@ class ShadowEngine:
         levels = book.asks if side == "Buy" else book.bids
         if any(price <= 0 or qty < 0 for price, qty in levels):
             return Fill(ZERO, ZERO, ZERO, ZERO, False)
-        remaining, cost = notional, ZERO
+        minimum = max(notional, self.settings.shadow.min_depth_notional)
+        if sum(price * qty for price, qty in levels) < minimum:
+            return Fill(ZERO, ZERO, ZERO, ZERO, False)
+        remaining = notional
         worst = reference
         for price, size in levels:
             if remaining <= ZERO:
                 break
             available = price * size
             used = min(remaining, available)
-            cost += used
             remaining -= used
             worst = price
         if remaining > ZERO:
@@ -317,19 +324,12 @@ class ShadowEngine:
         slip = (price - reference).copy_abs() / reference * Decimal(10000)
         return Fill(price, qty, notional * self.settings.auto.fee_rate, slip, True)
 
-    async def _active(self, config):
-        async with self.sessionmaker() as session:
-            return await session.scalar(
-                select(ShadowTrade)
-                .where(
-                    ShadowTrade.environment == self.environment,
-                    ShadowTrade.pair_key == config.pair_key,
-                    ShadowTrade.action.in_((ACTION_OPEN, ACTION_NONE)),
-                    ShadowTrade.qty_a > 0,
-                )
-                .order_by(ShadowTrade.decision_at_ms.desc())
-                .limit(1)
-            )
+    def _ledger(self):
+        # 旧记录可能含失败开仓、无配对的退出和不一致的累计值，原样留存供追查。
+        return select(ShadowTrade).where(
+            ShadowTrade.environment == self.environment,
+            ShadowTrade.context.contains({"ledger_version": LEDGER_VERSION}),
+        )
 
     async def evaluate_pair(
         self,
@@ -350,6 +350,8 @@ class ShadowEngine:
             return None
         auto = self.settings.auto
         now = int(now_ms if now_ms is not None else now_utc().timestamp() * 1000)
+        interval_ms = auto.sample_interval_seconds * 1000
+        sample_at_ms = now // interval_ms * interval_ms
         ticker_a = self._ticker(quotes, config.symbol_a) or await self.adapter.get_ticker(
             "linear", config.symbol_a
         )
@@ -359,9 +361,7 @@ class ShadowEngine:
         try:
             await self._record_sample(
                 config,
-                at_ms=now
-                // (auto.sample_interval_seconds * 1000)
-                * (auto.sample_interval_seconds * 1000),
+                at_ms=sample_at_ms,
                 ticker_a=ticker_a,
                 ticker_b=ticker_b,
                 specs=specs,
@@ -379,73 +379,103 @@ class ShadowEngine:
             # 采样被拒必须留痕：静默吞掉会表现为「影子盘开启但永远 0 条样本」。
             _warn_throttled(config.pair_key, str(exc))
             return None
-        active = await self._active(config)
-        direction = decision.direction or (active.direction if active else "")
-        side_a = side_b = ""
-        spread_pnl = funding_pnl = ZERO
-        qty_a = qty_b = price_a_value = price_b_value = ZERO
-        fee_cost = slippage_cost = ZERO
-        depth_ok = False
-        notional = ZERO
+        if decision.action not in _LEDGER_ACTIONS:
+            return None
 
-        if decision.action == ACTION_OPEN and active is None:
-            direction = decision.direction
+        reference_a, reference_b = self._mid(ticker_a), self._mid(ticker_b)
+        assert reference_a is not None and reference_b is not None  # 已通过采样校验
+        opening = decision.action == ACTION_OPEN
+        direction = decision.direction
+        spread_pnl = net_pnl = ZERO
+        context = {
+            "simulated": True,
+            "environment": self.environment,
+            "credential_ref": None,
+            "trade_writes": False,
+            "reason": decision.reason,
+            "ledger_version": LEDGER_VERSION,
+        }
+        if opening:
             side_a = "Sell" if direction == "SHORT_A_LONG_B" else "Buy"
             side_b = "Buy" if side_a == "Sell" else "Sell"
             notional = auto.target_notional
-            spec_a, spec_b = specs[config.symbol_a], specs[config.symbol_b]
-            book_a = self._book(books, config.symbol_a) if books is not None else None
-            book_b = self._book(books, config.symbol_b) if books is not None else None
+            book_a = self._book(books, config.symbol_a)
+            book_b = self._book(books, config.symbol_b)
             if book_a is None:
                 book_a = await self.adapter.get_orderbook("linear", config.symbol_a)
             if book_b is None:
                 book_b = await self.adapter.get_orderbook("linear", config.symbol_b)
-            reference_a, reference_b = self._mid(ticker_a), self._mid(ticker_b)
             fill_a = self._simulate_fill(
-                book=book_a, side=side_a, notional=notional, spec=spec_a, reference=reference_a
+                book=book_a,
+                side=side_a,
+                notional=notional,
+                spec=specs[config.symbol_a],
+                reference=reference_a,
             )
             fill_b = self._simulate_fill(
-                book=book_b, side=side_b, notional=notional, spec=spec_b, reference=reference_b
+                book=book_b,
+                side=side_b,
+                notional=notional,
+                spec=specs[config.symbol_b],
+                reference=reference_b,
             )
-            depth_ok = fill_a.depth_ok and fill_b.depth_ok
-            if depth_ok and reference_a and reference_b:
-                qty_a, price_a_value = fill_a.qty, fill_a.price
-                qty_b, price_b_value = fill_b.qty, fill_b.price
-                fee_cost = fill_a.fee + fill_b.fee
-                slippage_cost = (
-                    (fill_a.slippage_bps + fill_b.slippage_bps) / Decimal(10000) * notional
-                )
-        elif decision.action in (ACTION_CLOSE, ACTION_STOP) and active is not None:
-            direction, side_a, side_b = active.direction, active.side_a, active.side_b
-            entry = log_spread(
-                active.price_a if active.price_a > 0 else self._mid(ticker_a),
-                active.price_b if active.price_b > 0 else self._mid(ticker_b),
-                config.hedge_ratio,
+            if not (fill_a.depth_ok and fill_b.depth_ok):
+                return None
+            qty_a, price_a = fill_a.qty, fill_a.price
+            qty_b, price_b = fill_b.qty, fill_b.price
+            fee_cost = fill_a.fee + fill_b.fee
+            slippage_cost = (fill_a.slippage_bps + fill_b.slippage_bps) * notional / 10000
+            context.update(
+                entry_mid_a=str(reference_a),
+                entry_mid_b=str(reference_b),
+                hedge_ratio=str(config.hedge_ratio),
             )
-            exit_spread = log_spread(self._mid(ticker_a), self._mid(ticker_b), config.hedge_ratio)
-            multiplier = 1 if direction == "SHORT_A_LONG_B" else -1
-            spread_pnl = (entry - exit_spread) * multiplier * active.notional
-            notional = active.notional
-            qty_a, qty_b = active.qty_a, active.qty_b
-            fee_cost = active.fee_cost
-            slippage_cost = active.slippage_cost
-            funding_pnl = (
-                active.context.get("funding_a", 0) - active.context.get("funding_b", 0)
-            ) * multiplier
-            depth_ok = bool(active.depth_ok)
 
-        net_pnl = spread_pnl + funding_pnl - fee_cost - slippage_cost
         async with self.sessionmaker() as session:
-            previous = await session.scalar(
-                select(func.coalesce(func.max(ShadowTrade.cumulative_pnl), 0)).where(
-                    ShadowTrade.environment == self.environment
-                )
+            # 全环境累计值与单配对仓位都在同一事务中串行更新。
+            await session.execute(
+                text("SELECT pg_advisory_xact_lock(hashtext(:key))"),
+                {"key": f"shadow-ledger:{self.environment}"},
             )
-            cumulative = previous + net_pnl
-            suffix = f"{now % 100000:05d}{next(_SHADOW_SEQUENCE) % 1000:03d}"[:8]
+            ledger = self._ledger()
+            latest = await session.scalar(
+                ledger.where(ShadowTrade.pair_key == config.pair_key)
+                .order_by(ShadowTrade.id.desc())
+                .limit(1)
+            )
+            if latest is not None and latest.decision_at_ms >= sample_at_ms:
+                return None  # 已处理同一采样桶，或当前信号比最近入账更早。
+            active = latest if latest is not None and latest.action == ACTION_OPEN else None
+            if opening:
+                if active is not None:
+                    return None
+            else:
+                if active is None:
+                    return None
+                direction, side_a, side_b = active.direction, active.side_a, active.side_b
+                qty_a, qty_b, notional = active.qty_a, active.qty_b, active.notional
+                price_a, price_b = reference_a, reference_b
+                beta = Decimal(active.context["hedge_ratio"])
+                entry = log_spread(
+                    Decimal(active.context["entry_mid_a"]),
+                    Decimal(active.context["entry_mid_b"]),
+                    beta,
+                )
+                exit_spread = log_spread(price_a, price_b, beta)
+                multiplier = 1 if direction == "SHORT_A_LONG_B" else -1
+                spread_pnl = (entry - exit_spread) * multiplier * notional
+                fee_cost, slippage_cost = active.fee_cost, active.slippage_cost
+                net_pnl = spread_pnl - fee_cost - slippage_cost
+                context["pair_trade_id"] = active.pair_trade_id
+
+            previous = await session.scalar(
+                ledger.with_only_columns(ShadowTrade.cumulative_pnl)
+                .order_by(ShadowTrade.id.desc())
+                .limit(1)
+            )
             row = ShadowTrade(
                 environment=self.environment,
-                pair_trade_id=f"shadow{now:013d}{suffix}",
+                pair_trade_id=f"shadow{now:013d}{uuid4().hex}",
                 pair_key=config.pair_key,
                 decision_at_ms=now,
                 action=decision.action,
@@ -457,28 +487,22 @@ class ShadowEngine:
                 side_b=side_b,
                 qty_a=qty_a,
                 qty_b=qty_b,
-                price_a=price_a_value,
-                price_b=price_b_value,
+                price_a=price_a,
+                price_b=price_b,
                 notional=notional,
                 z=decision.z,
                 spread_pnl=spread_pnl,
                 fee_cost=fee_cost,
                 slippage_cost=slippage_cost,
-                funding_pnl=funding_pnl,
+                funding_pnl=ZERO,
                 net_pnl=net_pnl,
-                cumulative_pnl=cumulative,
-                depth_ok=depth_ok,
-                context={
-                    "simulated": True,
-                    "environment": ENVIRONMENT,
-                    "credential_ref": None,
-                    "trade_writes": False,
-                    "reason": decision.reason,
-                },
+                cumulative_pnl=(previous if previous is not None else ZERO) + net_pnl,
+                depth_ok=True,
+                context=context,
             )
             session.add(row)
             await session.commit()
-        return ShadowResult(decision=decision, row=row, depth_ok=depth_ok)
+        return ShadowResult(decision=decision, row=row, depth_ok=True)
 
     async def status(self) -> dict[str, object]:
         """投影 FR-07.3 验收指标与人工审阅候选；不触发任何晋升动作。"""
@@ -487,12 +511,9 @@ class ShadowEngine:
         async with self.sessionmaker() as session:
             rows = list(
                 await session.scalars(
-                    select(ShadowTrade)
-                    .where(
-                        ShadowTrade.environment == self.environment,
-                        ShadowTrade.decision_at_ms >= since_ms,
-                    )
-                    .order_by(ShadowTrade.decision_at_ms)
+                    self._ledger()
+                    .where(ShadowTrade.decision_at_ms >= since_ms)
+                    .order_by(ShadowTrade.decision_at_ms, ShadowTrade.id)
                 )
             )
         overall = _decision_metrics(rows)
@@ -536,6 +557,7 @@ class ShadowEngine:
             "promotion_note": (
                 "仅生成人工审阅候选；门槛为至少 5 笔闭环、Sharpe > 2 且回撤 < 3%。"
                 "候选按单个配对判定，汇总指标只是所有配对混合的参考口径。"
+                "审阅指标仅纳入修复后的有效交易记录。"
                 "影子盘不自动改参数、不灰度、不实盘晋级。"
             ),
             "review_gate": {
@@ -550,7 +572,7 @@ class ShadowEngine:
                     "pair_key": row.pair_key,
                     "action": row.action,
                     "reason": row.reason,
-                    "net_pnl": str(row.net_pnl),
+                    "net_pnl": format(row.net_pnl, "f"),
                     "at_ms": row.decision_at_ms,
                     "depth_ok": row.depth_ok,
                 }
