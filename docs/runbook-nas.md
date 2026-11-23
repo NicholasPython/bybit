@@ -284,6 +284,12 @@ ssh nas 'systemctl --user restart bybitbot-worker.service bybitbot-web.service'
 
 随后检查 worker 心跳、`last_error` 和新影子盘样本。页面中的已保存参数与 Web 启动时的统计配置有明确区分；保存成功不代表 worker 已采用参数。重启不会自动恢复人工发单资格或解除活动暂停。配置回滚需先停 worker，在受限目录选择相应备份恢复为 `config.yaml`，运行 `bybitbot check` 通过后再启动；镜像回滚不会自动回滚配置。
 
+2026-11-23 配置页发布已核验：代码提交 `049d73a`；镜像 `dac3f1c7e52269e99743bfd091e74b5402c5da89e83c00b4de8f7357124a198b`，发布标签 `localhost/bybitbot:release-20261123-shadow-config-v11`（已移动为 `0.1.0`），回滚点 `localhost/bybitbot:rollback-before-release-20261123-shadow-config-v11`（`3d4a86aa5e318c796bb5a29ca818c11d002e69b2bf0fb8878abb56d66d8b8a75`，即 v10）。提交前完整 Python 回归 1906 项、页面脚本测试 23 项通过，Ruff 与 `git diff --check` 通过。
+
+发布前先安装更新后的 Web Quadlet 并重启 web：配置目录挂载已由 `ro,z` 改为 `rw,z`。`systemd --user daemon-reload` 后核对容器内挂载；worker 单元仍为 `ro,z`。发布脚本完成迁移检查、镜像切换和服务重启，schema 仍为 `c9d3f7a2b6e4`。最终 postgres/worker/web 均 active；worker 心跳持续推进，`last_error` 为空，影子决策继续新增。数据库仍为 0 订单、0 成交、0 意图、0 非零库存，两条策略禁用，保留活动暂停与 `NEEDS_CONFIRMATION` 租约。
+
+NAS 本机登录后的只读核验：`/api/shadow/config` 返回 `writable=true`、`shadow.enabled=true`、`auto.enabled=false`、配对 `BTCUSDT:ETHUSDT`、`poll_seconds=10`；`/api/shadow` 返回 `configuration_source=web_start`、`runtime_verified=false`、`saved_enabled=true`、`pending_restart=false`，因此统计口径与已保存配置当前一致。无效 CSRF 的写入返回 403，登录页面 HTML 含配置表单与重启提示。本轮未从页面保存参数，配置目录尚无 `config.yaml.bak-shadow-*` 备份。回滚镜像不会自动回滚 Quadlet 或配置；若回退到 v10，须同时恢复只读 Web 单元，否则配置页写入会失败。
+
 ### Bybit API 凭据
 
 先暂停新增风险并核对所有在途订单；需要撤单时，必须取得终态及累计成交证据。未知结果期间不能靠换 key 清空预留。准备只含必要权限、关闭提现、绑定固定出口 IP 的新凭据，以 0600 文件注入，核对实际环境、UID、权限和账户模式后再重启。重启后重新对账及接管确认，逐条满足恢复条件。
