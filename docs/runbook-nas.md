@@ -331,3 +331,15 @@ NAS 登录后 `/api/shadow` 已返回新增的 `review_gate`、`pair_reviews`、
 **影子盘账本修复的部署口径**：修复版 worker 把 `ledger_version=1` 写入新 `shadow_trade.context`，修复版 Web 只读取这一版本。旧账和历史行情样本均原样保留，已有模拟仓位从当前账本剔除，首次新账以零余额起算。该修复沿用 `c9d3f7a2b6e4` schema。部署时同步升级 worker 和 Web，核对 `/api/shadow` 只展示新账本，并重新积累配置要求的观察期数据后再审阅配对和参数。
 
 实盘启用必须另行取得适用阶段验收证据和账户所有者的启用操作；本轮部署保持 paper 暂停。
+
+2026-11-23 影子盘账本缺陷修复发布已核验：代码提交 `0ac79d5`（本地提交，尚未推送至 `origin/feat/spot-lab-module`）；镜像 `d70df908632841ac3698bfac23ac5cc9554fc8c7577cdf7a638c57b53fad3a30`，发布标签 `localhost/bybitbot:release-20261123-shadow-ledger-v13`（已移动为 `0.1.0`），回滚点 `localhost/bybitbot:rollback-before-release-20261123-shadow-ledger-v13`（`cea5c0357159c4726dd39d30fd1c4a3c57900d51e917d67ba90a3bd6ecfedbe0`，即 v12）。提交前完整 Python 回归 1934 项、40 项 subtests 与页面测试 32 项通过，Ruff 与 `git diff --check` 通过。本次无新迁移，schema 仍为 `c9d3f7a2b6e4`。
+
+发布前加密备份 `bybitbot-20261123T120846Z-bybitbot_paper.dump.gpg`（9,492,793 字节）在本机与 NAS 的 sha256 均为 `1b3db6e08bda465f16d7c96450542c74852600144dc706b57491e4d5a51e4117`，本机解密后通过 NAS 容器内 `pg_restore --list` 验证归档可读（336 条目录项，其中 10 条属 `shadow_trade`）。发布后 postgres/worker/web 均 active、`NRestarts=0`，worker 与 web 容器均运行镜像 `d70df9086328`，心跳从 12:20:33Z 起持续推进，`last_error` 为空，订单、成交、意图、非零库存均为零，两条策略禁用，保持 `PAUSED_OPEN`、`NEEDS_CONFIRMATION`、`baseline_available=false`。
+
+切换过程中 worker 容器未在 podman 的 10 秒 SIGTERM 窗口内退出，被 SIGKILL 结束（exit 137），systemd 短暂把单元标记为 failed；脚本随后的重启把单元拉回 active，`NRestarts` 仍为 0。这不是新版本崩溃，但说明停止阶段的收敛时间超过 10 秒，排障时不要据此判断镜像有问题。
+
+修复生效证据：`shadow_trade` 中 `ledger_version=1` 的新记录为 0 条，最后一条旧 `NONE` 记录停在 12:14:14Z（重启发生在 12:20:33Z），说明修复版不再为无动作的判定写交易记录；影子行情样本持续写入，最新 12:21:00Z。旧账原样保留：`NONE` 473 条、`OPEN` 26 条、`CLOSE`/`STOP` 0 条。NAS 登录后 `/api/shadow` 返回 `decisions=0`、`closed_trades=0`、`cumulative_pnl=0.00000000`、`promotion_candidate=false`、`pair_candidates=[]`，旧账已不进入审阅指标；`promotion_note` 增加「审阅指标仅纳入修复后的有效交易记录」。观察窗需按配置重新积累，旧账不能用于标的或参数决定。
+
+**发布后新出现的活动暂停 `CLOCK_SKEW`**：该暂停行建于 2026-11-22 14:55:17Z（早于本次发布），v12 核验时只有四条活动暂停，之后被再次激活，当前记录为本机时间与交易所偏差 6.0s 超出 `max_clock_skew_seconds=5`。它不是本次改动引入的，且在账户未对账、未建立风险基线、未确认接管的状态下**不会自动解除**（时钟恢复只消除告警，解除暂停仍需对账与基线条件）。影子盘只读采样不受该暂停影响。
+
+`ETHUSDT:行情过期或缺失` 的影子盘采样拒绝日志在发布前后同样约每 10 分钟出现一次，属于既有行情刷新问题，未因本次发布改变。
