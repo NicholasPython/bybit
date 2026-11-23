@@ -288,7 +288,11 @@ ssh nas 'systemctl --user restart bybitbot-worker.service bybitbot-web.service'
 
 发布前先安装更新后的 Web Quadlet 并重启 web：配置目录挂载已由 `ro,z` 改为 `rw,z`。`systemd --user daemon-reload` 后核对容器内挂载；worker 单元仍为 `ro,z`。发布脚本完成迁移检查、镜像切换和服务重启，schema 仍为 `c9d3f7a2b6e4`。最终 postgres/worker/web 均 active；worker 心跳持续推进，`last_error` 为空，影子决策继续新增。数据库仍为 0 订单、0 成交、0 意图、0 非零库存，两条策略禁用，保留活动暂停与 `NEEDS_CONFIRMATION` 租约。
 
-NAS 本机登录后的只读核验：`/api/shadow/config` 返回 `writable=true`、`shadow.enabled=true`、`auto.enabled=false`、配对 `BTCUSDT:ETHUSDT`、`poll_seconds=10`；`/api/shadow` 返回 `configuration_source=web_start`、`runtime_verified=false`、`saved_enabled=true`、`pending_restart=false`，因此统计口径与已保存配置当前一致。无效 CSRF 的写入返回 403，登录页面 HTML 含配置表单与重启提示。本轮未从页面保存参数，配置目录尚无 `config.yaml.bak-shadow-*` 备份。回滚镜像不会自动回滚 Quadlet 或配置；若回退到 v10，须同时恢复只读 Web 单元，否则配置页写入会失败。
+NAS 本机登录后的只读核验：`/api/shadow/config` 返回 `writable=true`、`shadow.enabled=true`、`auto.enabled=false`、配对 `BTCUSDT:ETHUSDT`、`poll_seconds=10`；`/api/shadow` 返回 `configuration_source=web_start`、`runtime_verified=false`、`saved_enabled=true`、`pending_restart=false`，因此统计口径与已保存配置当前一致。无效 CSRF 的写入返回 403，登录页面 HTML 含配置表单与重启提示。发布当轮未从页面保存参数，配置目录当时尚无 `config.yaml.bak-shadow-*` 备份（写回验证见下文）。回滚镜像不会自动回滚 Quadlet 或配置；若回退到 v10，须同时恢复只读 Web 单元，否则配置页写入会失败。
+
+2026-11-23 通过页面做过两轮写回验证：先在「影子盘 → 影子盘配置」把 `shadow.observation_days` 由 7 改为 9，确认写入后改为原值 7。页面回显「配置已保存，旧文件已备份（`config.yaml.bak-shadow-ovprngyq`）。请手动重启 worker 与 web 后生效；当前运行参数尚未确认。」，错误区为空。落盘结果：`config.yaml.bak-shadow-ovprngyq` 的 sha256 为 `48ba4c19481cc248cd669aeb148f89acc43be00a546698d980c3ce15e60da1c9`，与保存前文件完全一致；第二次保存产生的 `config.yaml.bak-shadow-k9anvr9i` 为 `f2e51e9667007f9b0d33773aa46c2b4b43af684f58fea02c543e2f40d1c586b8`，等于第一次保存后的文件；最终 `config.yaml` 为 `c1f27cfcb1379c237bacf6f4fb1b0f57a6a9bb4be441d203cdb9db4ea744ffc8`，`observation_days: 7`。两个备份均为 0600，`spread:` 段之外的文本与保存前逐字节一致。
+
+worker 的行为与设计一致：保存后配置指纹变化，下一轮 tick 抛出 `RuntimeError`（「环境、端点、凭据、代理、模拟行情或费用口径变更需重启」）并置 `SERVICE_FAILURE` 暂停，直到手动重启。重启 worker 与 web 后 `last_error` 清空、`SERVICE_FAILURE` 消除、影子盘采样继续（每分钟新增样本与模拟成交），恢复保存后的 worker `config_version` 回到 `48bd85f4f6180f6ecb04`，与保存前相同。核验时 `/api/shadow/config` 返回 `writable=true`、`observation_days=7`、`revision=c1f27cfc…`，`/api/shadow` 返回 `pending_restart=false`、`saved_enabled=true`，说明已保存配置与运行配置一致。回滚参数可用同一页面改回，或停 worker 后用对应备份恢复 `config.yaml`。
 
 ### Bybit API 凭据
 
