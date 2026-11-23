@@ -130,9 +130,22 @@ def _iso(ms: int) -> str:
 
 
 def _score(
-    log_spreads: list[float], params: Parameters, *, notional: float, cost_model: CostModel
+    log_spreads: list[float],
+    params: Parameters,
+    *,
+    notional: float,
+    cost_model: CostModel,
+    score_start: int = 0,
+    burn_in_bars: int = 0,
 ) -> BacktestResult:
-    return backtest_parameters(log_spreads, params, notional=notional, cost_model=cost_model)
+    return backtest_parameters(
+        log_spreads,
+        params,
+        notional=notional,
+        cost_model=cost_model,
+        burn_in_bars=burn_in_bars,
+        score_start=score_start,
+    )
 
 
 def _objective(
@@ -210,7 +223,9 @@ def run_walk_forward(
     results: list[WindowResult] = []
     for index, (train_start, train_end, valid_start, valid_end) in enumerate(windows):
         train = log_spreads[train_start:train_end]
-        valid = log_spreads[valid_start:valid_end]
+        # 验证期用训练段与更早的数据预热滑动统计量，但 score_start 之前不产生交易。
+        valid_with_history = log_spreads[:valid_end]
+
         def objective(point: tuple[float, ...], *, _train: list[float] = train) -> float:
             return _objective(
                 point, train=_train, notional=notional, cost_model=cost_model
@@ -234,8 +249,22 @@ def run_walk_forward(
                 valid_end=_iso(common[valid_end - 1]),
                 best=best,
                 train_score=_score(train, best, notional=notional, cost_model=cost_model),
-                valid_score=_score(valid, best, notional=notional, cost_model=cost_model),
-                default_score=_score(valid, default, notional=notional, cost_model=cost_model),
+                valid_score=_score(
+                    valid_with_history,
+                    best,
+                    notional=notional,
+                    cost_model=cost_model,
+                    burn_in_bars=valid_start,
+                    score_start=valid_start,
+                ),
+                default_score=_score(
+                    valid_with_history,
+                    default,
+                    notional=notional,
+                    cost_model=cost_model,
+                    burn_in_bars=valid_start,
+                    score_start=valid_start,
+                ),
                 n_trials=len(bayes.trials),
                 seed=seed + index,
             )

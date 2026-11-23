@@ -102,11 +102,26 @@ def backtest_parameters(
     notional: float,
     cost_model: CostModel,
     min_closed_trades: int = 3,
+    burn_in_bars: int = 0,
+    score_start: int | None = None,
 ) -> BacktestResult:
-    """用给定参数跑一遍"上一根信号、这一根成交"的保守回测。"""
+    """按“上一根产生信号、下一根收盘成交”跑一遍保守回测。
+
+    ``log_spreads`` 可以包含验证窗之前的历史，用于计算滑动统计量；
+    ``score_start`` 指定从第几根开始实际计入交易，之前的预热段只用于
+    形成 Z-Score，不会产生信号或交易。这样验证窗的窗口长度不会受限于
+    7 天数据，同时仍然不会用未来数据。
+    """
     if notional <= 0:
         raise ValueError("notional 必须为正")
+    if burn_in_bars < 0 or not 0 <= burn_in_bars <= len(log_spreads):
+        raise ValueError("burn_in_bars 超出序列范围")
+    if score_start is None:
+        score_start = burn_in_bars
+    if not 0 <= score_start <= len(log_spreads):
+        raise ValueError("score_start 超出序列范围")
     zscores = rolling_zscores(log_spreads, parameters.window)
+    trade_start = max(burn_in_bars, score_start, parameters.window)
     position: int | None = None  # +1 = 做空 A 做多 B（spread 高），-1 反之
     entry_z = 0.0
     entry_spread = 0.0
@@ -116,9 +131,12 @@ def backtest_parameters(
     open_cost = 0.0
     peak = 0.0
     max_dd = 0.0
-    for index, z in enumerate(zscores):
+    for index in range(trade_start, len(log_spreads) - 1):
+        z = zscores[index]
         if z is None:
             continue
+        # index 这根收盘后产生信号；index + 1 这根收盘成交。
+        fill_index = index + 1
         if position is None:
             if abs(z) >= parameters.entry_z:
                 cost = cost_model.per_notional(notional)
@@ -128,18 +146,15 @@ def backtest_parameters(
                 position = 1 if z > 0 else -1
                 open_cost = cost
                 entry_z = z
-                entry_spread = log_spreads[index]
+                entry_spread = log_spreads[fill_index]
                 costs.append(cost)
             continue
         exit_trade = abs(z) <= parameters.exit_z
         stop_trade = abs(z) >= parameters.stop_z or z * entry_z < 0
         if not (exit_trade or stop_trade):
             continue
-        # 用当前这根收盘价成交（保守：不用未来数据）。
-        # 影子盘里滑点与手续费记在开仓那条上，闭环净盈亏只扣一次；
-        # 为了让不同窗长的成本可比，这里把总成本都记到闭环 PnL 上。
         pnl = (
-            (entry_spread - log_spreads[index]) * position * notional - open_cost
+            (entry_spread - log_spreads[fill_index]) * position * notional - open_cost
         )
         equity += pnl
         peak = max(peak, equity)
@@ -151,9 +166,12 @@ def backtest_parameters(
     mean = sum(pnls) / closed if closed else 0.0
     stdev = math.sqrt(sum((value - mean) ** 2 for value in pnls) / closed) if closed > 1 else 0.0
     sharpe = mean / stdev * math.sqrt(24 * 252) if stdev > 0 else 0.0
+    observations = sum(
+        1 for index in range(trade_start, len(zscores)) if zscores[index] is not None
+    )
     return BacktestResult(
         parameters=parameters,
-        observations=sum(1 for value in zscores if value is not None),
+        observations=observations,
         closed_trades=closed,
         mean_pnl=mean,
         stdev_pnl=stdev,
@@ -161,8 +179,5 @@ def backtest_parameters(
         sharpe=sharpe,
         max_drawdown=max_dd,
         cost_total=sum(costs),
-        sufficient=(
-            closed >= min_closed_trades
-            and sum(1 for value in zscores if value is not None) >= parameters.window * 2
-        ),
+        sufficient=closed >= min_closed_trades and observations >= parameters.window,
     )

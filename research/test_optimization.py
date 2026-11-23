@@ -124,6 +124,46 @@ def test_bayesian_optimizer_recovers_quadratic_maximum() -> None:
     assert first.best.value > -0.02, first.best
 
 
+def test_validation_window_uses_prior_history_for_warmup() -> None:
+    """验证窗可以短于滑动窗口：用验证前历史预热，但只在验证段计分。"""
+    values, _ = _series(21, length=1000)
+    params = Parameters(window=300, entry_z=1.5, exit_z=0.5, stop_z=3.0)
+    no_history = backtest_parameters(
+        values[700:],
+        params,
+        notional=100,
+        cost_model=CostModel(),
+    )
+    with_history = backtest_parameters(
+        values,
+        params,
+        notional=100,
+        cost_model=CostModel(),
+        burn_in_bars=700,
+        score_start=700,
+    )
+    assert no_history.observations == 0
+    assert no_history.closed_trades == 0
+    assert with_history.observations > 0
+    assert with_history.closed_trades > 0
+
+
+def test_signal_fills_on_next_bar() -> None:
+    """信号在 index 产生，成交价必须取 index+1 的收盘价。"""
+    values = [0.0] * 10 + [5.0] * 10
+    params = Parameters(window=5, entry_z=1.0, exit_z=0.1, stop_z=3.0)
+    result = backtest_parameters(
+        values,
+        params,
+        notional=100,
+        cost_model=CostModel(fee_rate=0, slippage_bps=0),
+    )
+    # 第 10 根达到入场条件，成交应在第 11 根；本例没有后续出场信号，
+    # 所以不应产生闭环，也不应把入场信号当作同一根成交的收益。
+    assert result.closed_trades == 0
+    assert result.net_pnl == 0.0
+
+
 def test_walk_forward_windows_cover_data_without_leakage() -> None:
     """验证窗必须在训练窗之后，且两者不重叠。"""
     windows = _windows(100, train_days=2, valid_days=1, step_days=1)
