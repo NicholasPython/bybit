@@ -320,4 +320,12 @@ ssh nas 'podman run --rm -v "$HOME/.config/bybitbot:/run/bybitbot:rw,z" localhos
 - 运行服务当前使用 REST 轮询；WebSocket 适配器有契约测试，尚未作为 worker 的主行情链路集成。
 - 业务告警渠道为空时只落库；真实告警送达、数据保留清理、容量/性能、真实 Demo/Testnet 期权能力仍有验收缺口，详见矩阵。
 
+2026-11-23 FR-07.3 按配对审阅发布已核验：代码提交 `5117a4f`；镜像 `cea5c0357159c4726dd39d30fd1c4a3c57900d51e917d67ba90a3bd6ecfedbe0`，发布标签 `localhost/bybitbot:release-20261123-shadow-review-v12`（已移动为 `0.1.0`），回滚点 `localhost/bybitbot:rollback-before-release-20261123-shadow-review-v12`（`dac3f1c7e52269e99743bfd091e74b5402c5da89e83c00b4de8f7357124a198b`，即 v11）。提交前完整 Python 回归 1932 项、40 项 subtests 与页面测试 24 项通过，Ruff、Node 语法检查与 `git diff --check` 通过。本次无新迁移，schema 仍为 `c9d3f7a2b6e4`。
+
+发布前加密备份 `bybitbot-20261123T071922Z-bybitbot_paper.dump.gpg`（9,422,813 字节）在本机与 NAS 的 sha256 均为 `c5577693097be38b09d9b4ee41976aee1336dba8956f4be0ef3bb9feee05ea87`，本机解密后通过 NAS 容器内 `pg_restore --list` 验证归档可读。发布后 postgres/worker/web 均 active、`NRestarts=0`，worker 心跳从 07:25:24Z 持续推进到 07:33:43Z，`last_error` 为空，NAS 本机 `/health` 返回 `{"status":"ok"}`，Mac 经 Tailscale 访问 `/health` 返回 200。订单、成交、意图、非零库存均为零，两条策略禁用，保持 `PAUSED_OPEN`、`NEEDS_CONFIRMATION`、`baseline_available=false`，活动暂停未解除。
+
+NAS 登录后 `/api/shadow` 已返回新增的 `review_gate`、`pair_reviews`、`pair_candidates`：`review_gate` 为 5 笔闭环 / Sharpe>2 / 回撤<3%，当前配对 `BTCUSDT:ETHUSDT` 的 `closed_trades=0`、`promotion_candidate=false`。页面「影子盘 → 按配对审阅（7 天）」可渲染配对参数与指标。回滚只需切换镜像标签并重启 worker/web，配置与 schema 均无需变化。
+
+**本轮发布核验发现三项既有影子盘数据缺陷（11-22 阶段引入，不是本次代码改动）**：`shadow_trade` 有 27 条 `OPEN`、0 条 `CLOSE`（其中 26 条 `depth_ok=false`）；唯一深度足够的开仓在 11-22 22:02 扣了 0.110 USDT 手续费与 0.042 USDT 滑点，但后续没有平仓记录，这笔亏损被计入 `daily_pnl` 而未计入 `closed_trades` / `cumulative_pnl`；其余 25 条 `OPEN` 的 `qty_a=0`、`net_pnl=0`，却因 `action=OPEN` 被写入交易记录。这些历史数据使当前审阅表的闭环数、净盈亏与候选判定都不可信；发布版本只保证统计**口径按配对拆分且不会自动晋级**，不保证历史账目质量。后续需单独修复失败开仓不落账、深度不足不发 OPEN、平仓信号能匹配活跃仓位三个问题，并在修复后重新采集或标注历史数据，不能据当前样本做标的/参数决定。
+
 实盘启用必须另行取得适用阶段验收证据和账户所有者的启用操作；本轮部署保持 paper 暂停。
