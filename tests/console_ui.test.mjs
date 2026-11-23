@@ -708,3 +708,44 @@ test("影子盘配置：保存期间禁用重读与重复提交", async () => {
   await pendingSave;
   assert.equal(app.element("shadow-config-fields").disabled, false);
 });
+
+test("影子盘审阅：按配对展示 7 天指标且没有晋升操作", async () => {
+  const app = await boot({
+    fetchResponder: async (path) => {
+      if (path !== "/api/shadow") return null;
+      return jsonResponse(200, {
+        enabled: true,
+        observation_days: 7,
+        decisions: 6,
+        closed_trades: 5,
+        sharpe: "2.400",
+        max_drawdown: "0.010",
+        cumulative_pnl: "0.500",
+        daily_pnl: { "2026-11-23": "0.500" },
+        promotion_candidate: true,
+        promotion_note: "仅生成人工审阅候选。",
+        review_gate: { min_closed_trades: 5, min_sharpe: "2", max_drawdown: "0.03" },
+        pair_candidates: ["BTCUSDT:ETHUSDT"],
+        pair_reviews: [{
+          pair_key: "BTCUSDT:ETHUSDT",
+          hedge_ratio: "1.1234567890123456789",
+          z_entry: "2", z_exit: "0.5", z_stop: "3",
+          decisions: 6, closed_trades: 5,
+          sharpe: "2.400", max_drawdown: "0.010", cumulative_pnl: "0.500",
+          promotion_candidate: true,
+        }],
+        last_decisions: [],
+      });
+    },
+  });
+  const table = app.element("shadow-pair-review-body");
+  const content = flatten(table);
+  assert.match(content, /BTCUSDT:ETHUSDT/);
+  assert.match(content, /β 1.1234567890123456789/);
+  assert.match(content, /Z 2\/0.5\/3/);
+  assert.match(content, /2\.4/);
+  assert.match(content, /0\.01/);
+  assert.match(content, /待人工审阅/);
+  assert.equal(app.requests.some((r) => r.path.includes("promote") || r.path.includes("canary")), false);
+  assert.match(flatten(app.element("shadow-summary")), /待人工审阅/);
+});

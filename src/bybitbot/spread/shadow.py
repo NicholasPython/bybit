@@ -17,7 +17,7 @@ import itertools
 import logging
 from collections.abc import Mapping
 from dataclasses import dataclass
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 
 from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
@@ -82,6 +82,71 @@ class ShadowResult:
     decision: SignalDecision
     row: ShadowTrade
     depth_ok: bool
+
+
+_ZERO = ZERO
+_MIN_CANDIDATE_TRADES = 5
+#: 展示精度：门槛判定一律用未取整的原始值，取整只影响页面可读性。
+_DISPLAY_EXPONENT = Decimal("1E-6")
+_PNL_DISPLAY_EXPONENT = Decimal("1E-8")
+
+
+def _display(value: Decimal | int, exponent: Decimal = _DISPLAY_EXPONENT) -> str:
+    """把指标压成固定小数位，避免页面出现几十位小数的噪声。"""
+    amount = value if isinstance(value, Decimal) else Decimal(value)
+    return str(amount.quantize(exponent, rounding=ROUND_HALF_UP))
+
+
+def _decision_metrics(rows: list[ShadowTrade]) -> dict[str, object]:
+    """计算观察窗内的只读指标；所有金额都是模拟值。"""
+    pnls = [row.net_pnl for row in rows if row.action in (ACTION_CLOSE, ACTION_STOP)]
+    peak, max_dd = _ZERO, _ZERO
+    equity = _ZERO
+    daily: dict[str, Decimal] = {}
+    for row in rows:
+        equity += row.net_pnl
+        peak = max(peak, equity)
+        max_dd = max(max_dd, (peak - equity) / peak if peak > 0 else _ZERO)
+        day = dt.datetime.fromtimestamp(row.decision_at_ms / 1000, tz=dt.UTC).date().isoformat()
+        daily[day] = daily.get(day, _ZERO) + row.net_pnl
+    mean = sum(pnls) / len(pnls) if pnls else _ZERO
+    variance = sum((value - mean) ** 2 for value in pnls) / len(pnls) if len(pnls) > 1 else _ZERO
+    sharpe = mean / variance.sqrt() * Decimal("252").sqrt() if variance > 0 else _ZERO
+    return {
+        "decisions": len(rows),
+        "closed_trades": len(pnls),
+        "sharpe": _display(sharpe),
+        "max_drawdown": _display(max_dd),
+        "cumulative_pnl": _display(sum(pnls), _PNL_DISPLAY_EXPONENT),
+        "daily_pnl": {
+            day: _display(value, _PNL_DISPLAY_EXPONENT) for day, value in sorted(daily.items())
+        },
+        "_pnls": pnls,
+        "_sharpe": sharpe,
+        "_max_dd": max_dd,
+    }
+
+
+def _review_entry(
+    metrics: dict[str, object], *, min_sharpe: Decimal, max_dd: Decimal
+) -> tuple[dict[str, object], bool]:
+    """按 PRD 门槛生成人工审阅项；永不产生配置或执行动作。"""
+    pnls = metrics["_pnls"]
+    sharpe = metrics["_sharpe"]
+    drawdown = metrics["_max_dd"]
+    assert isinstance(pnls, list)
+    assert isinstance(sharpe, Decimal)
+    assert isinstance(drawdown, Decimal)
+    candidate = bool(
+        len(pnls) >= _MIN_CANDIDATE_TRADES and sharpe > min_sharpe and drawdown < max_dd
+    )
+    entry = {
+        key: value
+        for key, value in metrics.items()
+        if key not in {"_pnls", "_sharpe", "_max_dd"}
+    }
+    entry["promotion_candidate"] = candidate
+    return entry, candidate
 
 
 class ShadowEngine:
@@ -430,36 +495,56 @@ class ShadowEngine:
                     .order_by(ShadowTrade.decision_at_ms)
                 )
             )
-        pnls = [row.net_pnl for row in rows if row.action in (ACTION_CLOSE, ACTION_STOP)]
-        peak, max_dd = ZERO, ZERO
-        equity = ZERO
-        daily: dict[str, Decimal] = {}
-        for row in rows:
-            equity += row.net_pnl
-            peak = max(peak, equity)
-            max_dd = max(max_dd, (peak - equity) / peak if peak > 0 else ZERO)
-            day = dt.datetime.fromtimestamp(row.decision_at_ms / 1000, tz=dt.UTC).date().isoformat()
-            daily[day] = daily.get(day, ZERO) + row.net_pnl
-        mean = sum(pnls) / len(pnls) if pnls else ZERO
-        variance = sum((value - mean) ** 2 for value in pnls) / len(pnls) if len(pnls) > 1 else ZERO
-        sharpe = mean / variance.sqrt() * Decimal("252").sqrt() if variance > 0 else ZERO
-        candidate = bool(
-            len(pnls) >= 5
-            and sharpe > self.settings.shadow.min_sharpe
-            and max_dd < self.settings.shadow.max_drawdown
-        )
+        overall = _decision_metrics(rows)
+        min_sharpe = self.settings.shadow.min_sharpe
+        max_drawdown = self.settings.shadow.max_drawdown
+        pair_reviews: list[dict[str, object]] = []
+        for pair in self.settings.pairs:
+            pair_rows = [row for row in rows if row.pair_key == pair.pair_key]
+            metrics = _decision_metrics(pair_rows)
+            review, pair_candidate = _review_entry(
+                metrics, min_sharpe=min_sharpe, max_dd=max_drawdown
+            )
+            pair_reviews.append(
+                {
+                    "pair_key": pair.pair_key,
+                    "symbol_a": pair.symbol_a,
+                    "symbol_b": pair.symbol_b,
+                    "hedge_ratio": str(pair.hedge_ratio),
+                    "z_entry": str(pair.z_entry),
+                    "z_exit": str(pair.z_exit),
+                    "z_stop": str(pair.z_stop),
+                    **review,
+                }
+            )
+        pair_candidates = [
+            item["pair_key"] for item in pair_reviews if item["promotion_candidate"]
+        ]
         return {
             "enabled": self.settings.shadow.enabled,
             "observation_days": self.settings.shadow.observation_days,
             "since": _timestamp(since),
-            "decisions": len(rows),
-            "closed_trades": len(pnls),
-            "sharpe": str(sharpe),
-            "max_drawdown": str(max_dd),
-            "cumulative_pnl": str(sum(pnls)),
-            "daily_pnl": {day: str(value) for day, value in sorted(daily.items())},
-            "promotion_candidate": candidate,
-            "promotion_note": ("仅生成人工审阅候选；影子盘不自动改参数、不灰度、不实盘晋级。"),
+            "decisions": overall["decisions"],
+            "closed_trades": overall["closed_trades"],
+            "sharpe": overall["sharpe"],
+            "max_drawdown": overall["max_drawdown"],
+            "cumulative_pnl": overall["cumulative_pnl"],
+            "daily_pnl": overall["daily_pnl"],
+            # 候选判定以按配对审阅为准：PRD 的门槛针对"某组参数 + 某个标的"，
+            # 组合口径会把不同配对的盈亏交织成一条曲线，回撤与夏普不可直接比较。
+            "promotion_candidate": bool(pair_candidates),
+            "promotion_note": (
+                "仅生成人工审阅候选；门槛为至少 5 笔闭环、Sharpe > 2 且回撤 < 3%。"
+                "候选按单个配对判定，汇总指标只是所有配对混合的参考口径。"
+                "影子盘不自动改参数、不灰度、不实盘晋级。"
+            ),
+            "review_gate": {
+                "min_closed_trades": _MIN_CANDIDATE_TRADES,
+                "min_sharpe": str(min_sharpe),
+                "max_drawdown": str(max_drawdown),
+            },
+            "pair_reviews": pair_reviews,
+            "pair_candidates": pair_candidates,
             "last_decisions": [
                 {
                     "pair_key": row.pair_key,

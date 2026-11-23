@@ -63,6 +63,14 @@ async def test_shadow_api_requires_auth_and_returns_readonly_projection(client):
     assert body["observation_days"] == 7
     assert body["promotion_candidate"] is False
     assert "不自动改参数" in body["promotion_note"]
+    assert body["review_gate"] == {
+        "min_closed_trades": 5,
+        "min_sharpe": "2",
+        "max_drawdown": "0.03",
+    }
+    assert isinstance(body["pair_reviews"], list)
+    assert body["pair_candidates"] == []
+    assert all("promotion_candidate" in item for item in body["pair_reviews"])
 
 
 async def test_shadow_api_returns_persisted_metrics(client, database):

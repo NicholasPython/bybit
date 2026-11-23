@@ -88,6 +88,11 @@
         <div class="section-heading"><h2>逐日模拟盈亏</h2><span class="muted">观察窗按自然日累计</span></div>
         <div class="table-scroll" tabindex="0" aria-label="影子盘逐日模拟盈亏"><table><thead><tr><th>日期 (UTC)</th><th class="numeric">模拟盈亏 (USDT)</th></tr></thead><tbody id="shadow-daily-body"></tbody></table></div>
       </section>
+      <section class="data-section">
+        <div class="section-heading"><h2>按配对审阅（7 天）</h2><span class="muted">门槛：≥5 笔闭环 · Sharpe &gt; 2 · 回撤 &lt; 3%</span></div>
+        <p class="section-caption">统计数据来自当前 Web 启动时的配置版本，不能据此确认刚保存的新参数已生效。达到门槛只表示需要人工审阅，不会自动改配置、不会灰度、不会进入实盘。</p>
+        <div class="table-scroll" tabindex="0" aria-label="影子盘按配对审阅"><table><thead><tr><th>配对 / 参数</th><th class="numeric">决策</th><th class="numeric">闭环</th><th class="numeric">模拟 Sharpe</th><th class="numeric">最大回撤</th><th class="numeric">净盈亏 (USDT)</th><th>审阅标记</th></tr></thead><tbody id="shadow-pair-review-body"></tbody></table></div>
+      </section>
     </section>
 
     <!-- 目标一：对账与恢复（默认首屏） -->

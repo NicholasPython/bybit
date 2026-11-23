@@ -796,6 +796,15 @@
         (r) => r.day,
         { value: (r) => amount(r.value, "USDT"), className: "numeric" },
       ], "暂无逐日模拟盈亏。");
+      table("shadow-pair-review-body", shadow.pair_reviews || [], [
+        (r) => stacked(r.pair_key, `β ${text(r.hedge_ratio)} · Z ${text(r.z_entry)}/${text(r.z_exit)}/${text(r.z_stop)}`),
+        { value: (r) => r.decisions, className: "numeric" },
+        { value: (r) => r.closed_trades, className: "numeric" },
+        { value: (r) => amount(r.sharpe), className: "numeric" },
+        { value: (r) => amount(r.max_drawdown), className: "numeric" },
+        { value: (r) => amount(r.cumulative_pnl, "USDT"), className: "numeric" },
+        (r) => r.promotion_candidate ? "待人工审阅" : "未达标",
+      ], "当前启动时配置没有观察配对。");
     } catch (error) {
       showError($("shadow-note"), error.status ? error.message : "无法读取影子盘状态。");
     }

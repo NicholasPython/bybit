@@ -163,7 +163,153 @@ async def test_shadow_status_is_readonly_and_reports_metrics(database):
     assert status["observation_days"] == 7
     assert status["promotion_candidate"] is False
     assert "不自动改参数" in status["promotion_note"]
+    assert status["review_gate"] == {
+        "min_closed_trades": 5,
+        "min_sharpe": "2",
+        "max_drawdown": "0.03",
+    }
+    assert status["pair_candidates"] == []
+    assert len(status["pair_reviews"]) == 1
+    assert status["pair_reviews"][0]["pair_key"] == "BTCUSDT:ETHUSDT"
+    assert status["pair_reviews"][0]["closed_trades"] == 0
+    assert status["pair_reviews"][0]["promotion_candidate"] is False
     assert await rows(database) == []
+
+
+async def test_shadow_pair_review_requires_gate_and_stays_readonly(database):
+    shadow = engine(database, PublicAdapter())
+    now_ms = int(now_utc().timestamp() * 1000)
+    pair = config().pairs[0]
+    async with database.sessionmaker() as session:
+        for index in range(5):
+            session.add(
+                ShadowTrade(
+                    environment=ENVIRONMENT,
+                    pair_trade_id=f"shadow-review-{index}",
+                    direction="SHORT_A_LONG_B",
+                    side_a="Sell",
+                    side_b="Buy",
+                    pair_key=pair.pair_key,
+                    symbol_a=pair.symbol_a,
+                    symbol_b=pair.symbol_b,
+                    decision_at_ms=now_ms - (5 - index) * 1000,
+                    action="CLOSE",
+                    reason="EXIT_THRESHOLD_REACHED",
+                    qty_a=D("1"),
+                    qty_b=D("1"),
+                    price_a=D("100"),
+                    price_b=D("100"),
+                    notional=D("100"),
+                    net_pnl=D("0.1"),
+                    cumulative_pnl=D("0.1") * (index + 1),
+                    context={"simulated": True},
+                )
+            )
+        await session.commit()
+    before = [(row.pair_trade_id, row.net_pnl) for row in await rows(database)]
+    status = await shadow.status()
+    assert status["closed_trades"] == 5
+    review = status["pair_reviews"][0]
+    assert review["closed_trades"] == 5
+    assert D(review["cumulative_pnl"]) == D("0.5")
+    # 5 笔但零方差，按口径 Sharpe=0，不能仅凭笔数标成候选。
+    assert review["promotion_candidate"] is False
+    assert status["pair_candidates"] == []
+    assert [(row.pair_trade_id, row.net_pnl) for row in await rows(database)] == before
+
+
+async def test_shadow_candidate_decides_per_pair_not_on_mixed_portfolio(database):
+    """候选必须按单个配对判定；组合口径的亏损不能否掉达标配对，反之亦然。"""
+    now_ms = int(now_utc().timestamp() * 1000)
+    settings = config().model_copy(
+        update={
+            "pairs": (
+                *config().pairs,
+                SpreadSettings.model_validate(
+                    {
+                        "enabled": False,
+                        "pairs": [
+                            {
+                                "pair_key": "DOGEUSDT:LINKUSDT",
+                                "symbol_a": "DOGEUSDT",
+                                "symbol_b": "LINKUSDT",
+                                "hedge_ratio": "1",
+                                "z_entry": "1",
+                                "z_exit": "0.2",
+                                "z_stop": "3",
+                                "max_notional": {"value": "300", "currency": "USDT"},
+                                "max_unhedged_notional": {"value": "20", "currency": "USDT"},
+                                "enabled": False,
+                            }
+                        ],
+                    }
+                ).pairs[0],
+            )
+        }
+    )
+    shadow = ShadowEngine(
+        adapter=PublicAdapter(), sessionmaker=database.sessionmaker, settings=settings
+    )
+    good = [D("0.12"), D("0.15"), D("0.10"), D("0.18"), D("0.11")]
+    bad = [D("-0.30"), D("-0.20"), D("-0.10"), D("-0.05"), D("-0.02")]
+    async with database.sessionmaker() as session:
+        for index, pnl in enumerate(good):
+            session.add(
+                ShadowTrade(
+                    environment=ENVIRONMENT,
+                    pair_trade_id=f"shadow-good-{index}",
+                    direction="SHORT_A_LONG_B",
+                    side_a="Sell",
+                    side_b="Buy",
+                    pair_key="BTCUSDT:ETHUSDT",
+                    symbol_a="BTCUSDT",
+                    symbol_b="ETHUSDT",
+                    decision_at_ms=now_ms - (10 - index) * 1000,
+                    action="CLOSE",
+                    reason="EXIT_THRESHOLD_REACHED",
+                    qty_a=D("1"),
+                    qty_b=D("1"),
+                    price_a=D("100"),
+                    price_b=D("100"),
+                    notional=D("100"),
+                    net_pnl=pnl,
+                    cumulative_pnl=sum(good[: index + 1]),
+                    context={"simulated": True},
+                )
+            )
+        for index, pnl in enumerate(bad):
+            session.add(
+                ShadowTrade(
+                    environment=ENVIRONMENT,
+                    pair_trade_id=f"shadow-bad-{index}",
+                    direction="SHORT_A_LONG_B",
+                    side_a="Sell",
+                    side_b="Buy",
+                    pair_key="DOGEUSDT:LINKUSDT",
+                    symbol_a="DOGEUSDT",
+                    symbol_b="LINKUSDT",
+                    decision_at_ms=now_ms - (10 - index) * 1000,
+                    action="CLOSE",
+                    reason="EXIT_THRESHOLD_REACHED",
+                    qty_a=D("1"),
+                    qty_b=D("1"),
+                    price_a=D("100"),
+                    price_b=D("100"),
+                    notional=D("100"),
+                    net_pnl=pnl,
+                    cumulative_pnl=sum(bad[: index + 1]),
+                    context={"simulated": True},
+                )
+            )
+        await session.commit()
+    status = await shadow.status()
+    reviews = {item["pair_key"]: item for item in status["pair_reviews"]}
+    assert reviews["BTCUSDT:ETHUSDT"]["promotion_candidate"] is True
+    assert reviews["DOGEUSDT:LINKUSDT"]["promotion_candidate"] is False
+    assert status["pair_candidates"] == ["BTCUSDT:ETHUSDT"]
+    assert status["promotion_candidate"] is True
+    # 组合口径本身是亏损的：它只是参考，不能推翻按配对的判定。
+    assert D(status["cumulative_pnl"]) < 0
 
 
 async def test_shadow_tick_samples_disabled_pairs(database):
