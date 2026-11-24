@@ -343,3 +343,9 @@ NAS 登录后 `/api/shadow` 已返回新增的 `review_gate`、`pair_reviews`、
 **发布后新出现的活动暂停 `CLOCK_SKEW`**：该暂停行建于 2026-11-22 14:55:17Z（早于本次发布），v12 核验时只有四条活动暂停，之后被再次激活，当前记录为本机时间与交易所偏差 6.0s 超出 `max_clock_skew_seconds=5`。它不是本次改动引入的，且在账户未对账、未建立风险基线、未确认接管的状态下**不会自动解除**（时钟恢复只消除告警，解除暂停仍需对账与基线条件）。影子盘只读采样不受该暂停影响。
 
 `ETHUSDT:行情过期或缺失` 的影子盘采样拒绝日志在发布前后同样约每 10 分钟出现一次，属于既有行情刷新问题，未因本次发布改变。
+
+2026-11-24 影子盘多配对并行观察已核验（阶段四，无新镜像、无新迁移）：把 FR-07.1 提名清单里的 4 个 β>0 配对（`NEARUSDT:ANTUSDT`、`DOGEUSDT:LINKUSDT`、`ACEUSDT:ADAUSDT`、`ETHUSDT:LINKUSDT`）以 `enabled: false` 加入 NAS `config.yaml` 的 `spread.pairs`，使影子盘对多标的并行采样同一组参数（`z_entry=2.0`/`z_exit=0.5`/`z_stop=3.5`/`auto.window=60`）。写回走仓库自带的 `settings.writer.write_spread`（与管理页影子盘配置写回同一个写入器：校验、备份、原子替换、revision 冲突保护），配置 revision 变为 `d5a0f396160ad08fc69012b1f8765b378ca1a1d4334a0e37a280123c6ee84233`，自动备份 `config.yaml.bak-shadow-mkj29c0h`（0600）。写回前已停 worker，写回后重启 worker 与 web。
+
+核验：postgres/worker/web 均 active，worker `NRestarts=0`、`ActiveEnterTimestamp=2026-11-24 09:16:17 CST`，`last_error` 为空，`state=PAUSED_OPEN`、`lease=NEEDS_CONFIRMATION` 未变；活动暂停仍是 `CLOCK_SKEW`、`CONFIG_CHANGED`、`MANUAL`、`NOTIFICATION_FAILURE`、`VALUATION_UNAVAILABLE` 五条既有暂停，未代为解除；`/health` 返回 `{"status":"ok"}`，`/api/shadow` 未登录返回 401。`spread_signal_sample` 中 5 个配对都已写入 shadow 样本（最新 01:17:00Z），新配对在预热完成前日志为「影子盘采样被拒：`XXX`：样本不足」。
+
+两个配置侧差距：`LINKUSDT:ETHPERP` 的符号不符合配对模型（只接受 `*USDT` 与交割合约），写回时被校验拒绝，故未进影子盘；FR-07.1 提名里的 5 个反向配对（β<0）过不了 `hedge_ratio > 0` 校验，需要另立建模口径。在册 `BTCUSDT:ETHUSDT` 的 `hedge_ratio` 仍为 `1.0`，未动，避免中途改写已积累窗口样本的解释口径。阶段四细节见 [影子盘多配对并行观察](spread-arbitrage-candidates-2026-11-24.md)。

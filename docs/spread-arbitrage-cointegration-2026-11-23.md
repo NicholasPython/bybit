@@ -140,6 +140,8 @@ python research/cointegration/check_pairs.py \
 
 本阶段不修改 `config.yaml`。`spread.pairs` 里当前的 `BTCUSDT:ETHUSDT`（`hedge_ratio=1.0`、`z_entry=2.0`、`z_exit=0.5`、`z_stop=3.5`）在本次检验里对应 β = 0.714、相关 0.978，但价差不平稳。若后续决定换标的，需要人工改配置并重启 worker，随后由影子盘 7 天验证（FR-07.3）给出 Sharpe 与回撤，再决定是否进入下一阶段评估。
 
+2026-11-24 补充：本清单里 β>0 且符号能通过配对模型校验的 4 个配对已以 `enabled: false` 加入影子盘采样清单（只读采样，执行面未启用），见[影子盘多配对并行观察](spread-arbitrage-candidates-2026-11-24.md)。`LINKUSDT:ETHPERP` 因符号规则进不了配置，5 个 β<0 的反向配对仍无建模口径——这些都还是人工审阅项，本阶段与后续阶段都不自动换标。
+
 ## 九、复现与证据
 
 - 自检：`python research/test_cointegration.py`（12 项）与 `uv run pytest -q`（含 `research/test_cointegration.py`）。
