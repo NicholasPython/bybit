@@ -31,7 +31,7 @@ jobs:
       - name: Install locked project
         run: uv sync --frozen --extra dev
       - name: Lint
-        run: uv run ruff check src tests deploy alembic research/bybit_spot_backtest
+        run: uv run ruff check src tests deploy alembic research/bybit_spot_backtest research/cointegration research/optimization research/test_cointegration.py research/test_optimization.py
       - name: Test with synthetic credentials and blocked exchange HTTP
         run: uv run pytest -q
       - name: Verify console command feedback

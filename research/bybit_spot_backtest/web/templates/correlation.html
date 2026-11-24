@@ -5,16 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark">
   <title>热门 Top20 · 收益相关性 | Bybit 现货回测台</title>
-  <link rel="stylesheet" href="/static/style.css">
-  <link rel="stylesheet" href="/static/correlation.css">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='correlation.css') }}">
 </head>
-<body>
+<body data-prefix="{{ prefix }}">
   <div class="shell">
     <header class="topbar">
       <div class="brand"><div class="brand-mark">B</div><div><span class="eyebrow">PRIVATE MARKET LAB</span><strong>Bybit 现货回测台</strong></div></div>
       <div class="top-right"><span class="private-pill"><span class="pulse"></span> TAILSCALE 私有访问</span></div>
     </header>
-    <nav class="page-nav" aria-label="主要导航"><a href="/">行情与回测</a><a href="/correlation" aria-current="page">热门 Top20 · 收益相关性</a></nav>
+    <nav class="page-nav" aria-label="主要导航"><a href="{{ url_for('index') }}">行情与回测</a><a href="{{ url_for('correlation_page') }}" aria-current="page">热门 Top20 · 收益相关性</a></nav>
     <main>
       <section class="hero research-hero">
         <div><p class="eyebrow teal">MARKET RELATIONSHIPS · SNAPSHOT</p><h1>哪些币一起波动，<br><em>哪些走势各有节奏。</em></h1><p class="subtitle">Bybit 热门现货 Top20 · 小时收益相关性 · 累计表现对比</p></div>
@@ -56,13 +56,13 @@
         <section class="section-block panel">
           <div class="section-heading"><div><p class="eyebrow">04 / COVERAGE & INTERPRETATION</p><h2>数据覆盖与解读</h2></div></div>
           <div id="coverageNotes" class="research-notes"></div>
-          <details class="strategy-guide"><summary>如何用于屯币宝研究？</summary><div><p>先检查币对相关性在不同窗口是否稳定，再看相对价格是否往复，最后比较计入交易费用后的再平衡回测。弱相关不保证对冲或再平衡盈利。</p><p>今日 Top20 只能作为当前观察名单。历史选币回测须使用当时可获得的排名，避免未来信息与幸存者偏差。<a href="/">策略回测</a>现已支持相同 Top20 币种，使用独立采集的完整分钟数据；小时相关性数据不用于代替分钟成交。实际区间取决于上市时间与分钟回溯进度。</p><p><a href="https://bybit-exchange.github.io/docs/v5/market/tickers" target="_blank" rel="noopener noreferrer">Bybit 官方行情 API ↗</a> · <a href="https://gold.tether.to/" target="_blank" rel="noopener noreferrer">XAUT 黄金属性说明 ↗</a></p></div></details>
-          <div class="research-downloads"><a href="/api/correlation/download/top20-ranking.csv">排名 CSV ↓</a><a id="matrixDownload" href="/api/correlation/download/correlation-90.csv">当前相关矩阵 CSV ↓</a><a href="/api/correlation/download/correlation-common-161h.csv">20 币共同短窗矩阵 ↓</a><a href="/api/correlation/download/report.md">完整报告 ↓</a><a href="/api/correlation/download/bybit-top20-analysis.zip">全部数据与图表 ZIP ↓</a></div>
+          <details class="strategy-guide"><summary>如何用于屯币宝研究？</summary><div><p>先检查币对相关性在不同窗口是否稳定，再看相对价格是否往复，最后比较计入交易费用后的再平衡回测。弱相关不保证对冲或再平衡盈利。</p><p>今日 Top20 只能作为当前观察名单。历史选币回测须使用当时可获得的排名，避免未来信息与幸存者偏差。<a href="{{ url_for('index') }}">策略回测</a>现已支持相同 Top20 币种，使用独立采集的完整分钟数据；小时相关性数据不用于代替分钟成交。实际区间取决于上市时间与分钟回溯进度。</p><p><a href="https://bybit-exchange.github.io/docs/v5/market/tickers" target="_blank" rel="noopener noreferrer">Bybit 官方行情 API ↗</a> · <a href="https://gold.tether.to/" target="_blank" rel="noopener noreferrer">XAUT 黄金属性说明 ↗</a></p></div></details>
+          <div class="research-downloads"><a href="{{ url_for('correlation_download', name='top20-ranking.csv') }}">排名 CSV ↓</a><a id="matrixDownload" href="{{ url_for('correlation_download', name='correlation-90.csv') }}">当前相关矩阵 CSV ↓</a><a href="{{ url_for('correlation_download', name='correlation-common-161h.csv') }}">20 币共同短窗矩阵 ↓</a><a href="{{ url_for('correlation_download', name='report.md') }}">完整报告 ↓</a><a href="{{ url_for('correlation_download', name='bybit-top20-analysis.zip') }}">全部数据与图表 ZIP ↓</a></div>
         </section>
       </div>
       <footer><span>BYBIT SPOT LAB</span><span>公开行情 · 私有访问 · 研究用途</span></footer>
     </main>
   </div>
-  <script src="/static/correlation.js" defer></script>
+  <script src="{{ url_for('static', filename='correlation.js') }}" defer></script>
 </body>
 </html>

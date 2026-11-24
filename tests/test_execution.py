@@ -211,6 +211,31 @@ def fill(order, *, identifier="exec-1", qty="1", fee="0", asset="USDT", at=None)
     )
 
 
+@pytest.mark.parametrize("ack_status", ["New", "Accepted", "Created"])
+async def test_live_ack_vocabulary_never_becomes_unknown(sessionmaker, ack_status):
+    """实盘回执措辞必须落在状态机词表内。
+
+    回归来源：实盘适配器曾返回 ``"Accepted"``，而状态机词表不含该词，
+    归一后落到 ``UNKNOWN`` —— 每笔实盘单都被判"结果未知"，账户永久锁死、
+    资金预留永不释放。模拟适配器恰好返回 ``"New"``，把错配完整掩盖了。
+    """
+    class AckAdapter(ControlledPaper):
+        async def create_order(self, request):
+            ack = await super().create_order(request)
+            return OrderAck(ack.order_id, ack.order_link_id, ack_status)
+
+    intent, reservation, _ = await prepared(sessionmaker)
+    adapter = AckAdapter(sessionmaker)
+    result = await make_executor(sessionmaker, adapter).submit(plan(intent, reservation))
+    assert not result.is_unknown
+    async with sessionmaker() as session:
+        row = await session.get(Order, result.order.id)
+        assert row.status == "ACCEPTED" and row.sync_state == "CONFIRMED"
+        assert await session.scalar(
+            select(RiskPause.active).where(RiskPause.reason_code == "UNKNOWN_ORDER")
+        ) is None
+
+
 async def test_unknown_never_retries_or_releases_missing_query(sessionmaker):
     intent, reservation, _ = await prepared(sessionmaker)
     adapter = ControlledPaper(sessionmaker, error=TimeoutError("response lost"))

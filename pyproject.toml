@@ -53,6 +53,8 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S105", "S106", "S311"]
+# 统计自检里的随机数只用于造仿真样本，不是加密用途。
+"research/test_*.py" = ["S311"]
 "deploy/**" = ["S106"]
 
 [tool.pytest.ini_options]

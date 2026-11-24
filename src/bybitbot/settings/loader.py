@@ -36,6 +36,9 @@ from bybitbot.settings.models import (
     PaperConfig,
     RiskLimits,
     RuntimeConfig,
+    SpreadAutoSettings,
+    SpreadSettings,
+    SpreadShadowSettings,
     StrategyConfig,
 )
 
@@ -61,6 +64,8 @@ class AppConfig(BaseModel):
     #: 手续费估算口径（模拟与实盘共用，见 CR-02）。
     fees: FeeEstimationConfig = FeeEstimationConfig()
     runtime: RuntimeConfig = RuntimeConfig()
+    #: 双腿价差套利子系统（PRD FR-01 / FR-03）。默认关闭。
+    spread: SpreadSettings = SpreadSettings()
     strategies: tuple[StrategyConfig, ...] = ()
 
     @model_validator(mode="after")
@@ -198,6 +203,12 @@ def load_config(
         paper = PaperConfig.model_validate(raw.get("paper") or {})
         fees = FeeEstimationConfig.model_validate(raw.get("fees") or {})
         runtime = RuntimeConfig.model_validate(raw.get("runtime") or {})
+        spread_raw = dict(raw.get("spread") or {})
+        spread_auto = SpreadAutoSettings.model_validate(spread_raw.get("auto") or {})
+        spread_raw["auto"] = spread_auto
+        spread_shadow = SpreadShadowSettings.model_validate(spread_raw.get("shadow") or {})
+        spread_raw["shadow"] = spread_shadow
+        spread = SpreadSettings.model_validate(spread_raw)
         strategies = tuple(StrategyConfig.model_validate(s) for s in (raw.get("strategies") or []))
     except ValidationError as exc:
         raise ConfigError(f"配置校验失败：\n{exc}") from exc
@@ -217,6 +228,7 @@ def load_config(
             paper=paper,
             fees=fees,
             runtime=runtime,
+            spread=spread,
             strategies=strategies,
         )
     except ValidationError as exc:
@@ -229,6 +241,20 @@ def _cross_validate(cfg: AppConfig) -> None:
     """跨段一致性检查 —— 单元校验看不到的关系在这里兜底。"""
     profile = cfg.profile
     account = cfg.account
+    if cfg.spread.enabled:
+        if cfg.active_environment is not Environment.PAPER:
+            raise ConfigError("阶段二套利仅允许独立 paper 环境，远程交易尚未验收")
+        if any(strategy.enabled for strategy in cfg.strategies):
+            raise ConfigError("套利 paper 账户不能与现货/期权策略混跑")
+        if cfg.ops.valuation.currency != "USDT" or any(
+            coin != "USDT" and value != 0 for coin, value in cfg.paper.initial_balances.items()
+        ):
+            raise ConfigError("阶段二套利只允许 USDT 资金与估值")
+        if (
+            cfg.spread.auto.enabled
+            and cfg.spread.auto.sample_interval_seconds < cfg.runtime.poll_seconds
+        ):
+            raise ConfigError("自动信号采样间隔不能短于 worker 轮询间隔")
     if cfg.active_environment is not Environment.PAPER and cfg.paper.market_source == "synthetic":
         raise ConfigError("合成行情只允许用于 paper 环境")
 

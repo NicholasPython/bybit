@@ -7,7 +7,8 @@ After=bybitbot-worker.service bybitbot-postgres.service
 Image=localhost/bybitbot:0.1.0
 ContainerName=bybitbot-web
 Network=host
-Volume=%h/.config/bybitbot:/run/bybitbot:ro,z
+# 配置页需要同目录备份与原子替换；worker 挂载仍为只读。
+Volume=%h/.config/bybitbot:/run/bybitbot:rw,z
 Exec=--config /run/bybitbot/config.yaml web --auth /run/bybitbot/admin.json --host 127.0.0.1 --port 18080
 ReadOnly=true
 NoNewPrivileges=true

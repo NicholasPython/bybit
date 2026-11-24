@@ -142,6 +142,7 @@ def main():
             Database(config.profile.db_dsn),
             args.auth,
             secure_cookies=not args.insecure_local_cookie,
+            config_path=args.config,
         )
         uvicorn.run(
             application,

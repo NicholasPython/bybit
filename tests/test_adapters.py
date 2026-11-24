@@ -6,6 +6,7 @@ import datetime as dt
 import hashlib
 import hmac
 import json
+import time
 from contextlib import asynccontextmanager
 from decimal import Decimal
 from unittest.mock import AsyncMock
@@ -21,7 +22,7 @@ from bybitbot.adapters.base import (
     RateLimited,
     TransientError,
 )
-from bybitbot.adapters.bybit_rest import BybitRestAdapter, BybitRestError
+from bybitbot.adapters.bybit_rest import ORDER_STATUSES, BybitRestAdapter, BybitRestError
 from bybitbot.adapters.bybit_ws import (
     BybitOrderBookStream,
     BybitPrivateStream,
@@ -29,6 +30,7 @@ from bybitbot.adapters.bybit_ws import (
     WebSocketError,
 )
 from bybitbot.clock import now_utc
+from bybitbot.execution.states import ACCEPTED, effective_status
 from bybitbot.settings.models import OrderSide, OrderType
 
 D = Decimal
@@ -66,9 +68,14 @@ async def adapter(handler, *, environment="testnet", allow=True, attempts=3):
 
 
 def request(*, category="spot", side=OrderSide.BUY, reduce_only=False):
+    symbol = {
+        "spot": "BTCUSDT",
+        "option": "BTC-30OCT26-90000-C",
+        "linear": "BTCUSDT",
+    }[category]
     return OrderRequest(
         category=category,
-        symbol="BTCUSDT" if category == "spot" else "BTC-30OCT26-90000-C",
+        symbol=symbol,
         side=side,
         order_type=OrderType.LIMIT,
         qty=D("0.01"),
@@ -600,6 +607,119 @@ async def test_explicit_write_rejection_is_not_unknown():
     assert caught.value.ret_code == 110004
 
 
+@pytest.mark.parametrize(
+    "handler_factory",
+    [
+        lambda: (lambda req: httpx.Response(429, json={"retCode": 10006, "retMsg": "busy"})),
+        lambda: (lambda req: response({}, code=10006)),
+        lambda: (lambda req: response({}, code=10018)),
+    ],
+)
+async def test_rate_limited_write_is_a_definite_rejection(handler_factory):
+    """限流发生在创建订单之前，是"确定未受理"，不是"结果未知"。
+
+    回归来源：写侧把限流也打成 OrderUncertain → UNKNOWN → 账户锁定暂停，
+    交易所限频一次就足以让实盘永远无法开仓。
+    """
+    async with adapter(handler_factory()) as instance:
+        with pytest.raises(OrderRejected) as caught:
+            await instance.create_order(request())
+    assert caught.value.ret_code == 429
+
+
+async def test_write_waits_out_a_short_rate_limit_cooldown_before_sending():
+    calls = 0
+
+    def handle(req):
+        nonlocal calls
+        calls += 1
+        return response({"orderId": "accepted-1", "orderLinkId": "contract-test-1"})
+
+    async with adapter(handle) as instance:
+        instance._write_ready_at["/v5/order/create"] = time.monotonic() + 0.05
+        result = await instance.create_order(request())
+    assert calls == 1 and result.order_id == "accepted-1"
+
+
+async def test_write_refuses_to_send_during_a_long_rate_limit_cooldown():
+    def fail(req):
+        raise AssertionError("冷却期内不得发出写请求")
+
+    async with adapter(fail) as instance:
+        instance._write_ready_at["/v5/order/create"] = time.monotonic() + 600
+        with pytest.raises(OrderRejected):
+            await instance.create_order(request())
+
+
+async def test_open_order_query_asks_only_for_open_orders():
+    """openOnly=0 会把历史订单整批拉回来，既触发限流又污染对账。"""
+    seen = []
+
+    def handle(req):
+        seen.append(req.url.params.get("openOnly"))
+        return response({"list": [], "nextPageCursor": ""})
+
+    async with adapter(handle) as instance:
+        await instance.get_open_orders("spot")
+    assert seen == ["1"]
+
+
+async def test_created_order_status_is_recognised():
+    """V5 条件单会先处于 Created；词表缺它会让私有流解析抛错并断开重连。"""
+    assert "Created" in ORDER_STATUSES
+
+
+async def test_linear_order_uses_one_way_position_and_reduce_only():
+    """U 本位下单：一号仓位模式 + reduceOnly，不带现货的 isLeverage。"""
+
+    def handle(req):
+        body = json.loads(req.content)
+        assert body["category"] == "linear"
+        assert body["positionIdx"] == 0
+        assert body["reduceOnly"] is True
+        assert "isLeverage" not in body
+        return response({"orderId": "accepted-1", "orderLinkId": body["orderLinkId"]})
+
+    async with adapter(handle) as instance:
+        await instance.create_order(request(category="linear", reduce_only=True))
+
+
+async def test_linear_instruments_query_omits_the_option_only_base_coin():
+    """baseCoin=All 只对期权有效；linear 的 instruments-info 不接受该参数。"""
+    seen = []
+
+    def handle(req):
+        seen.append(dict(req.url.params))
+        return response(
+            {
+                "list": [
+                    {
+                        "symbol": "BTCUSDT",
+                        "baseCoin": "BTC",
+                        "quoteCoin": "USDT",
+                        "settleCoin": "USDT",
+                        "status": "Trading",
+                        "contractType": "LinearPerpetual",
+                        "priceFilter": {"tickSize": "0.01"},
+                        "lotSizeFilter": {
+                            "qtyStep": "0.001",
+                            "minOrderQty": "0.001",
+                            "maxOrderQty": "100",
+                        },
+                    }
+                ],
+                "nextPageCursor": "",
+            }
+        )
+
+    async with adapter(handle) as instance:
+        specs = await instance.get_instruments("linear")
+    assert seen and "baseCoin" not in seen[0]
+    assert specs[0].symbol == "BTCUSDT"
+    assert specs[0].qty_step == D("0.001")
+    assert specs[0].tick_size == D("0.01")
+
+
 async def test_spot_no_leverage_and_signed_json_bytes():
     def handle(req):
         body = json.loads(req.content)
@@ -613,7 +733,12 @@ async def test_spot_no_leverage_and_signed_json_bytes():
 
     async with adapter(handle) as instance:
         result = await instance.create_order(request())
-    assert result.status == "Accepted"
+    # 回执措辞必须在状态机词表内，否则 effective_status 会归一成 UNKNOWN。
+    assert result.status == "New"
+    assert (
+        effective_status(exchange_status=result.status, qty=D("0.01"), qty_filled=D("0"))
+        == ACCEPTED
+    )
 
 
 async def test_option_sale_requires_reduce_only_and_one_way_position():

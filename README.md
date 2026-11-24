@@ -14,13 +14,21 @@
 - 现货－永续价差套利的只读采集与回测（2026-11-18，含真实数据结论）：[docs/cash-futures-spread-2026-11-18.md](docs/cash-futures-spread-2026-11-18.md)
 - 现货－永续价差实盘前风险清单（2026-11-19，含产品侧缺口与验证清单）：[docs/cash-futures-live-risk-checklist-2026-11-19.md](docs/cash-futures-live-risk-checklist-2026-11-19.md)
 - 现货 1 分钟采集与回测子工程（2026-11-19，Bybit 公共接口，只读研究）：[research/bybit_spot_backtest/README.md](research/bybit_spot_backtest/README.md)
+- 双腿价差套利阶段一与 P0 阻断项修复（2026-11-20，含能力边界与下一阶段顺序）：[docs/spread-arbitrage-phase1-2026-11-20.md](docs/spread-arbitrage-phase1-2026-11-20.md)
+- 双腿价差套利阶段二（2026-11-22，独立 paper 持久化执行、线性腿对账与重启恢复）：[docs/spread-arbitrage-phase2-2026-11-22.md](docs/spread-arbitrage-phase2-2026-11-22.md)
+- 双腿价差套利阶段三（2026-11-22，滚动价差信号、成本过滤与受控触发）：[docs/spread-arbitrage-phase3-2026-11-22.md](docs/spread-arbitrage-phase3-2026-11-22.md)
+- 双腿价差套利影子盘与管理页（2026-11-22，FR-07.3 公开行情模拟与只读核验）：[docs/spread-arbitrage-shadow-2026-11-22.md](docs/spread-arbitrage-shadow-2026-11-22.md)
+- 影子盘前端配置页（2026-11-23，受限写回、自动备份与手动重启）：[docs/runbook-nas.md](docs/runbook-nas.md#影子盘配置页部署新版本后可用)
+- FR-07.1 协整检验（2026-11-23，离线 ADF + Engle-Granger，BTC/ETH 未通过）：[docs/spread-arbitrage-cointegration-2026-11-23.md](docs/spread-arbitrage-cointegration-2026-11-23.md)
+- FR-07.2 滚动参数寻优（2026-11-23，离线贝叶斯优化，真实滑点缺失故降级）：[docs/spread-arbitrage-optimization-2026-11-23.md](docs/spread-arbitrage-optimization-2026-11-23.md)
+- 影子盘多配对并行观察（2026-11-24，FR-07.1 提名配对进入影子盘采样清单，只读执行面）：[docs/spread-arbitrage-candidates-2026-11-24.md](docs/spread-arbitrage-candidates-2026-11-24.md)
 
 ## 组成
 
 | 进程 | 职责 |
 |---|---|
 | `bybitbot run` | 唯一交易 worker：行情同步、风控与预留、订单执行、账本与对账、调度、退出管理、告警 |
-| `bybitbot web` | 只读管理页与控制命令入队（控制命令由 worker 领取执行，页面本身不发单） |
+| `bybitbot web` | 管理页、影子盘受限配置写回与控制命令入队（控制命令由 worker 领取执行，页面本身不发单） |
 | `bybitbot migrate` | 数据库版本迁移 |
 | `bybitbot init-admin` | 创建管理身份（PBKDF2，口令不写入日志） |
 | `bybitbot sandbox init / verify` | 新建本地独立 schema 与固定合成行情，验收策略到重启恢复的 paper 闭环 |
@@ -33,6 +41,7 @@
 - `ledger.py` / `reconciliation.py` —— 账本事件、去重成交、权益政策与对账修复
 - `fees.py` —— 版本化的手续费估算口径（模拟、预算与止盈判断共用）
 - `strategy/` —— 现货定预算 DCA、期权单腿买入，退出规则
+- `spread/` —— U 本位双腿价差套利：配对状态机、腿订单模型、瘸腿自愈（默认关闭）
 - `ops/` —— 运行状态、暂停管理、告警投递、受限文件注入的通知渠道
 - `web/` —— FastAPI 管理页（模板 + 原生 JS/CSS）
 
@@ -68,7 +77,7 @@ uv run ruff check src tests deploy
 uv run pytest -q
 ```
 
-2026-11-18 最新结果为 **1411 项通过**（一个 Alembic `path_separator` 弃用警告）。测试在 `BYBITBOT_TESTING=1` 下运行；`tests/conftest.py` 阻断 httpx 的默认同步和异步 HTTP transport，交易所 HTTP 响应使用 `httpx.MockTransport`，交易行为使用 `PaperAdapter` 合成。数据库用例各自使用独立 PostgreSQL schema，结束后只删除自己的 schema。这不是操作系统级网络隔离，也不构成真实 Bybit 能力验收。管理页命令提示另有 `node --test tests/console_ui.test.mjs`（6 项）覆盖。
+2026-11-24 最新结果为 **1934 项通过、40 项 subtests 通过**（Alembic `path_separator` 弃用警告）。测试在 `BYBITBOT_TESTING=1` 下运行；`tests/conftest.py` 阻断 httpx 的默认同步和异步 HTTP transport，交易所 HTTP 响应使用 `httpx.MockTransport`，交易行为使用 `PaperAdapter` 合成。数据库用例各自使用独立 PostgreSQL schema，结束后只删除自己的 schema。这不是操作系统级网络隔离，也不构成真实 Bybit 能力验收。管理页脚本另有 `node --test tests/console_ui.test.mjs`（24 项）覆盖。
 
 现货采集与回测子工程的测试随同 `pytest` 一起运行（`research` 在 `testpaths` 内，Flask 已在 `dev` 附加依赖中固定为 3.1.3）；它的页面交互另有 `node --test research/bybit_spot_backtest/tests/test_ui.cjs`（7 项）。两者都不需要网络与交易所凭据。
 
@@ -183,8 +192,8 @@ uv run bybitbot sandbox verify --directory var/paper-system
 src/bybitbot/     应用代码
 research/         研究脚本（含现货－永续价差只读采集与回测）
 research/bybit_spot_backtest/  现货 1 分钟采集与回测子工程（独立于交易服务）
-tests/            1411 项 Python 隔离测试、6 项页面提示测试
-alembic/          数据库迁移（当前 head: 8a4d17c2f905）
+tests/            1934 项 Python 隔离测试、24 项页面脚本测试
+alembic/          数据库迁移（当前 head: c9d3f7a2b6e4）
 config/           配置示例（无密钥）
 deploy/           容器、Quadlet、备份、Mac 端监控与安装脚本
 docs/             需求、评审、验收矩阵、NAS 手册

@@ -13,6 +13,7 @@ from sqlalchemy import engine_from_config, pool
 
 from alembic import context
 from bybitbot.db.models import Base
+from bybitbot.spread import models as _spread_models  # noqa: F401
 from bybitbot.validation import models as _validation_models  # noqa: F401
 
 config = context.config

@@ -19,7 +19,15 @@ from pathlib import Path
 
 from backtest_config import BACKTEST_TIMEOUT_SECONDS, MAX_BACKTEST_MINUTES, validate_backtest_window
 from correlation_data import DOWNLOADS, load_analysis, public_analysis
-from flask import Flask, Response, abort, jsonify, render_template, request, send_file
+from flask import (
+    Flask,
+    Response,
+    abort,
+    jsonify,
+    render_template,
+    request,
+    send_file,
+)
 from market_config import INSTRUMENTS, SUPPORTED_INSTRUMENTS, TOP20_SNAPSHOT_DATE
 from strategy_catalog import MULTI_STRATEGIES, STRATEGIES, strategy_params
 from turtle_strategy import turtle_params
@@ -61,10 +69,15 @@ WEB_PREFIX = os.environ.get("BYBIT_WEB_PREFIX", "").strip().rstrip("/")
 if WEB_PREFIX:
     if not WEB_PREFIX.startswith("/"):
         raise RuntimeError("BYBIT_WEB_PREFIX must start with /")
-    app.config["APPLICATION_ROOT"] = WEB_PREFIX
 
     class _PrefixMiddleware:
-        """Strip the proxy path so Flask's existing routes and JS URLs keep working."""
+        """Mount the app under a path prefix.
+
+        The reverse proxy may or may not strip the prefix before forwarding:
+        Tailscale Serve strips it, while a direct request keeps it. Either way
+        the browser must receive prefixed URLs, so SCRIPT_NAME is always set
+        and the prefix is removed from PATH_INFO when it is present.
+        """
 
         def __init__(self, wrapped, prefix):
             self.wrapped = wrapped
@@ -76,6 +89,7 @@ if WEB_PREFIX:
                 environ["PATH_INFO"] = "/"
             elif path.startswith(self.prefix + "/"):
                 environ["PATH_INFO"] = path[len(self.prefix):]
+            environ["SCRIPT_NAME"] = self.prefix
             return self.wrapped(environ, start_response)
 
     app.wsgi_app = _PrefixMiddleware(app.wsgi_app, WEB_PREFIX)
@@ -84,6 +98,20 @@ app.config["MAX_CONTENT_LENGTH"] = 8 * 1024
 app.config["TRUSTED_HOSTS"] = ["nicholas-4.tail068b64.ts.net", "127.0.0.1", "localhost"]
 csrf_token = secrets.token_urlsafe(32)
 executor = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="backtest")
+
+# The collector subprocess needs the proxy and transport settings that the web
+# service itself was started with; a minimal environment would silently drop
+# them and the public API calls would time out.
+FORWARDED_ENV = ("http_proxy", "https_proxy", "no_proxy", "BYBIT_COLLECTOR_SSH_HOST")
+
+
+def sync_env():
+    env = {"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8", "PYTHONNOUSERSITE": "1"}
+    for name in FORWARDED_ENV:
+        value = os.environ.get(name)
+        if value is not None:
+            env[name] = value
+    return env
 
 
 def connection():
@@ -327,12 +355,13 @@ def index():
         instruments=INSTRUMENTS,
         universe_date=TOP20_SNAPSHOT_DATE,
         research_strategies=STRATEGIES,
+        prefix=WEB_PREFIX,
     )
 
 
 @app.get("/correlation")
 def correlation_page():
-    return render_template("correlation.html")
+    return render_template("correlation.html", prefix=WEB_PREFIX)
 
 
 @app.get("/api/correlation")
@@ -771,7 +800,7 @@ def sync_now():
             text=True,
             timeout=65,
             cwd=str(ROOT.parent),
-            env={"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8", "PYTHONNOUSERSITE": "1"},
+            env=sync_env(),
             check=False,
         )
     except subprocess.TimeoutExpired:

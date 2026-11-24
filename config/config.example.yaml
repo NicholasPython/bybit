@@ -218,6 +218,66 @@ live_gates:
   manual_enable_ref: null
 
 # --------------------------------------------------------------------------
+# 双腿价差套利子系统（PRD FR-01 / FR-03 / FR-07）
+#
+# 默认整体关闭。阶段二只允许独立 USDT paper 账户启用；不得混跑旧策略或期权验证。
+# paper 启用须同时打开总开关与配对开关，并使用无旧现货/期权交易历史的数据库。
+# 非 paper 环境在配置加载和 worker 启动时均拒绝，即使 live 三道门已满足。
+# 后续仍需影子盘、真实保证金/资金费账单和远程执行验收，才能开发实盘晋升入口。
+#
+# 阈值都是**绝对偏离度**：|Z| ≥ z_entry 入场，|Z| ≤ z_exit 了结，
+# |Z| ≥ z_stop 硬止损。必须满足 z_exit < z_entry < z_stop，否则配置被拒绝。
+#
+# pair_key 必须写成 {symbol_a}:{symbol_b}，symbol_a 是流动性较差的被动腿，
+# symbol_b 是主动对冲腿 —— 腿的顺序决定"先弱后强"的挂单次序。
+# --------------------------------------------------------------------------
+spread:
+  enabled: false
+  max_concurrent_pairs: 3
+  reconciliation_interval_seconds: 300
+  # 单组名义最多占账户净值的 30%（PRD FR-03.3）。
+  max_pair_equity_ratio: "0.30"
+  # 全账户总名义敞口杠杆上限 3x（PRD FR-03.3）。
+  max_account_leverage: "3"
+  # 阶段三自动滚动价差信号，默认关闭。启用后仍只允许隔离 USDT paper 账户。
+  # 样本来自 spread_signal_sample；重启不丢失窗口和硬止损冷却。
+  auto:
+    enabled: false
+    window: 60
+    sample_interval_seconds: 60
+    fee_rate: "0.00055"
+    slippage_bps: "5"
+    funding_buffer: "0"
+    max_signal_age_ms: 30000
+    stop_cooldown_seconds: 86400
+    target_notional: "100"
+  # FR-07.3 影子盘：只用公开行情与真实盘口深度模拟成交，不加载凭据、不下真单。
+  # 默认关闭；观察窗默认 7 天，晋升候选仅供人工审阅，绝不自动改参数或灰度放量。
+  shadow:
+    enabled: false
+    public_market_url: https://api.bybit.com
+    observation_days: 7
+    min_depth_notional: "500"
+    impact_bps_per_depth: "2"
+    min_sharpe: "2"
+    max_drawdown: "0.03"
+    max_signal_age_ms: 30000
+  pairs:
+    - pair_key: "BTCUSDT:BTC-26MAR27"
+      symbol_a: BTCUSDT
+      symbol_b: BTC-26MAR27
+      hedge_ratio: "1.0"
+      z_entry: "2.0"
+      z_exit: "0.5"
+      z_stop: "3.5"
+      max_notional: {value: "300", currency: USDT}
+      max_unhedged_notional: {value: "50", currency: USDT}
+      passive_timeout_ms: 2000
+      recovery_window_ms: 500
+      max_slippage_bps: "50"
+      enabled: false
+
+# --------------------------------------------------------------------------
 # 策略（§5.2 策略）
 # 模板默认 disabled（STR-03）。schedule_utc 是 UTC 的 HH:MM。
 # --------------------------------------------------------------------------

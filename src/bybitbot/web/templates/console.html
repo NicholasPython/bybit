@@ -10,6 +10,7 @@
       <button id="tab-risk" role="tab" aria-selected="false" aria-controls="panel-risk" data-tab="risk" tabindex="-1">风控态势</button>
       <button id="tab-trades" role="tab" aria-selected="false" aria-controls="panel-trades" data-tab="trades" tabindex="-1">交易明细</button>
       <button id="tab-ops" role="tab" aria-selected="false" aria-controls="panel-ops" data-tab="ops" tabindex="-1">人工控制</button>
+      <button id="tab-shadow" role="tab" aria-selected="false" aria-controls="panel-shadow" data-tab="shadow" tabindex="-1">影子盘</button>
     </nav>
     <div class="module-links" aria-label="研究模块">
       <a href="/spot-lab/" title="独立的只读行情采集与策略回测研究模块">现货行情与回测 ↗</a>
@@ -18,7 +19,28 @@
     <div class="sidebar-foot"><p>UTC 时间<br>金额按币种标注</p><span id="operator">验证会话中</span><button id="logout" class="text-button" type="button">退出登录</button></div>
   </aside>
   <main id="main" class="workspace">
-    <header class="workspace-header"><div><p class="muted" id="page-context">对账与恢复</p><h1>系统状态与人工操作台</h1></div><div class="header-actions"><span id="refresh-at" class="muted">尚未读取</span><button id="refresh" class="button secondary" type="button">刷新</button></div></header>
+    <header class="workspace-header">
+      <div><p class="muted" id="page-context">运行总览</p><h1>当前该做什么</h1></div>
+      <div class="header-actions"><span id="refresh-at" class="muted">尚未读取</span><button id="refresh" class="button secondary" type="button">刷新状态</button></div>
+    </header>
+    <section id="next-step" class="hero-card" aria-live="polite">
+      <span class="eyebrow">现在先做这件事</span>
+      <strong class="next-title">正在读取服务状态</strong>
+      <span class="muted">连接数据库后，这里会显示下一步操作。</span>
+    </section>
+    <section class="quick-strip" aria-label="常用入口">
+      <button class="quick-card" type="button" data-tab="recovery"><strong>恢复交易</strong><span>按证据逐条解除暂停</span></button>
+      <button class="quick-card" type="button" data-tab="trades"><strong>查余额与订单</strong><span>核对持仓、成交与订单状态</span></button>
+      <button class="quick-card" type="button" data-tab="ops"><strong>执行人工命令</strong><span>暂停、撤单、减仓与基线</span></button>
+    </section>
+    <nav class="nav-tabs secondary-tabs" role="tablist" aria-label="详细信息" aria-orientation="vertical">
+      <button id="tab-recovery" role="tab" aria-selected="true" aria-controls="panel-recovery" data-tab="recovery" tabindex="0">对账与恢复</button>
+      <button id="tab-health" role="tab" aria-selected="false" aria-controls="panel-health" data-tab="health" tabindex="-1">运行健康</button>
+      <button id="tab-risk" role="tab" aria-selected="false" aria-controls="panel-risk" data-tab="risk" tabindex="-1">风控态势</button>
+      <button id="tab-trades" role="tab" aria-selected="false" aria-controls="panel-trades" data-tab="trades" tabindex="-1">交易明细</button>
+      <button id="tab-ops" role="tab" aria-selected="false" aria-controls="panel-ops" data-tab="ops" tabindex="-1">人工控制</button>
+      <button id="tab-shadow" role="tab" aria-selected="false" aria-controls="panel-shadow" data-tab="shadow" tabindex="-1">影子盘</button>
+    </nav>
     <p id="connection-error" class="notice danger" role="alert" hidden></p>
     <noscript><p class="notice danger">请启用浏览器 JavaScript 以查看实时记录及执行操作。</p></noscript>
     <section class="status-pane" aria-labelledby="status-heading">
@@ -27,6 +49,51 @@
       <div id="pause-summary" class="pause-summary"><p class="muted">正在读取暂停原因。</p></div>
     </section>
     <div class="section-meta"><span id="row-limit">每表显示最近 100 条记录</span><span>自动刷新 15 秒</span></div>
+
+    <!-- FR-07.3 影子盘：只读公开行情模拟结果，不产生真实订单 -->
+    <section id="panel-shadow" role="tabpanel" aria-labelledby="tab-shadow" tabindex="0" hidden data-panel="shadow">
+      <section class="data-section goal-summary">
+        <div class="section-heading"><h2>影子盘验证（FR-07.3）</h2><span class="muted">真实公开行情 · 可见深度模拟 · 无交易凭据</span></div>
+        <p class="section-caption">影子盘来自公开只读行情与盘口，用模拟成交检验参数与标的。这里只展示模拟结果和人工审阅候选；不会自动修改配置、不会灰度放量、也不构成真实资金验收。</p>
+        <dl id="shadow-summary" class="evidence-grid" aria-live="polite"></dl>
+        <p id="shadow-note" class="notice">正在读取影子盘状态。</p>
+      </section>
+      <section class="data-section shadow-editor" aria-labelledby="shadow-config-heading">
+        <div class="section-heading"><h2 id="shadow-config-heading">影子盘配置</h2><span class="muted">保存到服务器 · 重启 worker 与 web 后生效</span></div>
+        <p class="section-caption">这里编辑的是已保存配置。保存时自动备份旧文件；页面不会重启服务或启用交易执行。上方统计来自历史模拟记录，不能据此确认新参数已生效。</p>
+        <p id="shadow-config-status" class="notice" role="status" aria-live="polite">正在读取已保存配置。</p>
+        <p id="shadow-config-error" class="error-message" role="alert" hidden></p>
+        <form id="shadow-config-form">
+          <fieldset id="shadow-config-fields" class="shadow-config-fields" disabled>
+            <legend class="sr-only">影子盘配置参数</legend>
+            <label class="shadow-switch" for="shadow-setting-enabled"><input id="shadow-setting-enabled" type="checkbox"><span><strong>启用影子盘观察</strong><small>仅公开行情与模拟成交，不产生真实订单。</small></span></label>
+            <div class="shadow-config-group"><h3>采样与观察</h3><p class="section-caption">滚动窗口攒满后才计算信号；采样间隔不得短于 worker 轮询间隔。</p><div id="shadow-sampling-fields" class="shadow-field-grid"></div></div>
+            <div class="shadow-config-group"><h3>模拟成交</h3><p class="section-caption">名义金额按每条腿计算。费用与冲击成本纳入模拟盈亏。</p><div id="shadow-execution-fields" class="shadow-field-grid"></div></div>
+            <div class="shadow-config-group"><h3>人工审阅门槛</h3><p class="section-caption">达到门槛只标记候选，仍需人工审阅，不会自动晋升实盘。</p><div id="shadow-review-fields" class="shadow-field-grid"></div></div>
+            <div class="shadow-config-group">
+              <div class="section-heading"><h3>观察配对</h3><button id="shadow-add-pair" class="button secondary small" type="button">添加配对</button></div>
+              <p class="section-caption">使用 U 本位合约符号，例如 BTCUSDT。阈值按绝对偏离度计算，必须满足退出 &lt; 入场 &lt; 止损；影子盘观察这里的所有配对。</p>
+              <div id="shadow-pair-fields" class="shadow-pair-list"></div>
+              <p id="shadow-pairs-empty" class="muted" hidden>还没有观察配对。添加至少一个配对后才能启用影子盘。</p>
+            </div>
+          </fieldset>
+          <div class="shadow-config-actions"><button id="shadow-config-save" class="button primary" type="submit" disabled>保存配置</button><button id="shadow-config-reload" class="button secondary" type="button">重新读取配置</button><span id="shadow-config-dirty" class="muted">尚未读取</span></div>
+        </form>
+      </section>
+      <section class="data-section">
+        <div class="section-heading"><h2>最近模拟决策</h2><span class="muted">最近 20 条 · 均为 simulated</span></div>
+        <div class="table-scroll" tabindex="0" aria-label="影子盘最近模拟决策"><table><thead><tr><th>配对</th><th>动作</th><th>理由</th><th class="numeric">模拟净盈亏 (USDT)</th><th>深度</th><th>时间 (UTC)</th></tr></thead><tbody id="shadow-decisions-body"></tbody></table></div>
+      </section>
+      <section class="data-section">
+        <div class="section-heading"><h2>逐日模拟盈亏</h2><span class="muted">观察窗按自然日累计</span></div>
+        <div class="table-scroll" tabindex="0" aria-label="影子盘逐日模拟盈亏"><table><thead><tr><th>日期 (UTC)</th><th class="numeric">模拟盈亏 (USDT)</th></tr></thead><tbody id="shadow-daily-body"></tbody></table></div>
+      </section>
+      <section class="data-section">
+        <div class="section-heading"><h2>按配对审阅（7 天）</h2><span class="muted">门槛：≥5 笔闭环 · Sharpe &gt; 2 · 回撤 &lt; 3%</span></div>
+        <p class="section-caption">统计数据来自当前 Web 启动时的配置版本，不能据此确认刚保存的新参数已生效。达到门槛只表示需要人工审阅，不会自动改配置、不会灰度、不会进入实盘。</p>
+        <div class="table-scroll" tabindex="0" aria-label="影子盘按配对审阅"><table><thead><tr><th>配对 / 参数</th><th class="numeric">决策</th><th class="numeric">闭环</th><th class="numeric">模拟 Sharpe</th><th class="numeric">最大回撤</th><th class="numeric">净盈亏 (USDT)</th><th>审阅标记</th></tr></thead><tbody id="shadow-pair-review-body"></tbody></table></div>
+      </section>
+    </section>
 
     <!-- 目标一：对账与恢复（默认首屏） -->
     <section id="panel-recovery" role="tabpanel" aria-labelledby="tab-recovery" tabindex="0" data-panel="recovery">

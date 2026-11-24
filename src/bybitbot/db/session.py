@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import (
 )
 
 from bybitbot.db.models import Base
+from bybitbot.spread import models as _spread_models  # noqa: F401
 from bybitbot.validation import models as _validation_models  # noqa: F401
 
 _engine: AsyncEngine | None = None

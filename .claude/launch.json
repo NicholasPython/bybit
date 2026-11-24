@@ -12,6 +12,12 @@
       "runtimeExecutable": ".venv/bin/bybitbot",
       "runtimeArgs": ["--config", "var/paper-system-v3/config.yaml", "web", "--auth", "var/paper-system-v3/admin.json", "--host", "127.0.0.1", "--port", "18082", "--insecure-local-cookie"],
       "port": 18082
+    },
+    {
+      "name": "shadow-config-preview",
+      "runtimeExecutable": ".venv/bin/bybitbot",
+      "runtimeArgs": ["--config", "var/shadow-config-preview/config.yaml", "web", "--auth", "var/shadow-config-preview/admin.json", "--host", "127.0.0.1", "--port", "18083", "--insecure-local-cookie"],
+      "port": 18083
     }
   ]
 }

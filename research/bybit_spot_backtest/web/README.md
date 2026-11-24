@@ -35,7 +35,7 @@ Top20 USDT 现货交易对的采集状态、历史范围、数据新鲜度、缺
 
 从顶部导航打开 `/correlation`。页面读取已发布固定排名快照，按最近24小时 USDT 现货报价币成交额排名并排除稳定币，提供30/90天小时对数收益相关性。可切换对照币、点击热力图选择币对，比较 Pearson、Spearman、同涨同跌比例、滚动30天范围和累计价格收益。上市较晚的币种历史不足项为 NA；XAUT 黄金代币有单独提示。最低关联列表可排除 XAUT。
 
-数据目录由 `BYBIT_WEB_RESEARCH` 配置，默认 `research/top20-current/`（相对工程根目录），其中 `analysis.json` 是必需文件，下载文件见 `web/correlation_data.py` 固定白名单。发布时应先在新目录完成文件及校验，再通过原子替换 `top20-current` 符号链接切换整套快照。数据、SQLite 和导出包不提交到 Git；服务无需额外科学计算依赖或 Bybit 密钥。未发布数据时页面提示不可用，API 返回503。
+数据目录由 `BYBIT_WEB_RESEARCH` 配置，默认 `research/top20-current/`（相对工程根目录），其中 `analysis.json` 是必需文件，下载文件见 `web/correlation_data.py` 固定白名单。快照由 `research/build_correlation.py` 从本地分钟库计算，运行方式：`PYTHONPATH=web python research/build_correlation.py --db bybit_spot_1m.sqlite3 --out research/top20-next`；24 小时成交额取自 Bybit 公共 tickers 接口，可用 `--turnover-json` 离线提供。发布时应先在新目录完成文件及校验，再通过原子替换 `top20-current` 符号链接切换整套快照。数据、SQLite 和导出包不提交到 Git；服务无需额外科学计算依赖或 Bybit 密钥。未发布数据时页面提示不可用，API 返回503。
 
 新页面、API、静态资源及所有下载均沿用本人 Tailscale 身份校验；不提供任意文件路径、SQL 或在线脚本执行。分析读取预计算结果，不占用回测计算锁；相关性数据与分钟回测数据分开存储，不自动拉取新的热度排名。
 

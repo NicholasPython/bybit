@@ -91,6 +91,9 @@ ORDER_STATUSES = frozenset(
         "PartiallyFilled",
         "Untriggered",
         "Triggered",
+        # V5 条件单在挂单成功后先处于 Created，触发后转 New。
+        # 缺这个词会让私有流收到条件单推送时解析抛错，整条流断开重连。
+        "Created",
         "Rejected",
         "PartiallyFilledCanceled",
         "PartiallyFilledCancelled",
@@ -100,6 +103,8 @@ ORDER_STATUSES = frozenset(
     }
 )
 _EPOCH = dt.datetime(1970, 1, 1, tzinfo=dt.UTC)
+#: 写请求被限流后的默认冷却秒数（交易所未给出 Retry-After 时的下限）。
+_DEFAULT_WRITE_COOLDOWN_SECONDS = 1.0
 
 
 class BybitRestError(AdapterError):
@@ -136,9 +141,12 @@ class BybitRestAdapter:
         read_max_attempts: int = 3,
         environment: str = "paper",
         allow_trade_writes: bool = False,
+        write_cooldown_max_wait: float = 2.0,
     ) -> None:
         if read_max_attempts < 1 or timeout <= 0 or recv_window_ms <= 0:
             raise ValueError("Request timeout, receive window and attempts must be positive")
+        if write_cooldown_max_wait < 0:
+            raise ValueError("Write cooldown wait must not be negative")
         if environment not in {"paper", "demo", "testnet", "live"}:
             raise ValueError("Unrecognized adapter environment")
         endpoint = httpx.URL(base_url)
@@ -173,6 +181,11 @@ class BybitRestAdapter:
         self._client: httpx.AsyncClient | None = None
         self._account_uid: str | None = None
         self._read_ready_at: dict[str, float] = {}
+        #: 写路径独立的冷却窗口。只在**真的**被限流时写入，
+        #: 不用查询侧的"等到窗口重置"逻辑去节流写请求 ——
+        #: 那会把下单串行化到 1 次/秒，直接破坏双腿对冲的延迟预算。
+        self._write_ready_at: dict[str, float] = {}
+        self.write_cooldown_max_wait = write_cooldown_max_wait
         self.rate_limits: dict[str, dict[str, int]] = {}
 
     async def __aenter__(self) -> BybitRestAdapter:
@@ -300,8 +313,24 @@ class BybitRestAdapter:
             await self._sleep_backoff(attempt, retry_after=retry_after)
         raise AssertionError("unreachable")
 
+    def _cool_down_write(self, path: str, retry_after: float | None) -> None:
+        """记录写路径冷却窗口。"""
+        delay = retry_after if retry_after and retry_after > 0 else _DEFAULT_WRITE_COOLDOWN_SECONDS
+        self._write_ready_at[path] = time.monotonic() + delay
+
     async def _post(self, path: str, params: dict[str, Any]) -> dict[str, Any]:
         self._write_guard()
+        # 节流发生在**发出之前**：冷却期内若窗口很短就等它过去，
+        # 窗口太长就直接拒发 —— 拒发是"确定未受理"，不会留下未知订单。
+        cooldown = self._write_ready_at.get(path, 0.0) - time.monotonic()
+        if cooldown > 0:
+            if cooldown > self.write_cooldown_max_wait:
+                raise OrderRejected(
+                    f"POST {path} 处于交易所限流冷却期，未发送",
+                    ret_code=429,
+                    ret_msg="Rate limited before send",
+                )
+            await asyncio.sleep(cooldown)
         clean = {key: value for key, value in params.items() if value is not None}
         body = json.dumps(clean, separators=(",", ":"))
         headers = self._auth_headers(body)
@@ -313,7 +342,16 @@ class BybitRestAdapter:
             )
         except httpx.HTTPError:
             raise OrderUncertain(f"POST {path} transport failure") from None
-        self._record_limits(path, response)
+        retry_after = self._record_limits(path, response)
+        if response.status_code == 429:
+            # 网关在业务逻辑之前就拒绝了请求，订单没有被创建。
+            # 这与"结果未知"是两回事：必须走确定拒绝，不能打成 UNKNOWN。
+            self._cool_down_write(path, retry_after)
+            raise OrderRejected(
+                f"POST {path} 被交易所限流，未受理",
+                ret_code=429,
+                ret_msg="Exchange rate limited the request",
+            )
         if response.status_code != 200:
             raise OrderUncertain(f"POST {path} HTTP {response.status_code}")
         try:
@@ -325,6 +363,12 @@ class BybitRestAdapter:
                     str(exc), ret_code=exc.ret_code, ret_msg="Exchange rejected request"
                 ) from None
             raise OrderUncertain(str(exc)) from None
+        except RateLimited as exc:
+            # 限流码同样是在创建订单之前就被拒绝的，确定未受理。
+            self._cool_down_write(path, exc.retry_after or retry_after)
+            raise OrderRejected(
+                str(exc), ret_code=429, ret_msg="Exchange rate limited the request"
+            ) from None
         except (TransientError, ValueError, UnicodeError):
             raise OrderUncertain(f"POST {path} ambiguous response") from None
 
@@ -378,7 +422,10 @@ class BybitRestAdapter:
             # Spot expressly does NOT support limit/cursor.
             result = await self._get("/v5/market/instruments-info", params)
             return [_parse_instrument(category, item) for item in _items(result)]
-        params.update(baseCoin="All", limit=1000)
+        params.update(limit=1000)
+        if category == "option":
+            # baseCoin=All 只对期权有效；linear 的 instruments-info 不接受该参数。
+            params["baseCoin"] = "All"
         specs: dict[str, InstrumentSpec] = {}
         async for page in self._pages("/v5/market/instruments-info", params):
             for item in _items(page):
@@ -589,7 +636,7 @@ class BybitRestAdapter:
         _category(category)
         views: dict[str, OrderView] = {}
         async for page in self._pages(
-            "/v5/order/realtime", {"category": category, "openOnly": 0, "limit": 50}
+            "/v5/order/realtime", {"category": category, "openOnly": 1, "limit": 50}
         ):
             for item in _items(page):
                 view = _parse_order(category, item)
@@ -992,10 +1039,15 @@ class BybitRestAdapter:
         if "orderStatus" in result and result["orderStatus"] not in ORDER_STATUSES:
             raise OrderUncertain("Create acknowledgement has unrecognized order status")
         # REST acknowledges acceptance, not an exchange New/Filled observation.
+        # The word must live in the state machine's vocabulary: an unknown word
+        # normalises to UNKNOWN, which marks every live order "result unknown",
+        # locks the account and never releases the reservation. "Accepted" is
+        # not in that vocabulary; "New" is, and it means the same thing here.
+        status = str(result["orderStatus"]) if "orderStatus" in result else "New"
         return OrderAck(
             order_id=result["orderId"],
             order_link_id=request.order_link_id,
-            status="Accepted",
+            status=status,
             raw=result,
         )
 
@@ -1103,8 +1155,9 @@ def _execution_windows(
 
 
 def _category(category: str) -> None:
-    if category not in {"spot", "option"}:
-        raise InsufficientCapability("Only spot and option adapters are supported")
+    # linear = U 本位永续与交割合约。双腿价差套利（bybitbot.spread）需要它。
+    if category not in {"spot", "option", "linear"}:
+        raise InsufficientCapability("Only spot, option and linear adapters are supported")
 
 
 def _link_filters(ids: list[str] | None) -> list[str | None]:

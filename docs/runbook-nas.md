@@ -17,7 +17,7 @@
 | 应用镜像 | `localhost/bybitbot:0.1.0`；发布前记录完整 image ID |
 | 基础运行时镜像 | `localhost/bybitbot-runtime:0.1.0` |
 | 数据库镜像 | 复用已有 `localhost/artex-postgres:16` 镜像，使用独立的 Bybit 命名卷 |
-| 数据库 schema head | `d438b9a83a10` |
+| 数据库 schema head | `c9d3f7a2b6e4` |
 | Quadlet 源文件 | `~/.config/containers/systemd/bybitbot-*.container` 和 `.volume` |
 | 运行配置、数据库环境变量、管理身份 | `~/.config/bybitbot/{config.yaml,postgres.env,admin.json}`，0600 |
 | 备份加密公钥 | `~/.config/bybitbot/backup-public.asc` |
@@ -232,6 +232,68 @@ CCA09EDDB905C807F03D697A1D9AEFAD85C1BB92
 
 ## 6. 密钥轮换
 
+2026-11-22 双腿套利阶段二发布已核验：代码提交 `bcd5d92` 已推送至 `origin/feat/spot-lab-module`；镜像 `297fdf917162172b3284333a9830098b71ce7f3dce1959b96848ef4e67f6d482`，发布标签 `localhost/bybitbot:release-20261122-spread-v1`（已移动为 `0.1.0`），回滚点 `localhost/bybitbot:rollback-before-release-20261122-spread-v1`（`cd8448e1b1cb1ea622c86d00a693a0011485488697ff54e4df974999da6d8557`）。依赖锁未变，基础层未重建。提交前完整 Python 回归 1788 项通过、页面测试 24 项通过。
+
+发布前使用新版 `backup.sh` 生成 `bybitbot-20261122T071709Z-bybitbot_paper.dump.gpg`（8,879,642 字节），脚本已在容器内通过 `pg_restore --list` 验证归档可恢复，随后复制到 NAS 的 `~/.local/share/bybitbot/bin/backup.sh`。发布过程先把数据库从 `d438b9a83a10` 升至 `a612e47bc903`（两级事务性 DDL），再切换服务镜像。切换瞬间旧镜像 worker 的 `ExecStartPre` 迁移无法识别新 head，容器以 137 退出；已先将 `0.1.0` 暂时指回旧镜像恢复心跳，再重新指向新镜像并重启。最终 worker 持续运行、无自动重启，`NRestarts=0`；心跳从 `07:22:16Z` 持续推进，`last_error` 为空， NAS 本机与 Tailscale `/health` 均 HTTP 200。
+
+当前仍保持 `state=PAUSED_OPEN`、`lease=NEEDS_CONFIRMATION`、`baseline_available=false`，活动暂停为 `CONFIG_CHANGED`（锁定）、`MANUAL`、`NOTIFICATION_FAILURE`、`VALUATION_UNAVAILABLE`，两条旧策略均禁用；物理订单、成交、意图、非零库存及套利配对/腿单/逐笔成交均为零。套利配置默认关闭，未确认接管、未建立风险基线、未启用策略，也未使用任何交易凭据。回滚到 `cd8448e1b1cb` 前必须先把 schema 降回 `d438b9a83a10`，否则旧镜像的启动前迁移无法识别新 revision；仅切换镜像标签不足够。
+
+2026-11-22 双腿套利阶段三发布已核验：代码提交 `763820d` 已推送至 `origin/feat/spot-lab-module`；镜像 `d1b98c8d3b2035e4168c1907a1b087f3c4870131cff3f3e5acd4959a16ab4483`，发布标签 `localhost/bybitbot:release-20261122-spread-v2`（已移动为 `0.1.0`），回滚点 `localhost/bybitbot:rollback-before-release-20261122-spread-v2`（`297fdf917162172b3284333a9830098b71ce7f3dce1959b96848ef4e67f6d482`）。提交前完整 Python 回归 1833 项通过，Ruff、`git diff --check` 和 Alembic 迁移收敛检查通过。
+
+发布前使用既有 `backup.sh` 生成 `bybitbot-20261122T090632Z-bybitbot_paper.dump.gpg`（8,920,926 字节），脚本已通过 `pg_restore --list` 验证归档可恢复。发布先停 worker，再将数据库从 `a612e47bc903` 升至 `b7c9e1f4a2d8`（新增 `spread_signal_sample`），随后切换镜像并重启。最终 worker/web/postgres 均 active，`NRestarts=0`，心跳持续推进，`last_error` 为空，NAS 本机与 Tailscale `/health` 均返回 `{"status":"ok"}`。
+
+当前仍保持 `state=PAUSED_OPEN`、`lease=NEEDS_CONFIRMATION`、`baseline_available=false`，活动暂停为 `CONFIG_CHANGED`（锁定）、`MANUAL`、`NOTIFICATION_FAILURE`、`VALUATION_UNAVAILABLE`，两条旧策略均禁用；物理订单、成交、意图、非零库存、套利配对/腿单/逐笔成交及信号样本均为零。阶段三自动信号配置默认关闭，未确认接管、未建立风险基线，也未使用任何交易凭据。回滚到 `297fdf917162` 前必须先把 schema 降回 `a612e47bc903` 并删除 `spread_signal_sample`，否则旧镜像的启动前迁移无法识别新 revision；仅切换镜像标签不足够。
+
+2026-11-22 影子盘与管理页发布已核验：代码提交 `c9da8f4`；镜像 `2e956ebac8df451e913e579be1f78eecbdc13faf987a10b315ffffca42b00841`，发布标签 `localhost/bybitbot:release-20261122-shadow`（已移动为 `0.1.0`），回滚点 `localhost/bybitbot:rollback-before-release-20261122-shadow`（`d1b98c8d3b2035e4168c1907a1b087f3c4870131cff3f3e5acd4959a16ab4483`，即阶段三发布镜像）。提交前完整 Python 回归 1839 项通过（新增影子盘 6 项），Ruff、`git diff --check` 与迁移收敛检查通过。
+
+发布先停 worker，再把数据库从 `b7c9e1f4a2d8` 升至 `c9d3f7a2b6e4`（新增 `shadow_trade`），随后切换镜像并重启。最终 worker/web/postgres 均 active，`NRestarts=0`，tick 从 `10:12:50` 起正常推进，`last_error` 为空，NAS 本机与 Tailscale `/health` 均返回 `{"status":"ok"}`。
+
+当前仍保持 `state=PAUSED_OPEN`、`lease=NEEDS_CONFIRMATION`、`baseline_available=false`，四条活动暂停未解除，两条旧策略均禁用；物理订单、成交、意图、非零库存及套利配对/腿单/逐笔成交/信号样本均为零，`shadow_trade` 为空表。`spread.shadow.enabled` 默认关闭（NAS 配置未加 `spread.shadow` 段，走默认值），影子盘未采集任何样本，管理页「影子盘」标签上线并显示关闭状态。回滚到 `d1b98c8d3b20` 前必须先把 schema 降回 `b7c9e1f4a2d8` 并删除 `shadow_trade`，否则旧镜像的启动前迁移无法识别新 revision；仅切换镜像标签不足够。影子盘启用需另行在配置中打开 `spread.shadow.enabled`，且仅消费公开行情，不影响交易凭据边界。
+
+2026-11-22 影子盘启用与采样修复发布已核验：代码提交 `4b9408b` 已推送至 `origin/feat/spot-lab-module`；发布标签 `release-20261122-shadow-v10`（已移动为 `0.1.0`），schema 仍为 `c9d3f7a2b6e4`（无新迁移）。提交前完整 Python 回归 1845 项通过，Ruff 通过。
+
+本轮首先在 NAS 配置启用 `spread.shadow.enabled=true`（配对 `BTCUSDT:ETHUSDT` 保持 `enabled=false`，仅作影子盘采样对象），随后连发 v5–v10 排障版本定位「影子盘开启但样本始终为 0」的根因链：中间价落在半档被 tick 对齐误拒（`2e8763d`）、采样拒绝静默无痕（限频警告，`85236fc`）、单腿行情失败拖垮整轮缓存（逐符号容错，`f543ee1`），最终 v10 确认真因——worker tick 后段耗时约 33 秒（p50），`_shadow_tick` 排在末尾时 `_market()` 拉的行情已超过 `max_quote_age_seconds=15`，缓存有数据但永远判过期。修复：`_shadow_tick` 提前到 `_market()` 之后，且缓存过期腿用公共只读适配器（`allow_trade_writes=False`）当场刷新（`4b9408b`）。
+
+启用后影子盘仅消费公开行情（REST ticker/orderbook），不加载交易凭据、不发私有请求、不产生真实订单，样本与模拟交易仅落 `spread_signal_sample`/`shadow_trade` 的 `environment='shadow'` 命名空间，管理页「影子盘」标签只读展示，不自动改参数、不推进 canary 或实盘。worker/web 保持 active，`last_error` 为空，四条活动暂停与禁用策略不变。
+
+### 影子盘配置页（部署新版本后可用）
+
+登录操作台，进入「影子盘 → 影子盘配置」。可修改影子盘开关、观察窗、采样间隔与窗口、模拟金额和成本、审阅门槛，并添加、移除或调整观察配对。费率和回撤使用小数比例（`0.00055 = 0.055%`、`0.03 = 3%`）；配对阈值必须满足 `z_exit < z_entry < z_stop`。
+
+该页面仅在 paper 环境、`spread.enabled=false` 且 `spread.auto.enabled=false` 时允许写入。它不能启用交易执行开关，也不会自动重启 worker、确认接管或修改实盘门槛。共享配对的未展示参数、其他价差设置和其他顶层配置会保留。
+
+保存使用带认证、同源检查与 CSRF 的 `PUT /api/shadow/config`。服务先校验完整候选配置，再在同目录写入 0600 备份并原子替换；备份名为 `config.yaml.bak-shadow-*`。备份含原始配置，应与配置文件同样受限保管，不能上传 Git。并发编辑会通过版本检查返回冲突，保留页面草稿；核对后点击「放弃修改并重新读取」。15 秒状态刷新不会覆盖输入。
+
+Web 必须对配置目录有写权限，才能创建备份与原子替换文件；只把 `config.yaml` 单文件挂载成可写不够。仓库中的 `bybitbot-web.container` 已将该目录设为 `rw,z`，worker 仍保持 `ro,z`，容器根文件系统仍只读。此权限覆盖目录内文件，认证、数据库口令与交易凭据文件继续保持 0600，目录保持 0700；页面只开放影子盘配置字段。
+
+发布脚本只同步镜像构建上下文，不会安装更新后的 Quadlet。首次发布配置页时，在本地执行：
+
+```bash
+scp deploy/quadlet/bybitbot-web.container nas:.config/containers/systemd/bybitbot-web.container
+```
+
+```bash
+ssh nas 'systemctl --user daemon-reload && systemctl --user restart bybitbot-web.service'
+```
+
+每次保存后需手动重启 worker 才加载新参数；同时重启 web 可更新其统计门槛口径：
+
+```bash
+ssh nas 'systemctl --user restart bybitbot-worker.service bybitbot-web.service'
+```
+
+随后检查 worker 心跳、`last_error` 和新影子盘样本。页面中的已保存参数与 Web 启动时的统计配置有明确区分；保存成功不代表 worker 已采用参数。重启不会自动恢复人工发单资格或解除活动暂停。配置回滚需先停 worker，在受限目录选择相应备份恢复为 `config.yaml`，运行 `bybitbot check` 通过后再启动；镜像回滚不会自动回滚配置。
+
+2026-11-23 配置页发布已核验：代码提交 `049d73a`；镜像 `dac3f1c7e52269e99743bfd091e74b5402c5da89e83c00b4de8f7357124a198b`，发布标签 `localhost/bybitbot:release-20261123-shadow-config-v11`（已移动为 `0.1.0`），回滚点 `localhost/bybitbot:rollback-before-release-20261123-shadow-config-v11`（`3d4a86aa5e318c796bb5a29ca818c11d002e69b2bf0fb8878abb56d66d8b8a75`，即 v10）。提交前完整 Python 回归 1906 项、页面脚本测试 23 项通过，Ruff 与 `git diff --check` 通过。
+
+发布前先安装更新后的 Web Quadlet 并重启 web：配置目录挂载已由 `ro,z` 改为 `rw,z`。`systemd --user daemon-reload` 后核对容器内挂载；worker 单元仍为 `ro,z`。发布脚本完成迁移检查、镜像切换和服务重启，schema 仍为 `c9d3f7a2b6e4`。最终 postgres/worker/web 均 active；worker 心跳持续推进，`last_error` 为空，影子决策继续新增。数据库仍为 0 订单、0 成交、0 意图、0 非零库存，两条策略禁用，保留活动暂停与 `NEEDS_CONFIRMATION` 租约。
+
+NAS 本机登录后的只读核验：`/api/shadow/config` 返回 `writable=true`、`shadow.enabled=true`、`auto.enabled=false`、配对 `BTCUSDT:ETHUSDT`、`poll_seconds=10`；`/api/shadow` 返回 `configuration_source=web_start`、`runtime_verified=false`、`saved_enabled=true`、`pending_restart=false`，因此统计口径与已保存配置当前一致。无效 CSRF 的写入返回 403，登录页面 HTML 含配置表单与重启提示。发布当轮未从页面保存参数，配置目录当时尚无 `config.yaml.bak-shadow-*` 备份（写回验证见下文）。回滚镜像不会自动回滚 Quadlet 或配置；若回退到 v10，须同时恢复只读 Web 单元，否则配置页写入会失败。
+
+2026-11-23 通过页面做过两轮写回验证：先在「影子盘 → 影子盘配置」把 `shadow.observation_days` 由 7 改为 9，确认写入后改为原值 7。页面回显「配置已保存，旧文件已备份（`config.yaml.bak-shadow-ovprngyq`）。请手动重启 worker 与 web 后生效；当前运行参数尚未确认。」，错误区为空。落盘结果：`config.yaml.bak-shadow-ovprngyq` 的 sha256 为 `48ba4c19481cc248cd669aeb148f89acc43be00a546698d980c3ce15e60da1c9`，与保存前文件完全一致；第二次保存产生的 `config.yaml.bak-shadow-k9anvr9i` 为 `f2e51e9667007f9b0d33773aa46c2b4b43af684f58fea02c543e2f40d1c586b8`，等于第一次保存后的文件；最终 `config.yaml` 为 `c1f27cfcb1379c237bacf6f4fb1b0f57a6a9bb4be441d203cdb9db4ea744ffc8`，`observation_days: 7`。两个备份均为 0600，`spread:` 段之外的文本与保存前逐字节一致。
+
+worker 的行为与设计一致：保存后配置指纹变化，下一轮 tick 抛出 `RuntimeError`（「环境、端点、凭据、代理、模拟行情或费用口径变更需重启」）并置 `SERVICE_FAILURE` 暂停，直到手动重启。重启 worker 与 web 后 `last_error` 清空、`SERVICE_FAILURE` 消除、影子盘采样继续（每分钟新增样本与模拟成交），恢复保存后的 worker `config_version` 回到 `48bd85f4f6180f6ecb04`，与保存前相同。核验时 `/api/shadow/config` 返回 `writable=true`、`observation_days=7`、`revision=c1f27cfc…`，`/api/shadow` 返回 `pending_restart=false`、`saved_enabled=true`，说明已保存配置与运行配置一致。回滚参数可用同一页面改回，或停 worker 后用对应备份恢复 `config.yaml`。
+
 ### Bybit API 凭据
 
 先暂停新增风险并核对所有在途订单；需要撤单时，必须取得终态及累计成交证据。未知结果期间不能靠换 key 清空预留。准备只含必要权限、关闭提现、绑定固定出口 IP 的新凭据，以 0600 文件注入，核对实际环境、UID、权限和账户模式后再重启。重启后重新对账及接管确认，逐条满足恢复条件。
@@ -258,4 +320,32 @@ ssh nas 'podman run --rm -v "$HOME/.config/bybitbot:/run/bybitbot:rw,z" localhos
 - 运行服务当前使用 REST 轮询；WebSocket 适配器有契约测试，尚未作为 worker 的主行情链路集成。
 - 业务告警渠道为空时只落库；真实告警送达、数据保留清理、容量/性能、真实 Demo/Testnet 期权能力仍有验收缺口，详见矩阵。
 
+2026-11-23 FR-07.3 按配对审阅发布已核验：代码提交 `5117a4f`；镜像 `cea5c0357159c4726dd39d30fd1c4a3c57900d51e917d67ba90a3bd6ecfedbe0`，发布标签 `localhost/bybitbot:release-20261123-shadow-review-v12`（已移动为 `0.1.0`），回滚点 `localhost/bybitbot:rollback-before-release-20261123-shadow-review-v12`（`dac3f1c7e52269e99743bfd091e74b5402c5da89e83c00b4de8f7357124a198b`，即 v11）。提交前完整 Python 回归 1932 项、40 项 subtests 与页面测试 24 项通过，Ruff、Node 语法检查与 `git diff --check` 通过。本次无新迁移，schema 仍为 `c9d3f7a2b6e4`。
+
+发布前加密备份 `bybitbot-20261123T071922Z-bybitbot_paper.dump.gpg`（9,422,813 字节）在本机与 NAS 的 sha256 均为 `c5577693097be38b09d9b4ee41976aee1336dba8956f4be0ef3bb9feee05ea87`，本机解密后通过 NAS 容器内 `pg_restore --list` 验证归档可读。发布后 postgres/worker/web 均 active、`NRestarts=0`，worker 心跳从 07:25:24Z 持续推进到 07:33:43Z，`last_error` 为空，NAS 本机 `/health` 返回 `{"status":"ok"}`，Mac 经 Tailscale 访问 `/health` 返回 200。订单、成交、意图、非零库存均为零，两条策略禁用，保持 `PAUSED_OPEN`、`NEEDS_CONFIRMATION`、`baseline_available=false`，活动暂停未解除。
+
+NAS 登录后 `/api/shadow` 已返回新增的 `review_gate`、`pair_reviews`、`pair_candidates`：`review_gate` 为 5 笔闭环 / Sharpe>2 / 回撤<3%，当前配对 `BTCUSDT:ETHUSDT` 的 `closed_trades=0`、`promotion_candidate=false`。页面「影子盘 → 按配对审阅（7 天）」可渲染配对参数与指标。回滚只需切换镜像标签并重启 worker/web，配置与 schema 均无需变化。
+
+**本轮发布核验发现三项既有影子盘数据缺陷（11-22 阶段引入，不是本次代码改动）**：`shadow_trade` 有 27 条 `OPEN`、0 条 `CLOSE`（其中 26 条 `depth_ok=false`）；唯一深度足够的开仓在 11-22 22:02 扣了 0.110 USDT 手续费与 0.042 USDT 滑点，但后续没有平仓记录，这笔亏损被计入 `daily_pnl` 而未计入 `closed_trades` / `cumulative_pnl`；其余 25 条 `OPEN` 的 `qty_a=0`、`net_pnl=0`，却因 `action=OPEN` 被写入交易记录。这些历史数据使当前审阅表的闭环数、净盈亏与候选判定都不可信；发布版本只保证统计**口径按配对拆分且不会自动晋级**，不保证历史账目质量。后续需单独修复失败开仓不落账、深度不足不发 OPEN、平仓信号能匹配活跃仓位三个问题，并在修复后重新采集或标注历史数据，不能据当前样本做标的/参数决定。
+
+**影子盘账本修复的部署口径**：修复版 worker 把 `ledger_version=1` 写入新 `shadow_trade.context`，修复版 Web 只读取这一版本。旧账和历史行情样本均原样保留，已有模拟仓位从当前账本剔除，首次新账以零余额起算。该修复沿用 `c9d3f7a2b6e4` schema。部署时同步升级 worker 和 Web，核对 `/api/shadow` 只展示新账本，并重新积累配置要求的观察期数据后再审阅配对和参数。
+
 实盘启用必须另行取得适用阶段验收证据和账户所有者的启用操作；本轮部署保持 paper 暂停。
+
+2026-11-23 影子盘账本缺陷修复发布已核验：代码提交 `0ac79d5`（本地提交，尚未推送至 `origin/feat/spot-lab-module`）；镜像 `d70df908632841ac3698bfac23ac5cc9554fc8c7577cdf7a638c57b53fad3a30`，发布标签 `localhost/bybitbot:release-20261123-shadow-ledger-v13`（已移动为 `0.1.0`），回滚点 `localhost/bybitbot:rollback-before-release-20261123-shadow-ledger-v13`（`cea5c0357159c4726dd39d30fd1c4a3c57900d51e917d67ba90a3bd6ecfedbe0`，即 v12）。提交前完整 Python 回归 1934 项、40 项 subtests 与页面测试 32 项通过，Ruff 与 `git diff --check` 通过。本次无新迁移，schema 仍为 `c9d3f7a2b6e4`。
+
+发布前加密备份 `bybitbot-20261123T120846Z-bybitbot_paper.dump.gpg`（9,492,793 字节）在本机与 NAS 的 sha256 均为 `1b3db6e08bda465f16d7c96450542c74852600144dc706b57491e4d5a51e4117`，本机解密后通过 NAS 容器内 `pg_restore --list` 验证归档可读（336 条目录项，其中 10 条属 `shadow_trade`）。发布后 postgres/worker/web 均 active、`NRestarts=0`，worker 与 web 容器均运行镜像 `d70df9086328`，心跳从 12:20:33Z 起持续推进，`last_error` 为空，订单、成交、意图、非零库存均为零，两条策略禁用，保持 `PAUSED_OPEN`、`NEEDS_CONFIRMATION`、`baseline_available=false`。
+
+切换过程中 worker 容器未在 podman 的 10 秒 SIGTERM 窗口内退出，被 SIGKILL 结束（exit 137），systemd 短暂把单元标记为 failed；脚本随后的重启把单元拉回 active，`NRestarts` 仍为 0。这不是新版本崩溃，但说明停止阶段的收敛时间超过 10 秒，排障时不要据此判断镜像有问题。
+
+修复生效证据：`shadow_trade` 中 `ledger_version=1` 的新记录为 0 条，最后一条旧 `NONE` 记录停在 12:14:14Z（重启发生在 12:20:33Z），说明修复版不再为无动作的判定写交易记录；影子行情样本持续写入，最新 12:21:00Z。旧账原样保留：`NONE` 473 条、`OPEN` 26 条、`CLOSE`/`STOP` 0 条。NAS 登录后 `/api/shadow` 返回 `decisions=0`、`closed_trades=0`、`cumulative_pnl=0.00000000`、`promotion_candidate=false`、`pair_candidates=[]`，旧账已不进入审阅指标；`promotion_note` 增加「审阅指标仅纳入修复后的有效交易记录」。观察窗需按配置重新积累，旧账不能用于标的或参数决定。
+
+**发布后新出现的活动暂停 `CLOCK_SKEW`**：该暂停行建于 2026-11-22 14:55:17Z（早于本次发布），v12 核验时只有四条活动暂停，之后被再次激活，当前记录为本机时间与交易所偏差 6.0s 超出 `max_clock_skew_seconds=5`。它不是本次改动引入的，且在账户未对账、未建立风险基线、未确认接管的状态下**不会自动解除**（时钟恢复只消除告警，解除暂停仍需对账与基线条件）。影子盘只读采样不受该暂停影响。
+
+`ETHUSDT:行情过期或缺失` 的影子盘采样拒绝日志在发布前后同样约每 10 分钟出现一次，属于既有行情刷新问题，未因本次发布改变。
+
+2026-11-24 影子盘多配对并行观察已核验（阶段四，无新镜像、无新迁移）：把 FR-07.1 提名清单里的 4 个 β>0 配对（`NEARUSDT:ANTUSDT`、`DOGEUSDT:LINKUSDT`、`ACEUSDT:ADAUSDT`、`ETHUSDT:LINKUSDT`）以 `enabled: false` 加入 NAS `config.yaml` 的 `spread.pairs`，使影子盘对多标的并行采样同一组参数（`z_entry=2.0`/`z_exit=0.5`/`z_stop=3.5`/`auto.window=60`）。写回走仓库自带的 `settings.writer.write_spread`（与管理页影子盘配置写回同一个写入器：校验、备份、原子替换、revision 冲突保护），配置 revision 变为 `d5a0f396160ad08fc69012b1f8765b378ca1a1d4334a0e37a280123c6ee84233`，自动备份 `config.yaml.bak-shadow-mkj29c0h`（0600）。写回前已停 worker，写回后重启 worker 与 web。
+
+核验：postgres/worker/web 均 active，worker `NRestarts=0`、`ActiveEnterTimestamp=2026-11-24 09:16:17 CST`，`last_error` 为空，`state=PAUSED_OPEN`、`lease=NEEDS_CONFIRMATION` 未变；活动暂停仍是 `CLOCK_SKEW`、`CONFIG_CHANGED`、`MANUAL`、`NOTIFICATION_FAILURE`、`VALUATION_UNAVAILABLE` 五条既有暂停，未代为解除；`/health` 返回 `{"status":"ok"}`，`/api/shadow` 未登录返回 401。`spread_signal_sample` 中 5 个配对都已写入 shadow 样本（最新 01:17:00Z），新配对在预热完成前日志为「影子盘采样被拒：`XXX`：样本不足」。
+
+两个配置侧差距：`LINKUSDT:ETHPERP` 的符号不符合配对模型（只接受 `*USDT` 与交割合约），写回时被校验拒绝，故未进影子盘；FR-07.1 提名里的 5 个反向配对（β<0）过不了 `hedge_ratio > 0` 校验，需要另立建模口径。在册 `BTCUSDT:ETHUSDT` 的 `hedge_ratio` 仍为 `1.0`，未动，避免中途改写已积累窗口样本的解释口径。阶段四细节见 [影子盘多配对并行观察](spread-arbitrage-candidates-2026-11-24.md)。

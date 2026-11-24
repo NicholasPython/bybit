@@ -176,22 +176,37 @@ class BybitPrivateStream:
     提供两个异步迭代器，供执行器消费。
     """
 
-    def __init__(self, client: BybitWebSocketClient) -> None:
+    def __init__(
+        self,
+        client: BybitWebSocketClient,
+        *,
+        categories: tuple[str, ...] = ("spot", "option", "linear"),
+    ) -> None:
+        if not categories or any(
+            category not in {"spot", "option", "linear"} for category in categories
+        ):
+            raise ValueError("Unsupported private-stream category")
+        self.categories = frozenset(categories)
         self.client = client
         self._order_queues: dict[str, asyncio.Queue[OrderUpdate]] = {
-            category: asyncio.Queue(maxsize=10_000) for category in ("spot", "option")
+            category: asyncio.Queue(maxsize=10_000) for category in categories
         }
         self._execution_queues: dict[str, asyncio.Queue[ExecutionUpdate]] = {
-            category: asyncio.Queue(maxsize=10_000) for category in ("spot", "option")
+            category: asyncio.Queue(maxsize=10_000) for category in categories
         }
         self._task: asyncio.Task | None = None
         self._running = False
+        #: 连接失效计数；上层据此调用 ``PrivateExecutionAdapter.invalidate()``。
+        #: 注意：``needs_reconciliation`` 在订阅成功后仍为 True，直到 REST 校准
+        #: 明确完成；"连接成功"不等于"数据可信"。
+        self.generation = 0
         #: 最近一次收到的 orderId + orderStatus + cumExecQty，用于去重
         #: （Bybit 可能在撤单竞态下推两条 Filled）。
         self._seen_order_states: dict[str, tuple[str, str]] = {}
         self._seen_exec_ids: set[tuple[str, str]] = set()
         self.needs_reconciliation = True
         self.connected = False
+        self._last_message_at: float | None = None
 
     async def start(self) -> None:
         self._running = True
@@ -206,7 +221,15 @@ class BybitPrivateStream:
             self._task = None
         self.connected = False
         self.needs_reconciliation = True
+        self.generation += 1
         await self.client.disconnect()
+
+    def invalidate(self, reason: str = "私有流失效") -> None:
+        """标记连接不可信，供上层立即触发 fail-closed 与 REST 校准。"""
+        self.needs_reconciliation = True
+        self.connected = False
+        self.generation += 1
+        logger.warning("私有流失效：%s", reason)
 
     async def _run(self) -> None:
         attempt = 0
@@ -218,10 +241,11 @@ class BybitPrivateStream:
                     raise WebSocketError("私有流未鉴权")
                 await self.client.subscribe(["order", "execution"])
                 self.connected = True
-                self.needs_reconciliation = True
+                self.generation += 1
                 self._seen_order_states.clear()
                 self._seen_exec_ids.clear()
                 attempt = 0
+                # needs_reconciliation 保持 True，直到上层 REST 校准完成。
                 logger.info("私有流已连接，等待账户重新对账")
                 await self._consume()
             except asyncio.CancelledError:
@@ -249,14 +273,22 @@ class BybitPrivateStream:
 
     async def _consume(self) -> None:
         while self._running:
-            raw = await self.client.recv()
+            try:
+                raw = await asyncio.wait_for(
+                    self.client.recv(), timeout=self.client.ping_interval + self.client.ping_timeout
+                )
+            except TimeoutError:
+                self.invalidate("私有流心跳超时")
+                raise WebSocketError("私有流心跳超时") from None
             try:
                 message = json.loads(raw)
             except json.JSONDecodeError:
-                self.needs_reconciliation = True
+                self.invalidate("私有流 JSON 无效")
                 raise WebSocketError("私有流 JSON 无效") from None
             if not isinstance(message, dict):
+                self.invalidate("私有流消息无效")
                 raise WebSocketError("私有流消息无效")
+            self._last_message_at = time.monotonic()
             await self._dispatch(message)
 
     async def _dispatch(self, message: dict[str, Any]) -> None:
@@ -280,7 +312,7 @@ class BybitPrivateStream:
 
     def _parse_order(self, item: dict[str, Any]) -> OrderUpdate | None:
         category = item.get("category")
-        if category not in {"spot", "option"}:
+        if category not in self.categories:
             return None
         try:
             view = _parse_order(category, item)
@@ -311,7 +343,7 @@ class BybitPrivateStream:
 
     def _parse_execution(self, item: dict[str, Any]) -> ExecutionUpdate | None:
         category = item.get("category")
-        if category not in {"spot", "option"}:
+        if category not in self.categories:
             return None
         try:
             view = _parse_execution(category, item)

@@ -20,6 +20,8 @@ def install(
     *,
     health_url: str,
     rsync_source: str | None = None,
+    gnupg_home: Path | None = None,
+    expected_databases: str | None = None,
 ) -> list[Path]:
     if not health_url:
         raise ValueError("health_url is required")
@@ -49,6 +51,12 @@ def install(
             str(directory / "backups"),
         ]
         arguments += ["--health-url", health_url]
+        if gnupg_home is not None:
+            # 备份校验要解密才能做；没有私钥环就退化成"只看文件存在"，
+            # 那就等于回到了损坏备份也判正常的老问题。
+            arguments += ["--gnupg-home", str(gnupg_home)]
+        if expected_databases:
+            arguments += ["--expected-databases", expected_databases]
         if name == "offsite-backup":
             arguments.append("--sync-backups")
             if rsync_source:
@@ -88,6 +96,17 @@ def main():
         default=None,
         help="加密备份的 rsync 源，如 nas:.local/share/bybitbot/backups/*.dump.gpg",
     )
+    parser.add_argument(
+        "--gnupg-home",
+        type=Path,
+        default=Path(__file__).resolve().parents[1] / "secrets" / "backup-gnupg",
+        help="备份私钥环目录；用于解密校验异机备份是否真的可以恢复",
+    )
+    parser.add_argument(
+        "--expected-databases",
+        default=None,
+        help="要求存在的备份库，空格分隔；实盘库尚未开通时从列表中去掉它",
+    )
     args = parser.parse_args()
     os.umask(0o077)
     for path in install(
@@ -96,6 +115,8 @@ def main():
         args.python,
         health_url=args.health_url,
         rsync_source=args.rsync_source,
+        gnupg_home=args.gnupg_home,
+        expected_databases=args.expected_databases,
     ):
         print(path)
     print("Installed. Bootstrap both jobs with launchctl in your logged-in GUI session.")
